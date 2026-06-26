@@ -84,6 +84,9 @@ importers:
       '@dna/sqlite':
         specifier: workspace:*
         version: link:../sqlite
+      '@dna/storage':
+        specifier: workspace:*
+        version: link:../storage
 
   packages/sqlite:
     dependencies:

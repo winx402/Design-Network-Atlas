@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@dna/core": "workspace:*",
+    "@dna/storage": "workspace:*",
     "@dna/sqlite": "workspace:*"
   }
 }
