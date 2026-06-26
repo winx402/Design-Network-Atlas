@@ -1,6 +1,8 @@
 import {
   AssetIndex,
+  ChangeSet,
   EvolutionEdge,
+  EdgeVersion,
   GeneTemplate,
   GenerationJob,
   Graph,
@@ -47,6 +49,12 @@ export interface EdgeRepository {
   update(edge: EvolutionEdge): void;
   get(edgeId: string): EvolutionEdge | undefined;
   listByGraph(graphId: string): EvolutionEdge[];
+}
+
+export interface EdgeVersionRepository {
+  create(version: EdgeVersion): void;
+  get(edgeVersionId: string): EdgeVersion | undefined;
+  listByEdge(edgeId: string): EdgeVersion[];
 }
 
 export interface NodeVersionRepository {
@@ -96,6 +104,12 @@ export interface ImpactRepository {
 
 export interface SearchRepository {
   assets(filter: { graphId?: string; tag?: string; status?: string }): AssetIndex[];
+}
+
+export interface ChangeSetRepository {
+  create(changeSet: ChangeSet): void;
+  update(changeSet: ChangeSet): void;
+  get(changeSetId: string): ChangeSet | undefined;
 }
 
 export * from "./memory.js";

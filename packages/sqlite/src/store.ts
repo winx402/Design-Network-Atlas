@@ -3,7 +3,9 @@ import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import {
   AssetIndex,
+  ChangeSet,
   createImpactRecord,
+  EdgeVersion,
   EvolutionEdge,
   GeneTemplate,
   GenerationJob,
@@ -18,7 +20,9 @@ import {
 } from "@dna/core";
 import {
   AssetRepository,
+  ChangeSetRepository,
   EdgeRepository,
+  EdgeVersionRepository,
   GenerationJobRepository,
   GraphRepository,
   ImpactRepository,
@@ -51,6 +55,7 @@ export class SqliteDnaStore implements StorageEngine {
   readonly nodes: LineageRepository;
   readonly nodeVersions: NodeVersionRepository;
   readonly edges: EdgeRepository;
+  readonly edgeVersions: EdgeVersionRepository;
   readonly phenotypes: PhenotypeRepository;
   readonly phenotypeVersions: PhenotypeVersionRepository;
   readonly assets: AssetRepository;
@@ -58,6 +63,7 @@ export class SqliteDnaStore implements StorageEngine {
   readonly reviews: ReviewRepository;
   readonly impacts: ImpactRepository;
   readonly search: SearchRepository;
+  readonly changeSets: ChangeSetRepository;
 
   constructor(readonly dbPath: string) {
     mkdirSync(dirname(dbPath), { recursive: true });
@@ -68,6 +74,7 @@ export class SqliteDnaStore implements StorageEngine {
     this.nodes = new SqliteNodeRepository(this);
     this.nodeVersions = new SqliteNodeVersionRepository(this);
     this.edges = new SqliteEdgeRepository(this);
+    this.edgeVersions = new SqliteEdgeVersionRepository(this);
     this.phenotypes = new SqlitePhenotypeRepository(this);
     this.phenotypeVersions = new SqlitePhenotypeVersionRepository(this);
     this.assets = new SqliteAssetRepository(this);
@@ -75,6 +82,7 @@ export class SqliteDnaStore implements StorageEngine {
     this.reviews = new SqliteReviewRepository(this);
     this.impacts = new SqliteImpactRepository(this);
     this.search = { assets: (filter) => this.assets.search(filter) };
+    this.changeSets = new SqliteChangeSetRepository(this);
   }
 
   migrate(): void {
@@ -232,6 +240,16 @@ export class SqliteDnaStore implements StorageEngine {
         tag TEXT NOT NULL,
         created_at TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS change_sets (
+        change_set_id TEXT PRIMARY KEY,
+        mode TEXT NOT NULL,
+        object_type TEXT NOT NULL,
+        operation TEXT NOT NULL,
+        status TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        applied_at TEXT
+      );
     `);
   }
 
@@ -352,6 +370,21 @@ class SqliteEdgeRepository implements EdgeRepository {
   }
   listByGraph(graphId: string) {
     return parseRows<EvolutionEdge>(this.store.db.prepare("SELECT payload FROM edges WHERE graph_id = ? ORDER BY created_at, edge_id").all(graphId) as Row[]);
+  }
+}
+
+class SqliteEdgeVersionRepository implements EdgeVersionRepository {
+  constructor(private readonly store: SqliteDnaStore) {}
+  create(version: EdgeVersion) {
+    this.store.db
+      .prepare("INSERT INTO edge_versions (edge_version_id, edge_id, graph_id, version, payload, created_at) VALUES (?, ?, ?, ?, ?, ?)")
+      .run(version.edgeVersionId, version.edgeId, version.graphId, version.version, JSON.stringify(version), version.createdAt);
+  }
+  get(edgeVersionId: string) {
+    return parsePayload<EdgeVersion>(this.store.db.prepare("SELECT payload FROM edge_versions WHERE edge_version_id = ?").get(edgeVersionId) as Row | undefined);
+  }
+  listByEdge(edgeId: string) {
+    return parseRows<EdgeVersion>(this.store.db.prepare("SELECT payload FROM edge_versions WHERE edge_id = ? ORDER BY created_at").all(edgeId) as Row[]);
   }
 }
 
@@ -480,6 +513,32 @@ class SqliteImpactRepository implements ImpactRepository {
         .prepare("SELECT payload FROM impact_records WHERE changed_object_type = ? AND changed_object_id = ? ORDER BY created_at")
         .all(objectType, objectId) as Row[]
     );
+  }
+}
+
+class SqliteChangeSetRepository implements ChangeSetRepository {
+  constructor(private readonly store: SqliteDnaStore) {}
+  create(changeSet: ChangeSet) {
+    this.store.db
+      .prepare("INSERT INTO change_sets (change_set_id, mode, object_type, operation, status, payload, created_at, applied_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(
+        changeSet.changeSetId,
+        changeSet.mode,
+        changeSet.objectType,
+        changeSet.operation,
+        changeSet.status,
+        JSON.stringify(changeSet),
+        changeSet.createdAt,
+        changeSet.appliedAt ?? null
+      );
+  }
+  update(changeSet: ChangeSet) {
+    this.store.db
+      .prepare("UPDATE change_sets SET status = ?, payload = ?, applied_at = ? WHERE change_set_id = ?")
+      .run(changeSet.status, JSON.stringify(changeSet), changeSet.appliedAt ?? null, changeSet.changeSetId);
+  }
+  get(changeSetId: string) {
+    return parsePayload<ChangeSet>(this.store.db.prepare("SELECT payload FROM change_sets WHERE change_set_id = ?").get(changeSetId) as Row | undefined);
   }
 }
 

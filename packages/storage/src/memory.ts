@@ -2,6 +2,7 @@ import {
   AssetIndex,
   ChangeSet,
   EvolutionEdge,
+  EdgeVersion,
   GeneTemplate,
   GenerationJob,
   Graph,
@@ -15,7 +16,9 @@ import {
 } from "@dna/core";
 import {
   AssetRepository,
+  ChangeSetRepository,
   EdgeRepository,
+  EdgeVersionRepository,
   GenerationJobRepository,
   GraphRepository,
   ImpactRepository,
@@ -29,18 +32,13 @@ import {
   TemplateRepository
 } from "./index.js";
 
-export interface ChangeSetRepository {
-  create(changeSet: ChangeSet): void;
-  update(changeSet: ChangeSet): void;
-  get(changeSetId: string): ChangeSet | undefined;
-}
-
 export interface DnaServiceStore extends StorageEngine {
   graphs: GraphRepository;
   templates: TemplateRepository;
   nodes: LineageRepository;
   nodeVersions: NodeVersionRepository;
   edges: EdgeRepository;
+  edgeVersions: EdgeVersionRepository;
   phenotypes: PhenotypeRepository;
   phenotypeVersions: PhenotypeVersionRepository;
   assets: AssetRepository;
@@ -62,6 +60,7 @@ interface MemoryState {
   nodes: Map<string, SpeciesNode>;
   nodeVersions: Map<string, NodeVersion>;
   edges: Map<string, EvolutionEdge>;
+  edgeVersions: Map<string, EdgeVersion>;
   phenotypes: Map<string, Phenotype>;
   phenotypeVersions: Map<string, PhenotypeVersion>;
   assets: Map<string, AssetIndex>;
@@ -78,6 +77,7 @@ export class InMemoryDnaStore implements DnaServiceStore {
   readonly nodes: LineageRepository;
   readonly nodeVersions: NodeVersionRepository;
   readonly edges: EdgeRepository;
+  readonly edgeVersions: EdgeVersionRepository;
   readonly phenotypes: PhenotypeRepository;
   readonly phenotypeVersions: PhenotypeVersionRepository;
   readonly assets: AssetRepository;
@@ -124,6 +124,11 @@ export class InMemoryDnaStore implements DnaServiceStore {
       update: (edge) => this.state.edges.set(edge.edgeId, edge),
       get: (edgeId) => this.state.edges.get(edgeId),
       listByGraph: (graphId) => [...this.state.edges.values()].filter((edge) => edge.graphId === graphId)
+    };
+    this.edgeVersions = {
+      create: (version) => this.state.edgeVersions.set(version.edgeVersionId, version),
+      get: (edgeVersionId) => this.state.edgeVersions.get(edgeVersionId),
+      listByEdge: (edgeId) => [...this.state.edgeVersions.values()].filter((version) => version.edgeId === edgeId)
     };
     this.phenotypes = {
       create: (phenotype) => this.state.phenotypes.set(phenotype.phenotypeId, phenotype),
@@ -203,6 +208,7 @@ function createState(): MemoryState {
     nodes: new Map(),
     nodeVersions: new Map(),
     edges: new Map(),
+    edgeVersions: new Map(),
     phenotypes: new Map(),
     phenotypeVersions: new Map(),
     assets: new Map(),
@@ -221,6 +227,7 @@ function cloneState(state: MemoryState): MemoryState {
     nodes: new Map(state.nodes),
     nodeVersions: new Map(state.nodeVersions),
     edges: new Map(state.edges),
+    edgeVersions: new Map(state.edgeVersions),
     phenotypes: new Map(state.phenotypes),
     phenotypeVersions: new Map(state.phenotypeVersions),
     assets: new Map(state.assets),
