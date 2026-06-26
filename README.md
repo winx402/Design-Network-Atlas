@@ -37,6 +37,7 @@ Key boundaries:
 - Storage implementations are replaceable because the domain layer talks to repository ports.
 - External asset libraries are adapter targets, not hard-coded product assumptions.
 - Generated results can be recorded even when a team does not use DNA's optional result-library layer.
+- Graph lineage can be projected as a readable species tree or JSON structure without changing stored node and edge data.
 
 ## Defaults First
 
@@ -155,6 +156,8 @@ pnpm install
 pnpm dna --help
 ```
 
+The CLI includes `dna graph tree --id <graph_id>` for a readable species tree, and `dna graph tree --id <graph_id> --format json` for tooling or future workbench visualizations.
+
 The root `package.json` currently uses `private: true` to prevent accidental npm publishing from the monorepo. The GitHub source is open under the MIT license.
 
 ## Development Checks
@@ -179,7 +182,7 @@ The root `package.json` is the only hand-authored version source. Generated runt
 
 ## Maturity
 
-DNA is currently a local-first v0.2 project. It is suitable for pilot use, local design-graph governance, prompt/brief generation, result-library routing, output reference management, review records, impact analysis, and Git-friendly exchange.
+DNA is currently a local-first v0.3 project. It is suitable for pilot use, local design-graph governance, graph tree inspection, prompt/brief generation, result-library routing, output reference management, review records, impact analysis, and Git-friendly exchange.
 
 Production npm publishing, real image-model provider adapters, a persistent HTTP API, a connected Web client, team permissions, and sync workflows are future work.
 
@@ -226,6 +229,7 @@ SQLite / Git 目录 / 生成 provider / 素材库 adapter
 - 存储实现可替换，因为领域层只依赖 repository ports。
 - 外部素材库是 adapter target，不是硬编码产品假设。
 - 即使团队不使用 DNA 的可选结果库，也可以记录生成结果位置。
+- 图谱谱系可以被投影成可读的物种树或 JSON 结构，不需要改变已有节点和边数据。
 
 ## 默认优先
 
@@ -344,6 +348,8 @@ pnpm install
 pnpm dna --help
 ```
 
+CLI 提供 `dna graph tree --id <graph_id>` 输出可读物种树，也提供 `dna graph tree --id <graph_id> --format json` 给工具或后续工作台可视化使用。
+
 根目录 `package.json` 目前使用 `private: true`，用于避免 monorepo 被误发到 npm。GitHub 源码按 MIT License 开源。
 
 ## 开发检查
@@ -368,7 +374,7 @@ DNA 使用三段数字版本号：`MAJOR.MINOR.PATCH`。
 
 ## 成熟度
 
-DNA 当前是本地优先的 v0.2 项目，适合试点使用、本地设计图谱治理、prompt / brief 生成、结果库路由、输出引用管理、审查记录、影响分析和 Git 友好交换。
+DNA 当前是本地优先的 v0.3 项目，适合试点使用、本地设计图谱治理、图谱树检查、prompt / brief 生成、结果库路由、输出引用管理、审查记录、影响分析和 Git 友好交换。
 
 npm 正式发布、真实图片生成 provider、持久化 HTTP API、接入 API 的 Web 客户端、团队权限和同步流程属于后续工作。
 

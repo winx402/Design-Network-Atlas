@@ -1,6 +1,6 @@
 # DNA 系统技术设计
 
-状态：v0.2-active
+状态：v0.3-active
 最后审阅：2026-06-26
 来源级别：authoritative technical design
 上游输入：视觉基因谱系系统 PRD、阶段开发路线图
@@ -280,6 +280,7 @@ graphs/<graph_id>/impacts/
 CLI 是本地核心阶段的主要产品入口。CLI 必须支持：
 
 - graph
+  - `graph tree`：把物种和进化边投影成可读树或 JSON。
 - template
 - node
 - edge
@@ -340,11 +341,12 @@ Skill 是引导层，不是持久化层：
 
 ## 10. 当前代码状态说明
 
-当前仓库已完成 v0.2 local-first 实现，并通过 Phase 13 端到端验收：
+当前仓库已完成 v0.3 local-first 实现，并通过 Phase 14 端到端验收：
 
 - TypeScript workspace 与核心领域模型。
 - SQLite 本地存储、repository ports、ChangeSet 写入流。
 - CLI 本地闭环，覆盖 graph/template/node/edge/phenotype/asset/review/impact/import/export。
+- 图谱树状输出，支持文本树和 JSON 投影。
 - 编译策略、表型版本、素材索引、审查记录、影响分析。
 - Git-friendly JSON 目录导入导出。
 - 结果库、存储挂载、外部库字段映射和输出路由策略。
@@ -353,4 +355,4 @@ Skill 是引导层，不是持久化层：
 - Web asset workbench 的前端样例和状态模型。
 - local/server collaboration adapter 的权限与冲突模型。
 
-v0.2 的完成边界是“本地优先试点可用”，不是生产级托管平台。npm CLI 发布、真实 provider、HTTP server、Web/API 持久化接入、团队账户权限与同步服务属于 post-v1 路线。
+v0.3 的完成边界是“本地优先试点可用”，不是生产级托管平台。npm CLI 发布、真实 provider、HTTP server、Web/API 持久化接入、团队账户权限与同步服务属于 post-v1 路线。

@@ -9,3 +9,4 @@ export * from "./versioning.js";
 export * from "./change-set.js";
 export * from "./project-version.js";
 export * from "./library-routing.js";
+export * from "./graph-tree.js";

@@ -1,6 +1,6 @@
 # DNA 测试策略
 
-状态：v0.2-active
+状态：v0.3-active
 最后审阅：2026-06-26
 来源级别：authoritative test strategy
 上游输入：[系统技术设计](../design/system-architecture.md)、[阶段开发路线图](../implementation/development-roadmap.md)
@@ -11,8 +11,8 @@
 - 测试必须覆盖该阶段交付边界，不能只覆盖 happy path。
 - 阶段测试通过只代表该阶段完成，不代表完整系统完成。
 - 基础完整系统只有在 Phase 11 全量验收通过后才能宣布完成。
-- Phase 12/13 属于本地优先系统的结果库增强能力，必须单独声明、单独测试，不能反向修改 Phase 11 的完成口径。
-- 当前 v0.2 已按 Phase 13 验收口径完成；post-v1 能力必须单独声明，不能混入 v0.2 完成声明。
+- Phase 12-14 属于本地优先系统的增强能力，必须单独声明、单独测试，不能反向修改 Phase 11 的完成口径。
+- 当前 v0.3 已按 Phase 14 验收口径完成；post-v1 能力必须单独声明，不能混入 v0.3 完成声明。
 
 ## 2. 测试分层
 
@@ -45,6 +45,7 @@
 | Phase 11 | full E2E + release checks | PRD 13 条验收场景全通过 |
 | Phase 12 | result library schema + SQLite + CLI | 图谱和结果库多对多，输出引用可不用 DNA 结果库 |
 | Phase 13 | routing unit + SQLite + CLI E2E | 输出引用按策略路由到挂载，显式挂载优先 |
+| Phase 14 | graph tree unit + CLI E2E | 多 root、多父节点和附加关系输出清晰 |
 
 ## 4. 关键测试数据
 
@@ -229,3 +230,5 @@ provider adapter 只能保存：
 v0.1 作为历史基础边界，允许声明为“本地优先基础系统通过验收”。不得把它表述为“生产级托管平台已完成”，因为真实 provider、npm 分发、HTTP 服务、Web/API 持久化接入、团队账户权限与同步仍属于 post-v1。
 
 当前 v0.2 允许补充声明“结果库路由策略通过验收”。不得把它表述为“成熟 DAM 或生产级 Web 素材库已完成”，因为缩略图服务、二进制生命周期、批量整理、外部库实时同步和生产级 Web/API 仍属于后续阶段。
+
+当前 v0.3 允许补充声明“图谱树状输出通过验收”。不得把它表述为“完整图谱可视化工作台已完成”，因为交互式布局、折叠筛选、Web 图谱编辑和大规模图布局仍属于后续阶段。

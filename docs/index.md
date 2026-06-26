@@ -4,7 +4,7 @@
 最后审阅：2026-06-26
 来源级别：documentation entrypoint
 
-本目录是 DNA: Design Network Atlas 的项目设计与开发计划入口。当前本地优先版本已经按阶段完成到 Phase 13，覆盖基础图谱、表型生成、审查影响分析、可选表型库、输出引用、结果库路由和 Git 目录交换；后续文档用于维护实现边界、测试策略和 post-v1 路线。
+本目录是 DNA: Design Network Atlas 的项目设计与开发计划入口。当前本地优先版本已经按阶段完成到 Phase 14，覆盖基础图谱、图谱树输出、表型生成、审查影响分析、可选表型库、输出引用、结果库路由和 Git 目录交换；后续文档用于维护实现边界、测试策略和 post-v1 路线。
 
 ## 文档地图
 
@@ -17,9 +17,10 @@
 
 ## 当前实现边界
 
-- v0.2 已完成本地 SQLite + CLI + 核心库 + 导入导出 + 审查/影响分析 + mock provider 安全边界。
+- v0.3 已完成本地 SQLite + CLI + 核心库 + 导入导出 + 审查/影响分析 + mock provider 安全边界。
 - Phase 12 已补充 `PhenotypeLibrary`、外部库挂载/映射、`OutputReference`，支持不启用 DNA 表型库时直接登记外部结果位置。
 - Phase 13 已补充 `LibraryRoutingPolicy`，支持一个图谱默认绑定一个结果库，再按生成结果类型、输出角色、引用类型和标签自动路由到不同 `StorageMount`。
+- Phase 14 已补充 `graph tree`，支持把物种节点和进化边投影成可读树状输出和 JSON 结构，便于直观看到物种关系。
 - Web workbench 当前是前端工作台样例和状态模型，不是已接入 SQLite/API 的生产 Web 客户端。
 - `server adapter` 当前是协作端口和权限/冲突模型，不是完整 HTTP 服务。
 - npm CLI 发布、真实生成模型 provider、团队账户/权限/同步服务属于 post-v1。

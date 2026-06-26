@@ -1,6 +1,6 @@
 # DNA 分阶段开发路线图
 
-状态：v0.2-completed
+状态：v0.3-completed
 最后审阅：2026-06-26
 来源级别：authoritative implementation plan
 上游输入：[系统技术设计](../design/system-architecture.md)
@@ -16,7 +16,7 @@
 
 ## 当前状态
 
-Phase 0-13 已完成并由测试覆盖。本文件保留为历史执行计划、验收映射和 post-v1 拆分参照；后续新增能力必须继续落到明确阶段、测试和完成边界中。
+Phase 0-14 已完成并由测试覆盖。本文件保留为历史执行计划、验收映射和 post-v1 拆分参照；后续新增能力必须继续落到明确阶段、测试和完成边界中。
 
 ---
 
@@ -38,6 +38,7 @@ Phase 0-13 已完成并由测试覆盖。本文件保留为历史执行计划、
 | Phase 11 | 完整系统验收 | 跑通 PRD 全量场景和发布检查 | E2E suite、release checklist |
 | Phase 12 | 表型库与输出引用 | 可选结果库、存储挂载、外部库映射、无库输出指针 | schema、SQLite、CLI、import/export |
 | Phase 13 | 结果库路由策略 | 一个结果库下按类型/角色/标签自动选择存储挂载 | routing unit、SQLite、CLI E2E |
+| Phase 14 | 图谱树状输出 | 将物种节点和进化边投影成可读树与 JSON | tree unit、CLI E2E |
 
 ## Phase 0：设计冻结与工程基线
 
@@ -493,3 +494,27 @@ E2E 场景：
 
 - 简单项目可以只创建一个结果库和几条路由策略就开始登记输出。
 - 复杂项目仍可按治理边界创建多个结果库，并用路由策略细分挂载。
+
+## Phase 14：图谱树状输出
+
+目标：让使用者不用读取原始 JSON，也能直观看到图谱中有哪些物种，以及物种之间的父子、融合和附加父关系。
+
+交付：
+
+- Core：`buildGraphTree`，把 `Graph`、`SpeciesNode[]`、`EvolutionEdge[]` 投影成稳定树结构。
+- Core：`formatGraphTreeText`，输出 CLI 可读文本树。
+- CLI：`dna graph tree --id <graph_id>`。
+- CLI：`dna graph tree --id <graph_id> --format json`。
+
+测试：
+
+- 多 root 节点按图谱 root 顺序输出。
+- 主父节点关系进入主树。
+- 多父节点/融合关系保留在 `additionalRelations`，避免误表达为单父结构。
+- 文本输出能显示物种名称、节点 ID、谱系状态和附加父关系。
+- JSON 输出保留 roots、relations、additionalRelations。
+
+验收：
+
+- 用户可以从 CLI 直接看出物种层级。
+- Agent 和后续 Web 工作台可以复用 JSON 结构做进一步可视化。

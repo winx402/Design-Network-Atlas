@@ -16,6 +16,8 @@ import {
   createGenerationJob,
   createImpactRecords,
   createReviewRecord,
+  formatGraphTreeText,
+  buildGraphTree,
   makeId,
   OutputReferenceRoleSchema,
   OutputReferenceTypeSchema,
@@ -179,6 +181,28 @@ graph.command("show").requiredOption("--id <graphId>", "graph id").action((optio
   console.log(JSON.stringify(value, null, 2));
   store.close();
 });
+graph
+  .command("tree")
+  .requiredOption("--id <graphId>", "graph id")
+  .option("--format <format>", "output format: text or json", "text")
+  .action((options, command) => {
+    const store = openStore(command);
+    const value = store.graphs.get(options.id);
+    if (!value) throw new Error(`graph not found: ${options.id}`);
+    const tree = buildGraphTree({
+      graph: value,
+      nodes: store.nodes.listByGraph(options.id),
+      edges: store.edges.listByGraph(options.id)
+    });
+    if (options.format === "json") {
+      console.log(JSON.stringify(tree, null, 2));
+    } else if (options.format === "text") {
+      process.stdout.write(formatGraphTreeText(tree));
+    } else {
+      throw new Error(`unknown graph tree format: ${options.format}`);
+    }
+    store.close();
+  });
 graph.command("archive").requiredOption("--id <graphId>", "graph id").action((options, command) => {
   const store = openStore(command);
   const value = store.graphs.get(options.id);
