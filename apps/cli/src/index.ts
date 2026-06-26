@@ -16,6 +16,7 @@ import {
   createImpactRecords,
   createReviewRecord,
   makeId,
+  PROJECT_VERSION,
   reviewNode,
   reviewPhenotypeVersion
 } from "@dna/core";
@@ -88,7 +89,7 @@ function parseTagMappings(values: string[] | undefined) {
 const program = new Command()
   .name("dna")
   .description("DNA: Design Network Atlas local CLI")
-  .version("0.1.0")
+  .version(PROJECT_VERSION)
   .option("--db <path>", "SQLite database path", ".dna/dna.sqlite")
   .option("--yes", "apply write operations without preview stop")
   .option("--mode <mode>", "write mode: preview-confirm, draft-write, changeset-apply", "preview-confirm");

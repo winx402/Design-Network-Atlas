@@ -17,6 +17,7 @@ import {
   Phenotype,
   PhenotypeLibrary,
   PhenotypeLibraryGraphBinding,
+  PROJECT_VERSION,
   PhenotypeVersion,
   ReviewRecord,
   SpeciesNode,
@@ -871,7 +872,7 @@ class SqliteChangeSetRepository implements ChangeSetRepository {
 
 export function exportProject(store: SqliteDnaStore, outDir: string): void {
   mkdirSync(outDir, { recursive: true });
-  writeFileSync(join(outDir, "dna.project.json"), JSON.stringify({ format: "dna.git-directory", version: "0.1.0" }, null, 2));
+  writeFileSync(join(outDir, "dna.project.json"), JSON.stringify({ format: "dna.git-directory", version: PROJECT_VERSION }, null, 2));
   mkdirSync(join(outDir, "templates"), { recursive: true });
   for (const pack of store.templates.listPacks()) writeJson(join(outDir, "templates", `${pack.templatePackId}.pack.json`), pack);
   for (const template of store.templates.listTemplates()) writeJson(join(outDir, "templates", `${template.templateId}.template.json`), template);

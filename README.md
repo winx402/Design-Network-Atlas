@@ -40,13 +40,13 @@ Key boundaries:
 
 ## Defaults First
 
-DNA should work with strong defaults before a team configures advanced policies.
+DNA should work with strong defaults before a team configures advanced policies. This rule applies across the whole system, not only asset/result storage.
 
 - A new graph should be usable with local SQLite storage and the Git-friendly exchange format.
 - The default asset setup should be one primary result library per design graph.
 - Different result types should usually be separated by storage mounts inside that library, not by creating many libraries.
 - Multiple result libraries are still supported for different governance boundaries, such as exploration, production, outsourcing, archive, or runtime export.
-- Advanced teams can add custom storage engines, adapter mappings, routing policies, review rules, and template packs without changing the core model.
+- Advanced teams can add custom storage engines, adapter mappings, routing policies, review rules, template packs, and generation providers without changing the core model.
 
 ## Monorepo Modules
 
@@ -156,12 +156,21 @@ The root `package.json` currently uses `private: true` to prevent accidental npm
 ## Development Checks
 
 ```bash
+pnpm version:check
 pnpm test
 pnpm typecheck
 pnpm e2e
 pnpm security:test
 pnpm docs:check
 ```
+
+## Versioning
+
+DNA uses three-segment numeric versions: `MAJOR.MINOR.PATCH`.
+
+Every push to the remote repository that changes tracked project files must include a version bump. Routine documentation or compatible fixes use a patch bump; compatible features use a minor bump; breaking schema, storage, CLI, import/export, or API changes use a major bump.
+
+The root package version, all workspace package versions, and `PROJECT_VERSION` must stay in sync. Run `pnpm version:check` before pushing.
 
 ## Maturity
 
@@ -215,13 +224,13 @@ SQLite / Git 目录 / 生成 provider / 素材库 adapter
 
 ## 默认优先
 
-DNA 应该先靠强默认值开箱即用，再允许团队做复杂配置。
+DNA 应该先靠强默认值开箱即用，再允许团队做复杂配置。这个规则适用于整个系统，不只适用于素材或结果存储。
 
 - 新图谱默认可以直接使用本地 SQLite 和 Git 友好目录交换格式。
 - 默认素材管理结构应该是一个设计图谱对应一个主结果库。
 - 不同类型的生成结果通常应该通过结果库下面的多个存储挂载来区分，而不是创建很多库。
 - 多结果库仍然保留给治理边界不同的场景，例如探索库、正式库、外包交付库、归档库或运行时导出库。
-- 高阶团队可以继续定制存储引擎、adapter 映射、路由策略、审查规则和模板包，但不需要改变核心模型。
+- 高阶团队可以继续定制存储引擎、adapter 映射、路由策略、审查规则、模板包和生成 provider，但不需要改变核心模型。
 
 ## Monorepo 模块
 
@@ -331,12 +340,21 @@ pnpm dna --help
 ## 开发检查
 
 ```bash
+pnpm version:check
 pnpm test
 pnpm typecheck
 pnpm e2e
 pnpm security:test
 pnpm docs:check
 ```
+
+## 版本规则
+
+DNA 使用三段数字版本号：`MAJOR.MINOR.PATCH`。
+
+每次向远端仓库 push 且包含 tracked 文件变更时，都必须升级版本。普通文档或兼容修复使用 patch；兼容的新能力使用 minor；破坏 schema、存储、CLI、导入导出或 API 的变化使用 major。
+
+根 package 版本、所有 workspace package 版本和 `PROJECT_VERSION` 必须保持一致。push 前运行 `pnpm version:check`。
 
 ## 成熟度
 

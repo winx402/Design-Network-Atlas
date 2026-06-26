@@ -12,6 +12,7 @@
 | --- | --- |
 | [系统技术设计](design/system-architecture.md) | DNA 完整系统应该如何分层、建模、存储、编译、审查和扩展 |
 | [阶段开发路线图](implementation/development-roadmap.md) | 如何把完整系统拆成多个可开发、可测试、可合并的阶段 |
+| [版本与发布规范](implementation/versioning-policy.md) | 默认优先原则、三段式版本号、远端 push 前的版本升级规则 |
 | [测试策略](testing/test-strategy.md) | 每类测试覆盖什么，如何证明每个阶段达到验收标准 |
 
 ## 当前实现边界

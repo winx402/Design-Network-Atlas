@@ -7,3 +7,4 @@ export * from "./provider.js";
 export * from "./status.js";
 export * from "./versioning.js";
 export * from "./change-set.js";
+export * from "./project-version.js";
