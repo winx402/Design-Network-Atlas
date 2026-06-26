@@ -10,6 +10,14 @@ DNA is a local-first TypeScript system for design genome graphs. It models reusa
 - Built-in starter template packs for game art visual assets and UI/icon assets.
 - Codex Skill wrapper guidance and an initial asset workbench UI skeleton.
 
+Current code is an early scaffold. The project must be completed by following the design-first staged plan below; the scaffold is not the final system.
+
+## Design and Development Plan
+
+- [System technical design](docs/design/system-architecture.md)
+- [Phase-by-phase development roadmap](docs/implementation/development-roadmap.md)
+- [Test strategy](docs/testing/test-strategy.md)
+
 ## Quick Start
 
 ```bash
