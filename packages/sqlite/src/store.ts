@@ -957,12 +957,18 @@ class SqliteChangeSetRepository implements ChangeSetRepository {
   get(changeSetId: string) {
     return parsePayload<ChangeSet>(this.store.db.prepare("SELECT payload FROM change_sets WHERE change_set_id = ?").get(changeSetId) as Row | undefined);
   }
+  list() {
+    return parseRows<ChangeSet>(
+      this.store.db.prepare("SELECT payload FROM change_sets ORDER BY created_at, change_set_id").all() as Row[]
+    );
+  }
 }
 
 export function exportProject(store: SqliteDnaStore, outDir: string): void {
   mkdirSync(outDir, { recursive: true });
   writeFileSync(join(outDir, "dna.project.json"), JSON.stringify({ format: "dna.git-directory", version: PROJECT_VERSION }, null, 2));
   mkdirSync(join(outDir, "templates"), { recursive: true });
+  for (const changeSet of store.changeSets.list()) writeJson(join(outDir, "change-sets", `${changeSet.changeSetId}.json`), changeSet);
   for (const pack of store.templates.listPacks()) writeJson(join(outDir, "templates", `${pack.templatePackId}.pack.json`), pack);
   for (const template of store.templates.listTemplates()) writeJson(join(outDir, "templates", `${template.templateId}.template.json`), template);
   for (const library of store.phenotypeLibraries.list()) {
@@ -1005,6 +1011,7 @@ export function exportProject(store: SqliteDnaStore, outDir: string): void {
 }
 
 export function importProject(store: SqliteDnaStore, inDir: string): void {
+  for (const file of listJsonFiles(join(inDir, "change-sets"))) store.changeSets.create(JSON.parse(readFileSync(file, "utf8")));
   for (const file of listJsonFiles(join(inDir, "templates"))) {
     const value = JSON.parse(readFileSync(file, "utf8"));
     if ("templateId" in value) store.templates.createTemplate(value);

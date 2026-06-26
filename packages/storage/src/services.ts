@@ -9,6 +9,7 @@ import {
   EvolutionEdge,
   Graph,
   markChangeSetApplied,
+  markChangeSetDiscarded,
   nowIso,
   resolveLineageStatus,
   SpeciesNode,
@@ -25,6 +26,22 @@ export interface WriteOptions {
 export interface ServiceResult<T> {
   value: T;
   changeSet: ChangeSet;
+}
+
+export interface ChangeSetFilter {
+  status?: ChangeSet["status"];
+  objectType?: string;
+}
+
+export interface ChangeSetReviewResult {
+  changeSetId: string;
+  objectType: string;
+  operation: ChangeSet["operation"];
+  status: "pass" | "needs-review" | "fail";
+  missingDimensions: string[];
+  constraintViolations: string[];
+  suggestedActions: string[];
+  previewSummary: string;
 }
 
 export interface CreateGraphInput {
@@ -179,6 +196,31 @@ export function createDnaServices(store: DnaServiceStore) {
         }
         return { value: { edge, edgeVersionId: version.edgeVersionId }, changeSet };
       }
+    },
+    changeSet: {
+      list(filter: ChangeSetFilter = {}): ChangeSet[] {
+        return store.changeSets.list().filter((changeSet) => {
+          if (filter.status && changeSet.status !== filter.status) return false;
+          if (filter.objectType && changeSet.objectType !== filter.objectType) return false;
+          return true;
+        });
+      },
+      get(changeSetId: string): ChangeSet | undefined {
+        return store.changeSets.get(changeSetId);
+      },
+      apply(changeSetId: string): ServiceResult<unknown> {
+        return applyChangeSet(store, requireExistingChangeSet(store, changeSetId));
+      },
+      discard(changeSetId: string): ChangeSet {
+        const existing = requireExistingChangeSet(store, changeSetId);
+        const discarded = markChangeSetDiscarded(existing);
+        store.changeSets.update(discarded);
+        return discarded;
+      },
+      review(changeSetId: string): ChangeSetReviewResult {
+        const existing = requireChangeSet(store, changeSetId);
+        return reviewChangeSet(store, existing);
+      }
     }
   };
 }
@@ -189,10 +231,70 @@ function shouldApply(options: WriteOptions): boolean {
 
 function requireExistingChangeSet(store: DnaServiceStore, changeSetId: string | undefined): ChangeSet {
   if (!changeSetId) throw new Error("change-set id is required for changeset-apply");
-  const existing = store.changeSets.get(changeSetId);
-  if (!existing) throw new Error(`change-set not found: ${changeSetId}`);
+  const existing = requireChangeSet(store, changeSetId);
   if (existing.status !== "preview") throw new Error(`change-set is not preview: ${changeSetId}`);
   return existing;
+}
+
+function requireChangeSet(store: DnaServiceStore, changeSetId: string | undefined): ChangeSet {
+  if (!changeSetId) throw new Error("change-set id is required");
+  const existing = store.changeSets.get(changeSetId);
+  if (!existing) throw new Error(`change-set not found: ${changeSetId}`);
+  return existing;
+}
+
+function applyChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ServiceResult<unknown> {
+  if (changeSet.objectType === "graph") return applyGraphChangeSet(store, changeSet);
+  if (changeSet.objectType === "node") return applyNodeChangeSet(store, changeSet);
+  if (changeSet.objectType === "edge") return applyEdgeChangeSet(store, changeSet);
+  throw new Error(`unsupported change-set object type: ${changeSet.objectType}`);
+}
+
+function reviewChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ChangeSetReviewResult {
+  const missingDimensions: string[] = [];
+  const constraintViolations: string[] = [];
+  const suggestedActions: string[] = [];
+  if (changeSet.status !== "preview") {
+    suggestedActions.push(`change-set is ${changeSet.status}; review is informational only`);
+  }
+  if (changeSet.objectType === "graph") {
+    const graph = changeSet.payload.graph as Graph | undefined;
+    if (!graph) constraintViolations.push("change-set payload missing graph");
+    if (graph && !graph.purpose) missingDimensions.push("graph.purpose");
+  } else if (changeSet.objectType === "node") {
+    const node = changeSet.payload.node as SpeciesNode | undefined;
+    if (!node) {
+      constraintViolations.push("change-set payload missing node");
+    } else {
+      if (!store.graphs.get(node.graphId)) constraintViolations.push(`graph not found: ${node.graphId}`);
+      if (!node.category) missingDimensions.push("node.category");
+      if (!node.level) missingDimensions.push("node.level");
+    }
+  } else if (changeSet.objectType === "edge") {
+    const edge = changeSet.payload.edge as EvolutionEdge | undefined;
+    if (!edge) {
+      constraintViolations.push("change-set payload missing edge");
+    } else {
+      if (!store.graphs.get(edge.graphId)) constraintViolations.push(`graph not found: ${edge.graphId}`);
+      if (!store.nodes.get(edge.fromNodeId)) constraintViolations.push(`source node not found: ${edge.fromNodeId}`);
+      if (!store.nodes.get(edge.toNodeId)) constraintViolations.push(`target node not found: ${edge.toNodeId}`);
+    }
+  } else {
+    suggestedActions.push(`manual review required for unsupported object type: ${changeSet.objectType}`);
+  }
+  if (missingDimensions.length === 0 && constraintViolations.length === 0) {
+    suggestedActions.push("change-set can be applied or discarded after human review");
+  }
+  return {
+    changeSetId: changeSet.changeSetId,
+    objectType: changeSet.objectType,
+    operation: changeSet.operation,
+    status: constraintViolations.length > 0 ? "fail" : missingDimensions.length > 0 ? "needs-review" : "pass",
+    missingDimensions,
+    constraintViolations,
+    suggestedActions,
+    previewSummary: changeSet.preview.summary
+  };
 }
 
 function applyGraphChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ServiceResult<Graph> {

@@ -277,7 +277,8 @@ export class InMemoryDnaStore implements DnaServiceStore {
     this.changeSets = {
       create: (changeSet) => this.state.changeSets.set(changeSet.changeSetId, changeSet),
       update: (changeSet) => this.state.changeSets.set(changeSet.changeSetId, changeSet),
-      get: (changeSetId) => this.state.changeSets.get(changeSetId)
+      get: (changeSetId) => this.state.changeSets.get(changeSetId),
+      list: () => [...this.state.changeSets.values()].sort((left, right) => left.createdAt.localeCompare(right.createdAt))
     };
   }
 

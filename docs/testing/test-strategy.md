@@ -1,6 +1,6 @@
 # DNA 测试策略
 
-状态：v0.4.1-active
+状态：v0.5.0-active
 最后审阅：2026-06-27
 来源级别：authoritative test strategy
 上游输入：[系统技术设计](../design/system-architecture.md)、[阶段开发路线图](../implementation/development-roadmap.md)
@@ -11,8 +11,8 @@
 - 测试必须覆盖该阶段交付边界，不能只覆盖 happy path。
 - 阶段测试通过只代表该阶段完成，不代表完整系统完成。
 - 基础完整系统只有在 Phase 11 全量验收通过后才能宣布完成。
-- Phase 12-15 属于本地优先系统的增强能力，必须单独声明、单独测试，不能反向修改 Phase 11 的完成口径。
-- 当前 v0.4.1 已按 Phase 15 验收口径完成；post-v1 能力必须单独声明，不能混入 v0.4.1 完成声明。
+- Phase 12-16 属于本地优先系统的增强能力，必须单独声明、单独测试，不能反向修改 Phase 11 的完成口径。
+- 当前 v0.5.0 已按 Phase 16 验收口径完成；post-v1 能力必须单独声明，不能混入 v0.5.0 完成声明。
 
 ## 2. 测试分层
 
@@ -47,6 +47,7 @@
 | Phase 13 | routing unit + SQLite + CLI E2E | 输出引用按策略路由到挂载，显式挂载优先 |
 | Phase 14 | graph tree unit + CLI E2E | 多 root、多父节点和附加关系输出清晰 |
 | Phase 15 | HTTP API + sync + provider baseline | API 可读本地数据，网页默认关闭，routing fallback/metadata 生效，generation jobs 可导入导出 |
+| Phase 16 | change-set review CLI E2E | preview change-set 可 list/show/review/apply/discard，并可导入导出 |
 
 ## 4. 关键测试数据
 
@@ -217,6 +218,17 @@
 - `library bind-graph` 后导出的 `library.json.graphIds` 与 binding 保持一致。
 - 旧库已经存在 binding 但 `library.graphIds` 为空时，重新执行 SQLite migration 后会自动回填，并且导出的 `library.json.graphIds` 不为空。
 
+### 5.16 Phase 16 ChangeSet Review Workflow Cases
+
+- preview create node 不写正式 node，但生成 preview change-set。
+- `changeset list --status preview` 能看到待审阅 change-set。
+- `changeset show <id>` 能展示 preview summary、diff 和 payload。
+- `changeset review <id>` 能输出 pass / needs-review / fail、缺失维度、约束问题和建议动作。
+- `changeset apply <id>` 会正式写入 graph/node/edge，并把 change-set 标记为 applied。
+- `changeset discard <id>` 会标记 discarded，且后续 apply 会失败。
+- `--mode changeset-apply --change-set <id>` 可在 graph/node/edge create 命令上引用既有 preview change-set，不要求重复 create 参数。
+- Git-friendly export/import 保留顶层 `change-sets/` 目录。
+
 ## 6. Golden 输出规则
 
 Golden tests 覆盖：
@@ -276,3 +288,5 @@ v0.1 作为历史基础边界，允许声明为“本地优先基础系统通过
 当前 v0.4 允许补充声明“本地 HTTP API、provider baseline、显式 sync、routing fallback/metadata 和 library graphIds 同步通过验收”。不得把它表述为“完整团队素材平台已完成”，因为生产 Web 客户端、团队账户权限、审批流、多人同步服务、缩略图服务和外部素材库实时同步仍属于后续阶段。
 
 当前 v0.4.1 允许补充声明“历史结果库 graphIds 迁移修复通过验收”。不得把它表述为“通用迁移框架已完成”，因为后续 schema 级升级、迁移版本表和跨存储迁移仍需要单独设计。
+
+当前 v0.5.0 允许补充声明“preview change-set 审阅确认闭环通过验收”。不得把它表述为“完整 proposal/batch 审批系统已完成”，因为多节点/多边命名 proposal、tree diff、Web 审批和团队权限仍属于后续阶段。

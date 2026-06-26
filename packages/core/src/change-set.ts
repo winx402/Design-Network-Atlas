@@ -36,3 +36,10 @@ export function markChangeSetApplied(changeSet: ChangeSet): ChangeSet {
     appliedAt: nowIso()
   };
 }
+
+export function markChangeSetDiscarded(changeSet: ChangeSet): ChangeSet {
+  return {
+    ...changeSet,
+    status: "discarded"
+  };
+}

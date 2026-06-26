@@ -164,6 +164,7 @@ export interface ChangeSetRepository {
   create(changeSet: ChangeSet): void;
   update(changeSet: ChangeSet): void;
   get(changeSetId: string): ChangeSet | undefined;
+  list(): ChangeSet[];
 }
 
 export * from "./memory.js";

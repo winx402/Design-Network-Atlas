@@ -1,6 +1,6 @@
 # DNA 分阶段开发路线图
 
-状态：v0.4.1-completed
+状态：v0.5.0-completed
 最后审阅：2026-06-27
 来源级别：authoritative implementation plan
 上游输入：[系统技术设计](../design/system-architecture.md)
@@ -16,7 +16,7 @@
 
 ## 当前状态
 
-Phase 0-15 已完成并由测试覆盖。本文件保留为历史执行计划、验收映射和 post-v1 拆分参照；后续新增能力必须继续落到明确阶段、测试和完成边界中。
+Phase 0-16 已完成并由测试覆盖。本文件保留为历史执行计划、验收映射和 post-v1 拆分参照；后续新增能力必须继续落到明确阶段、测试和完成边界中。
 
 ---
 
@@ -40,6 +40,7 @@ Phase 0-15 已完成并由测试覆盖。本文件保留为历史执行计划、
 | Phase 13 | 结果库路由策略 | 一个结果库下按类型/角色/标签自动选择存储挂载 | routing unit、SQLite、CLI E2E |
 | Phase 14 | 图谱树状输出 | 将物种节点和进化边投影成可读树与 JSON | tree unit、CLI E2E |
 | Phase 15 | 本地生产基线补齐 | HTTP API、显式 sync、provider job、routing fallback/metadata、library graphIds 同步 | API tests、CLI E2E、provider security |
+| Phase 16 | 审阅确认工作流 | ChangeSet 一等 CLI、review/apply/discard、导入导出待审阅草案 | CLI E2E、import/export |
 
 ## Phase 0：设计冻结与工程基线
 
@@ -554,3 +555,31 @@ E2E 场景：
 - 结果库路由策略字段不再只是 schema 预留字段。
 - library graph binding 和 library export 不再互相打架。
 - 团队账户、权限、审批、多人同步、完整 Web 客户端仍明确归入 post-v1。
+
+## Phase 16：审阅确认工作流
+
+目标：让“先生成草案、审阅确认后正式写入 DNA”成为本地 CLI 内的一等闭环，而不是只能依赖外部 Markdown 草稿。
+
+交付：
+
+- `dna changeset list --status preview --object-type node`
+- `dna changeset show <changeSetId>`
+- `dna changeset review <changeSetId>`
+- `dna changeset apply <changeSetId>`
+- `dna changeset discard <changeSetId>`
+- 全局 `--change-set <id>`，让 `--mode changeset-apply` 可以真正引用既有 preview change-set。
+- graph/node/edge create 在 `changeset-apply` 模式下不要求重复传入 create 参数。
+- Git-friendly export/import 增加顶层 `change-sets/`，让 pending change-sets 能进入代码审查或跨库迁移。
+
+测试：
+
+- CLI E2E 覆盖 preview node 不写正式 nodes，但产生 preview change-set。
+- CLI E2E 覆盖 list/show/review/apply/discard。
+- CLI E2E 覆盖 `--mode changeset-apply --change-set <id>` 不重复 create 参数也能 apply。
+- CLI E2E 覆盖 pending change-set 被 export/import 保留。
+
+验收：
+
+- 单个 graph/node/edge preview 可以被审阅、确认或废弃。
+- 用户可以先用 preview change-set 承载物种草案，再由人工决定是否 apply。
+- 多节点/多边 proposal/batch、tree diff 和团队审批仍是后续阶段，不混入 Phase 16 完成边界。

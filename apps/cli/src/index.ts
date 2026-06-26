@@ -37,6 +37,7 @@ type CommandOptions = {
   db?: string;
   yes?: boolean;
   mode?: "preview-confirm" | "draft-write" | "changeset-apply";
+  changeSet?: string;
 };
 
 function openStore(command: Command) {
@@ -56,8 +57,19 @@ function writeOptions(command: Command) {
   const options = command.optsWithGlobals<CommandOptions>();
   return {
     mode: options.mode ?? "preview-confirm",
-    apply: Boolean(options.yes)
+    apply: Boolean(options.yes),
+    changeSetId: options.changeSet
   };
+}
+
+function isChangeSetApply(command: Command) {
+  return command.optsWithGlobals<CommandOptions>().mode === "changeset-apply";
+}
+
+function requiredUnlessChangeSetApply<T>(value: T | undefined, optionName: string, command: Command): T | "" {
+  if (value !== undefined) return value;
+  if (isChangeSetApply(command)) return "";
+  throw new Error(`missing required option: ${optionName}`);
 }
 
 function preview(command: Command, summary: string, payload: unknown) {
@@ -149,14 +161,15 @@ const program = new Command()
   .version(PROJECT_VERSION)
   .option("--db <path>", "SQLite database path", ".dna/dna.sqlite")
   .option("--yes", "apply write operations without preview stop")
-  .option("--mode <mode>", "write mode: preview-confirm, draft-write, changeset-apply", "preview-confirm");
+  .option("--mode <mode>", "write mode: preview-confirm, draft-write, changeset-apply", "preview-confirm")
+  .option("--change-set <changeSetId>", "existing preview change-set id for --mode changeset-apply");
 
 const graph = program.command("graph").description("Manage design genome graphs");
 graph
   .command("create")
-  .requiredOption("--id <graphId>", "graph id")
-  .requiredOption("--name <name>", "graph name")
-  .requiredOption("--purpose <purpose>", "graph purpose")
+  .option("--id <graphId>", "graph id")
+  .option("--name <name>", "graph name")
+  .option("--purpose <purpose>", "graph purpose")
   .option("--status <status>", "graph status", "draft")
   .option("--template <templateId>", "template id to bind", collect, [])
   .action((options, command) => {
@@ -164,9 +177,9 @@ graph
     const services = createDnaServices(store);
     const result = services.graph.createGraph(
       {
-        graphId: options.id,
-        name: options.name,
-        purpose: options.purpose,
+        graphId: requiredUnlessChangeSetApply(options.id, "--id", command),
+        name: requiredUnlessChangeSetApply(options.name, "--name", command),
+        purpose: requiredUnlessChangeSetApply(options.purpose, "--purpose", command),
         status: options.status,
         templateIds: options.template
       },
@@ -243,9 +256,9 @@ template.command("list").action((_options, command) => {
 const node = program.command("node").description("Manage species nodes");
 node
   .command("create")
-  .requiredOption("--graph <graphId>", "graph id")
-  .requiredOption("--id <nodeId>", "node id")
-  .requiredOption("--name <name>", "node name")
+  .option("--graph <graphId>", "graph id")
+  .option("--id <nodeId>", "node id")
+  .option("--name <name>", "node name")
   .option("--category <category>", "category", "uncategorized")
   .option("--level <level>", "level", "species")
   .option("--parent <nodeId>", "parent node ids", collect, [])
@@ -262,9 +275,9 @@ node
     const services = createDnaServices(store);
     const result = services.lineage.createNode(
       {
-        graphId: options.graph,
-        nodeId: options.id,
-        name: options.name,
+        graphId: requiredUnlessChangeSetApply(options.graph, "--graph", command),
+        nodeId: requiredUnlessChangeSetApply(options.id, "--id", command),
+        name: requiredUnlessChangeSetApply(options.name, "--name", command),
         category: options.category,
         level: options.level,
         parentNodes,
@@ -304,10 +317,10 @@ node.command("versions").requiredOption("--id <nodeId>", "node id").action((opti
 const edge = program.command("edge").description("Manage evolution edges");
 edge
   .command("create")
-  .requiredOption("--graph <graphId>", "graph id")
-  .requiredOption("--id <edgeId>", "edge id")
-  .requiredOption("--from <nodeId>", "source node")
-  .requiredOption("--to <nodeId>", "target node")
+  .option("--graph <graphId>", "graph id")
+  .option("--id <edgeId>", "edge id")
+  .option("--from <nodeId>", "source node")
+  .option("--to <nodeId>", "target node")
   .option("--type <edgeType>", "edge type", "inherit")
   .option("--direction <direction>", "direction", "inherits visual identity")
   .option("--operation <operation>", "operation", "merge")
@@ -320,10 +333,10 @@ edge
     const services = createDnaServices(store);
     const result = services.lineage.createEdge(
       {
-        graphId: options.graph,
-        edgeId: options.id,
-        fromNodeId: options.from,
-        toNodeId: options.to,
+        graphId: requiredUnlessChangeSetApply(options.graph, "--graph", command),
+        edgeId: requiredUnlessChangeSetApply(options.id, "--id", command),
+        fromNodeId: requiredUnlessChangeSetApply(options.from, "--from", command),
+        toNodeId: requiredUnlessChangeSetApply(options.to, "--to", command),
         edgeType: options.type,
         direction: options.direction,
         operation: options.operation,
@@ -870,6 +883,61 @@ impact.command("list").requiredOption("--type <objectType>", "node or edge").req
   console.log(JSON.stringify(store.impacts.listByChangedObject(options.type, options.id), null, 2));
   store.close();
 });
+
+const changeSet = program.command("changeset").alias("changesets").description("Review and manage preview change-sets");
+changeSet
+  .command("list")
+  .option("--status <status>", "filter by status: preview, applied, discarded")
+  .option("--object-type <objectType>", "filter by object type")
+  .action((options, command) => {
+    const store = openStore(command);
+    const services = createDnaServices(store);
+    console.log(JSON.stringify(services.changeSet.list({ status: options.status, objectType: options.objectType }), null, 2));
+    store.close();
+  });
+changeSet
+  .command("show")
+  .argument("<changeSetId>", "change-set id")
+  .action((changeSetId, _options, command) => {
+    const store = openStore(command);
+    const services = createDnaServices(store);
+    const value = services.changeSet.get(changeSetId);
+    if (!value) {
+      store.close();
+      throw new Error(`change-set not found: ${changeSetId}`);
+    }
+    console.log(JSON.stringify(value, null, 2));
+    store.close();
+  });
+changeSet
+  .command("apply")
+  .argument("<changeSetId>", "change-set id")
+  .action((changeSetId, _options, command) => {
+    const store = openStore(command);
+    const services = createDnaServices(store);
+    const result = services.changeSet.apply(changeSetId);
+    console.log(JSON.stringify(result, null, 2));
+    store.close();
+  });
+changeSet
+  .command("discard")
+  .argument("<changeSetId>", "change-set id")
+  .action((changeSetId, _options, command) => {
+    const store = openStore(command);
+    const services = createDnaServices(store);
+    const discarded = services.changeSet.discard(changeSetId);
+    console.log(JSON.stringify(discarded, null, 2));
+    store.close();
+  });
+changeSet
+  .command("review")
+  .argument("<changeSetId>", "change-set id")
+  .action((changeSetId, _options, command) => {
+    const store = openStore(command);
+    const services = createDnaServices(store);
+    console.log(JSON.stringify(services.changeSet.review(changeSetId), null, 2));
+    store.close();
+  });
 
 const provider = program.command("provider").description("Run generation providers and inspect generation jobs");
 provider
