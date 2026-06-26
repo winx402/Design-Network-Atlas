@@ -26,6 +26,16 @@ DNA: Design Network Atlas 是一套本地优先、可扩展、可版本化的设
 
 DNA 的核心对象是图谱和谱系，不是二进制文件仓库。生成结果通过 `OutputReference` 和 `AssetIndex` 保存位置和元数据，文件本体由用户指定的 Git、NAS、Eagle、Figma、数据库、对象存储、引擎导出目录或其他外部存储负责。`PhenotypeLibrary` 是可选的统一目录层，可以和多个图谱多对多绑定，也可以完全不用。
 
+### 2.1 默认优先
+
+DNA 的产品原则是默认优先，而不是要求使用者先配置完整体系：
+
+- 默认创建图谱后即可使用本地 SQLite、内置模板包和 Git 友好目录交换格式。
+- 默认素材管理结构是一个图谱对应一个主 `PhenotypeLibrary`。
+- 多种生成结果类型优先通过同一个结果库下的多个 `StorageMount` 承载。
+- 多个 `PhenotypeLibrary` 只用于治理边界不同的场景，例如探索库、正式库、外包交付库、归档库、运行时导出库。
+- 高阶用户可以定制存储引擎、外部库字段映射、输出路由策略、审查规则、模板包和生成 provider。
+
 ## 3. 分层架构
 
 ### 3.1 包结构
@@ -100,7 +110,7 @@ PhenotypeVersion
 | `EvolutionEdge` | `edgeId` | `EdgeVersion` | 父节点到子节点的演化关系 |
 | `Phenotype` | `phenotypeId` | `PhenotypeVersion` | 物种在任务中的结果对象 |
 | `OutputReference` | `outputReferenceId` | 无独立版本 | 表型版本的输出位置，可不绑定表型库 |
-| `PhenotypeLibrary` | `libraryId` | 无独立版本 | 可选表型目录，和图谱多对多绑定 |
+| `PhenotypeLibrary` | `libraryId` | 无独立版本 | 可选结果目录；默认一个图谱一个主库，高级场景可多对多绑定 |
 | `StorageMount` | `mountId` | 无独立版本 | 表型库对外部存储介质的挂载 |
 | `PhenotypeLibraryGraphBinding` | `bindingId` | 无独立版本 | 表型库和图谱的绑定关系 |
 | `ExternalLibraryMapping` | `mappingId` | 无独立版本 | Eagle/NAS/DB 等外部库字段与 DNA 字段的兼容映射 |
@@ -194,6 +204,19 @@ v0.1 必须实现：
 ### 7.1 运行存储
 
 默认运行存储为 SQLite。业务层只依赖 repository ports，不依赖 SQLite 方言。
+
+结果库和存储挂载的默认关系：
+
+```text
+Graph
+  └─ primary PhenotypeLibrary
+       ├─ StorageMount: browse/search library
+       ├─ StorageMount: source or raw asset storage
+       ├─ StorageMount: runtime export target
+       └─ StorageMount: prompt/brief/document storage
+```
+
+默认策略是先使用一个主结果库管理同一图谱的生成结果，再通过不同 `StorageMount` 适配 Eagle、Git、NAS、数据库、对象存储、Figma 或引擎导出目录。多结果库是权限、生命周期、团队协作或交付边界不同的时候使用的高级结构。
 
 核心表：
 
