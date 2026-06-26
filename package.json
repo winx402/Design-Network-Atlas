@@ -1,0 +1,22 @@
+{
+  "name": "dna-design-network-atlas",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.7.0",
+  "scripts": {
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "dna": "tsx apps/cli/src/index.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.4",
+    "@vitejs/plugin-react": "^4.3.4",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3",
+    "vite": "^6.0.7",
+    "vitest": "^3.2.4"
+  }
+}

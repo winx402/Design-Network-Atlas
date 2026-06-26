@@ -1,0 +1,19 @@
+{
+  "name": "@dna/server",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@dna/core": "workspace:*",
+    "@dna/sqlite": "workspace:*"
+  }
+}
