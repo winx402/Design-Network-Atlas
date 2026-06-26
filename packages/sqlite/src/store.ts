@@ -1,4 +1,4 @@
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import {
@@ -7,15 +7,20 @@ import {
   createImpactRecord,
   EdgeVersion,
   EvolutionEdge,
+  ExternalLibraryMapping,
   GeneTemplate,
   GenerationJob,
   Graph,
   ImpactRecord,
   NodeVersion,
+  OutputReference,
   Phenotype,
+  PhenotypeLibrary,
+  PhenotypeLibraryGraphBinding,
   PhenotypeVersion,
   ReviewRecord,
   SpeciesNode,
+  StorageMount,
   TemplatePack
 } from "@dna/core";
 import {
@@ -23,15 +28,20 @@ import {
   ChangeSetRepository,
   EdgeRepository,
   EdgeVersionRepository,
+  ExternalLibraryMappingRepository,
   GenerationJobRepository,
   GraphRepository,
   ImpactRepository,
   LineageRepository,
   NodeVersionRepository,
+  OutputReferenceRepository,
   PhenotypeRepository,
+  PhenotypeLibraryGraphBindingRepository,
+  PhenotypeLibraryRepository,
   PhenotypeVersionRepository,
   ReviewRepository,
   SearchRepository,
+  StorageMountRepository,
   StorageEngine,
   TemplateRepository
 } from "@dna/storage";
@@ -48,6 +58,26 @@ function parseRows<T>(rows: Row[]): T[] {
   return rows.map((row) => parsePayload<T>(row)).filter((value): value is T => Boolean(value));
 }
 
+function sortOutputReferences(references: OutputReference[]): OutputReference[] {
+  const rolePriority: Record<string, number> = {
+    "primary-output": 0,
+    preview: 1,
+    candidate: 2,
+    source: 3,
+    reference: 4,
+    "review-material": 5,
+    "runtime-export": 6,
+    "negative-example": 7
+  };
+  return references.sort((left, right) => {
+    const byRole = (rolePriority[left.role] ?? 99) - (rolePriority[right.role] ?? 99);
+    if (byRole !== 0) return byRole;
+    const byCreatedAt = left.createdAt.localeCompare(right.createdAt);
+    if (byCreatedAt !== 0) return byCreatedAt;
+    return left.outputReferenceId.localeCompare(right.outputReferenceId);
+  });
+}
+
 export class SqliteDnaStore implements StorageEngine {
   readonly db: DatabaseSync;
   readonly graphs: GraphRepository;
@@ -59,6 +89,11 @@ export class SqliteDnaStore implements StorageEngine {
   readonly phenotypes: PhenotypeRepository;
   readonly phenotypeVersions: PhenotypeVersionRepository;
   readonly assets: AssetRepository;
+  readonly outputReferences: OutputReferenceRepository;
+  readonly phenotypeLibraries: PhenotypeLibraryRepository;
+  readonly storageMounts: StorageMountRepository;
+  readonly phenotypeLibraryGraphBindings: PhenotypeLibraryGraphBindingRepository;
+  readonly externalLibraryMappings: ExternalLibraryMappingRepository;
   readonly generationJobs: GenerationJobRepository;
   readonly reviews: ReviewRepository;
   readonly impacts: ImpactRepository;
@@ -78,6 +113,11 @@ export class SqliteDnaStore implements StorageEngine {
     this.phenotypes = new SqlitePhenotypeRepository(this);
     this.phenotypeVersions = new SqlitePhenotypeVersionRepository(this);
     this.assets = new SqliteAssetRepository(this);
+    this.outputReferences = new SqliteOutputReferenceRepository(this);
+    this.phenotypeLibraries = new SqlitePhenotypeLibraryRepository(this);
+    this.storageMounts = new SqliteStorageMountRepository(this);
+    this.phenotypeLibraryGraphBindings = new SqlitePhenotypeLibraryGraphBindingRepository(this);
+    this.externalLibraryMappings = new SqliteExternalLibraryMappingRepository(this);
     this.generationJobs = new SqliteGenerationJobRepository(this);
     this.reviews = new SqliteReviewRepository(this);
     this.impacts = new SqliteImpactRepository(this);
@@ -198,6 +238,57 @@ export class SqliteDnaStore implements StorageEngine {
         linked_object_id TEXT NOT NULL,
         status TEXT NOT NULL,
         tags TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS output_references (
+        output_reference_id TEXT PRIMARY KEY,
+        graph_id TEXT NOT NULL,
+        phenotype_version_id TEXT NOT NULL,
+        library_id TEXT,
+        status TEXT NOT NULL,
+        tags TEXT NOT NULL,
+        normalized_tags TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS phenotype_libraries (
+        library_id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        profile TEXT NOT NULL,
+        status TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS storage_mounts (
+        mount_id TEXT PRIMARY KEY,
+        library_id TEXT NOT NULL,
+        storage_type TEXT NOT NULL,
+        adapter_kind TEXT NOT NULL,
+        status TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS phenotype_library_graph_bindings (
+        binding_id TEXT PRIMARY KEY,
+        library_id TEXT NOT NULL,
+        graph_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        status TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS external_library_mappings (
+        mapping_id TEXT PRIMARY KEY,
+        library_id TEXT NOT NULL,
+        mount_id TEXT NOT NULL,
+        adapter_id TEXT NOT NULL,
+        status TEXT NOT NULL,
         payload TEXT NOT NULL,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
@@ -481,6 +572,221 @@ class SqliteAssetRepository implements AssetRepository {
   }
 }
 
+class SqliteOutputReferenceRepository implements OutputReferenceRepository {
+  constructor(private readonly store: SqliteDnaStore) {}
+  create(reference: OutputReference) {
+    this.store.db
+      .prepare(
+        "INSERT INTO output_references (output_reference_id, graph_id, phenotype_version_id, library_id, status, tags, normalized_tags, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      )
+      .run(
+        reference.outputReferenceId,
+        reference.graphId,
+        reference.phenotypeVersionId,
+        reference.libraryId ?? null,
+        reference.status,
+        JSON.stringify(reference.tags),
+        JSON.stringify(reference.normalizedTags),
+        JSON.stringify(reference),
+        reference.createdAt,
+        reference.updatedAt
+      );
+  }
+  update(reference: OutputReference) {
+    this.store.db
+      .prepare(
+        "UPDATE output_references SET library_id = ?, status = ?, tags = ?, normalized_tags = ?, payload = ?, updated_at = ? WHERE output_reference_id = ?"
+      )
+      .run(
+        reference.libraryId ?? null,
+        reference.status,
+        JSON.stringify(reference.tags),
+        JSON.stringify(reference.normalizedTags),
+        JSON.stringify(reference),
+        reference.updatedAt,
+        reference.outputReferenceId
+      );
+  }
+  get(outputReferenceId: string) {
+    return parsePayload<OutputReference>(
+      this.store.db.prepare("SELECT payload FROM output_references WHERE output_reference_id = ?").get(outputReferenceId) as
+        | Row
+        | undefined
+    );
+  }
+  listByPhenotypeVersion(phenotypeVersionId: string) {
+    return sortOutputReferences(
+      parseRows<OutputReference>(
+        this.store.db
+          .prepare("SELECT payload FROM output_references WHERE phenotype_version_id = ? ORDER BY created_at, output_reference_id")
+          .all(phenotypeVersionId) as Row[]
+      )
+    );
+  }
+  listByGraph(graphId: string) {
+    return sortOutputReferences(
+      parseRows<OutputReference>(
+        this.store.db.prepare("SELECT payload FROM output_references WHERE graph_id = ? ORDER BY created_at, output_reference_id").all(graphId) as Row[]
+      )
+    );
+  }
+  search(filter: { graphId?: string; phenotypeVersionId?: string; libraryId?: string; tag?: string; status?: string }) {
+    let references = parseRows<OutputReference>(
+      this.store.db.prepare("SELECT payload FROM output_references ORDER BY created_at, output_reference_id").all() as Row[]
+    );
+    if (filter.graphId) references = references.filter((reference) => reference.graphId === filter.graphId);
+    if (filter.phenotypeVersionId) {
+      references = references.filter((reference) => reference.phenotypeVersionId === filter.phenotypeVersionId);
+    }
+    if (filter.libraryId) references = references.filter((reference) => reference.libraryId === filter.libraryId);
+    if (filter.status) references = references.filter((reference) => reference.status === filter.status);
+    if (filter.tag) {
+      references = references.filter(
+        (reference) => reference.tags.includes(filter.tag!) || reference.normalizedTags.includes(filter.tag!)
+      );
+    }
+    return sortOutputReferences(references);
+  }
+}
+
+class SqlitePhenotypeLibraryRepository implements PhenotypeLibraryRepository {
+  constructor(private readonly store: SqliteDnaStore) {}
+  create(library: PhenotypeLibrary) {
+    this.store.db
+      .prepare("INSERT INTO phenotype_libraries (library_id, name, profile, status, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run(library.libraryId, library.name, library.profile, library.status, JSON.stringify(library), library.createdAt, library.updatedAt);
+  }
+  update(library: PhenotypeLibrary) {
+    this.store.db
+      .prepare("UPDATE phenotype_libraries SET name = ?, profile = ?, status = ?, payload = ?, updated_at = ? WHERE library_id = ?")
+      .run(library.name, library.profile, library.status, JSON.stringify(library), library.updatedAt, library.libraryId);
+  }
+  get(libraryId: string) {
+    return parsePayload<PhenotypeLibrary>(
+      this.store.db.prepare("SELECT payload FROM phenotype_libraries WHERE library_id = ?").get(libraryId) as Row | undefined
+    );
+  }
+  list() {
+    return parseRows<PhenotypeLibrary>(
+      this.store.db.prepare("SELECT payload FROM phenotype_libraries ORDER BY created_at, library_id").all() as Row[]
+    );
+  }
+}
+
+class SqliteStorageMountRepository implements StorageMountRepository {
+  constructor(private readonly store: SqliteDnaStore) {}
+  create(mount: StorageMount) {
+    this.store.db
+      .prepare(
+        "INSERT INTO storage_mounts (mount_id, library_id, storage_type, adapter_kind, status, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+      )
+      .run(
+        mount.mountId,
+        mount.libraryId,
+        mount.storageType,
+        mount.adapterKind,
+        mount.status,
+        JSON.stringify(mount),
+        mount.createdAt,
+        mount.updatedAt
+      );
+  }
+  update(mount: StorageMount) {
+    this.store.db
+      .prepare("UPDATE storage_mounts SET storage_type = ?, adapter_kind = ?, status = ?, payload = ?, updated_at = ? WHERE mount_id = ?")
+      .run(mount.storageType, mount.adapterKind, mount.status, JSON.stringify(mount), mount.updatedAt, mount.mountId);
+  }
+  get(mountId: string) {
+    return parsePayload<StorageMount>(this.store.db.prepare("SELECT payload FROM storage_mounts WHERE mount_id = ?").get(mountId) as Row | undefined);
+  }
+  listByLibrary(libraryId: string) {
+    return parseRows<StorageMount>(
+      this.store.db.prepare("SELECT payload FROM storage_mounts WHERE library_id = ? ORDER BY created_at, mount_id").all(libraryId) as Row[]
+    );
+  }
+}
+
+class SqlitePhenotypeLibraryGraphBindingRepository implements PhenotypeLibraryGraphBindingRepository {
+  constructor(private readonly store: SqliteDnaStore) {}
+  create(binding: PhenotypeLibraryGraphBinding) {
+    this.store.db
+      .prepare(
+        "INSERT INTO phenotype_library_graph_bindings (binding_id, library_id, graph_id, role, status, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+      )
+      .run(
+        binding.bindingId,
+        binding.libraryId,
+        binding.graphId,
+        binding.role,
+        binding.status,
+        JSON.stringify(binding),
+        binding.createdAt,
+        binding.updatedAt
+      );
+  }
+  update(binding: PhenotypeLibraryGraphBinding) {
+    this.store.db
+      .prepare("UPDATE phenotype_library_graph_bindings SET role = ?, status = ?, payload = ?, updated_at = ? WHERE binding_id = ?")
+      .run(binding.role, binding.status, JSON.stringify(binding), binding.updatedAt, binding.bindingId);
+  }
+  get(bindingId: string) {
+    return parsePayload<PhenotypeLibraryGraphBinding>(
+      this.store.db.prepare("SELECT payload FROM phenotype_library_graph_bindings WHERE binding_id = ?").get(bindingId) as Row | undefined
+    );
+  }
+  listByGraph(graphId: string) {
+    return parseRows<PhenotypeLibraryGraphBinding>(
+      this.store.db
+        .prepare("SELECT payload FROM phenotype_library_graph_bindings WHERE graph_id = ? ORDER BY created_at, binding_id")
+        .all(graphId) as Row[]
+    );
+  }
+  listByLibrary(libraryId: string) {
+    return parseRows<PhenotypeLibraryGraphBinding>(
+      this.store.db
+        .prepare("SELECT payload FROM phenotype_library_graph_bindings WHERE library_id = ? ORDER BY graph_id, binding_id")
+        .all(libraryId) as Row[]
+    );
+  }
+}
+
+class SqliteExternalLibraryMappingRepository implements ExternalLibraryMappingRepository {
+  constructor(private readonly store: SqliteDnaStore) {}
+  create(mapping: ExternalLibraryMapping) {
+    this.store.db
+      .prepare(
+        "INSERT INTO external_library_mappings (mapping_id, library_id, mount_id, adapter_id, status, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+      )
+      .run(
+        mapping.mappingId,
+        mapping.libraryId,
+        mapping.mountId,
+        mapping.adapterId,
+        mapping.status,
+        JSON.stringify(mapping),
+        mapping.createdAt,
+        mapping.updatedAt
+      );
+  }
+  update(mapping: ExternalLibraryMapping) {
+    this.store.db
+      .prepare("UPDATE external_library_mappings SET status = ?, payload = ?, updated_at = ? WHERE mapping_id = ?")
+      .run(mapping.status, JSON.stringify(mapping), mapping.updatedAt, mapping.mappingId);
+  }
+  get(mappingId: string) {
+    return parsePayload<ExternalLibraryMapping>(
+      this.store.db.prepare("SELECT payload FROM external_library_mappings WHERE mapping_id = ?").get(mappingId) as Row | undefined
+    );
+  }
+  listByLibrary(libraryId: string) {
+    return parseRows<ExternalLibraryMapping>(
+      this.store.db
+        .prepare("SELECT payload FROM external_library_mappings WHERE library_id = ? ORDER BY created_at, mapping_id")
+        .all(libraryId) as Row[]
+    );
+  }
+}
+
 class SqliteGenerationJobRepository implements GenerationJobRepository {
   constructor(private readonly store: SqliteDnaStore) {}
   create(job: GenerationJob) {
@@ -569,6 +875,19 @@ export function exportProject(store: SqliteDnaStore, outDir: string): void {
   mkdirSync(join(outDir, "templates"), { recursive: true });
   for (const pack of store.templates.listPacks()) writeJson(join(outDir, "templates", `${pack.templatePackId}.pack.json`), pack);
   for (const template of store.templates.listTemplates()) writeJson(join(outDir, "templates", `${template.templateId}.template.json`), template);
+  for (const library of store.phenotypeLibraries.list()) {
+    const libraryDir = join(outDir, "libraries", library.libraryId);
+    writeJson(join(libraryDir, "library.json"), library);
+    for (const mount of store.storageMounts.listByLibrary(library.libraryId)) {
+      writeJson(join(libraryDir, "mounts", `${mount.mountId}.json`), mount);
+    }
+    for (const binding of store.phenotypeLibraryGraphBindings.listByLibrary(library.libraryId)) {
+      writeJson(join(libraryDir, "bindings", `${binding.bindingId}.json`), binding);
+    }
+    for (const mapping of store.externalLibraryMappings.listByLibrary(library.libraryId)) {
+      writeJson(join(libraryDir, "mappings", `${mapping.mappingId}.json`), mapping);
+    }
+  }
   for (const graph of store.graphs.list()) {
     const graphDir = join(outDir, "graphs", graph.graphId);
     writeJson(join(graphDir, "graph.json"), graph);
@@ -581,6 +900,9 @@ export function exportProject(store: SqliteDnaStore, outDir: string): void {
       }
     }
     for (const asset of store.assets.search({ graphId: graph.graphId })) writeJson(join(graphDir, "assets", `${asset.assetId}.json`), asset);
+    for (const reference of store.outputReferences.listByGraph(graph.graphId)) {
+      writeJson(join(graphDir, "output-references", `${reference.outputReferenceId}.json`), reference);
+    }
     for (const record of store.reviews.listByGraph(graph.graphId)) writeJson(join(graphDir, "reviews", `${record.reviewRecordId}.json`), record);
     for (const record of store.impacts.listByGraph(graph.graphId)) writeJson(join(graphDir, "impacts", `${record.impactRecordId}.json`), record);
   }
@@ -591,6 +913,17 @@ export function importProject(store: SqliteDnaStore, inDir: string): void {
     const value = JSON.parse(readFileSync(file, "utf8"));
     if ("templateId" in value) store.templates.createTemplate(value);
     else if ("templatePackId" in value) store.templates.createPack(value);
+  }
+  for (const libraryDir of safeReadDirs(join(inDir, "libraries"))) {
+    const library = readJsonIfExists<PhenotypeLibrary>(join(libraryDir, "library.json"));
+    if (library) store.phenotypeLibraries.create(library);
+    for (const file of listJsonFiles(join(libraryDir, "mounts"))) store.storageMounts.create(JSON.parse(readFileSync(file, "utf8")));
+    for (const file of listJsonFiles(join(libraryDir, "bindings"))) {
+      store.phenotypeLibraryGraphBindings.create(JSON.parse(readFileSync(file, "utf8")));
+    }
+    for (const file of listJsonFiles(join(libraryDir, "mappings"))) {
+      store.externalLibraryMappings.create(JSON.parse(readFileSync(file, "utf8")));
+    }
   }
   for (const graphDir of safeReadDirs(join(inDir, "graphs"))) {
     const graph = JSON.parse(readFileSync(join(graphDir, "graph.json"), "utf8")) as Graph;
@@ -603,6 +936,9 @@ export function importProject(store: SqliteDnaStore, inDir: string): void {
       else store.phenotypes.create(value);
     }
     for (const file of listJsonFiles(join(graphDir, "assets"))) store.assets.create(JSON.parse(readFileSync(file, "utf8")));
+    for (const file of listJsonFiles(join(graphDir, "output-references"))) {
+      store.outputReferences.create(JSON.parse(readFileSync(file, "utf8")));
+    }
     for (const file of listJsonFiles(join(graphDir, "reviews"))) store.reviews.create(JSON.parse(readFileSync(file, "utf8")));
     for (const file of listJsonFiles(join(graphDir, "impacts"))) store.impacts.create(JSON.parse(readFileSync(file, "utf8")));
   }
@@ -611,6 +947,11 @@ export function importProject(store: SqliteDnaStore, inDir: string): void {
 function writeJson(path: string, value: unknown) {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function readJsonIfExists<T>(path: string): T | undefined {
+  if (!existsSync(path)) return undefined;
+  return JSON.parse(readFileSync(path, "utf8")) as T;
 }
 
 function safeReadDirs(path: string) {

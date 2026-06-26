@@ -94,6 +94,62 @@ export const assets = sqliteTable("assets", {
   updatedAt: text("updated_at").notNull()
 });
 
+export const outputReferences = sqliteTable("output_references", {
+  outputReferenceId: text("output_reference_id").primaryKey(),
+  graphId: text("graph_id").notNull(),
+  phenotypeVersionId: text("phenotype_version_id").notNull(),
+  libraryId: text("library_id"),
+  status: text("status").notNull(),
+  tags: text("tags", { mode: "json" }).notNull(),
+  normalizedTags: text("normalized_tags", { mode: "json" }).notNull(),
+  payload: text("payload", { mode: "json" }).notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull()
+});
+
+export const phenotypeLibraries = sqliteTable("phenotype_libraries", {
+  libraryId: text("library_id").primaryKey(),
+  name: text("name").notNull(),
+  profile: text("profile").notNull(),
+  status: text("status").notNull(),
+  payload: text("payload", { mode: "json" }).notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull()
+});
+
+export const storageMounts = sqliteTable("storage_mounts", {
+  mountId: text("mount_id").primaryKey(),
+  libraryId: text("library_id").notNull(),
+  storageType: text("storage_type").notNull(),
+  adapterKind: text("adapter_kind").notNull(),
+  status: text("status").notNull(),
+  payload: text("payload", { mode: "json" }).notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull()
+});
+
+export const phenotypeLibraryGraphBindings = sqliteTable("phenotype_library_graph_bindings", {
+  bindingId: text("binding_id").primaryKey(),
+  libraryId: text("library_id").notNull(),
+  graphId: text("graph_id").notNull(),
+  role: text("role").notNull(),
+  status: text("status").notNull(),
+  payload: text("payload", { mode: "json" }).notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull()
+});
+
+export const externalLibraryMappings = sqliteTable("external_library_mappings", {
+  mappingId: text("mapping_id").primaryKey(),
+  libraryId: text("library_id").notNull(),
+  mountId: text("mount_id").notNull(),
+  adapterId: text("adapter_id").notNull(),
+  status: text("status").notNull(),
+  payload: text("payload", { mode: "json" }).notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull()
+});
+
 export const reviewRecords = sqliteTable("review_records", {
   reviewRecordId: text("review_record_id").primaryKey(),
   graphId: text("graph_id").notNull(),

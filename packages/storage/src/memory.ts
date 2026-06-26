@@ -3,15 +3,20 @@ import {
   ChangeSet,
   EvolutionEdge,
   EdgeVersion,
+  ExternalLibraryMapping,
   GeneTemplate,
   GenerationJob,
   Graph,
   ImpactRecord,
   NodeVersion,
+  OutputReference,
   Phenotype,
+  PhenotypeLibrary,
+  PhenotypeLibraryGraphBinding,
   PhenotypeVersion,
   ReviewRecord,
   SpeciesNode,
+  StorageMount,
   TemplatePack
 } from "@dna/core";
 import {
@@ -19,15 +24,20 @@ import {
   ChangeSetRepository,
   EdgeRepository,
   EdgeVersionRepository,
+  ExternalLibraryMappingRepository,
   GenerationJobRepository,
   GraphRepository,
   ImpactRepository,
   LineageRepository,
   NodeVersionRepository,
+  OutputReferenceRepository,
   PhenotypeRepository,
+  PhenotypeLibraryGraphBindingRepository,
+  PhenotypeLibraryRepository,
   PhenotypeVersionRepository,
   ReviewRepository,
   SearchRepository,
+  StorageMountRepository,
   StorageEngine,
   TemplateRepository
 } from "./index.js";
@@ -42,6 +52,11 @@ export interface DnaServiceStore extends StorageEngine {
   phenotypes: PhenotypeRepository;
   phenotypeVersions: PhenotypeVersionRepository;
   assets: AssetRepository;
+  outputReferences: OutputReferenceRepository;
+  phenotypeLibraries: PhenotypeLibraryRepository;
+  storageMounts: StorageMountRepository;
+  phenotypeLibraryGraphBindings: PhenotypeLibraryGraphBindingRepository;
+  externalLibraryMappings: ExternalLibraryMappingRepository;
   generationJobs: GenerationJobRepository;
   reviews: ReviewRepository;
   impacts: ImpactRepository;
@@ -64,6 +79,11 @@ interface MemoryState {
   phenotypes: Map<string, Phenotype>;
   phenotypeVersions: Map<string, PhenotypeVersion>;
   assets: Map<string, AssetIndex>;
+  outputReferences: Map<string, OutputReference>;
+  phenotypeLibraries: Map<string, PhenotypeLibrary>;
+  storageMounts: Map<string, StorageMount>;
+  phenotypeLibraryGraphBindings: Map<string, PhenotypeLibraryGraphBinding>;
+  externalLibraryMappings: Map<string, ExternalLibraryMapping>;
   generationJobs: Map<string, GenerationJob>;
   reviews: Map<string, ReviewRecord>;
   impacts: Map<string, ImpactRecord>;
@@ -81,6 +101,11 @@ export class InMemoryDnaStore implements DnaServiceStore {
   readonly phenotypes: PhenotypeRepository;
   readonly phenotypeVersions: PhenotypeVersionRepository;
   readonly assets: AssetRepository;
+  readonly outputReferences: OutputReferenceRepository;
+  readonly phenotypeLibraries: PhenotypeLibraryRepository;
+  readonly storageMounts: StorageMountRepository;
+  readonly phenotypeLibraryGraphBindings: PhenotypeLibraryGraphBindingRepository;
+  readonly externalLibraryMappings: ExternalLibraryMappingRepository;
   readonly generationJobs: GenerationJobRepository;
   readonly reviews: ReviewRepository;
   readonly impacts: ImpactRepository;
@@ -155,6 +180,51 @@ export class InMemoryDnaStore implements DnaServiceStore {
           return true;
         })
     };
+    this.outputReferences = {
+      create: (reference) => this.state.outputReferences.set(reference.outputReferenceId, reference),
+      update: (reference) => this.state.outputReferences.set(reference.outputReferenceId, reference),
+      get: (outputReferenceId) => this.state.outputReferences.get(outputReferenceId),
+      listByPhenotypeVersion: (phenotypeVersionId) =>
+        [...this.state.outputReferences.values()].filter((reference) => reference.phenotypeVersionId === phenotypeVersionId),
+      listByGraph: (graphId) => [...this.state.outputReferences.values()].filter((reference) => reference.graphId === graphId),
+      search: (filter) =>
+        [...this.state.outputReferences.values()].filter((reference) => {
+          if (filter.graphId && reference.graphId !== filter.graphId) return false;
+          if (filter.phenotypeVersionId && reference.phenotypeVersionId !== filter.phenotypeVersionId) return false;
+          if (filter.libraryId && reference.libraryId !== filter.libraryId) return false;
+          if (filter.status && reference.status !== filter.status) return false;
+          if (filter.tag && !reference.tags.includes(filter.tag) && !reference.normalizedTags.includes(filter.tag)) return false;
+          return true;
+        })
+    };
+    this.phenotypeLibraries = {
+      create: (library) => this.state.phenotypeLibraries.set(library.libraryId, library),
+      update: (library) => this.state.phenotypeLibraries.set(library.libraryId, library),
+      get: (libraryId) => this.state.phenotypeLibraries.get(libraryId),
+      list: () => [...this.state.phenotypeLibraries.values()]
+    };
+    this.storageMounts = {
+      create: (mount) => this.state.storageMounts.set(mount.mountId, mount),
+      update: (mount) => this.state.storageMounts.set(mount.mountId, mount),
+      get: (mountId) => this.state.storageMounts.get(mountId),
+      listByLibrary: (libraryId) => [...this.state.storageMounts.values()].filter((mount) => mount.libraryId === libraryId)
+    };
+    this.phenotypeLibraryGraphBindings = {
+      create: (binding) => this.state.phenotypeLibraryGraphBindings.set(binding.bindingId, binding),
+      update: (binding) => this.state.phenotypeLibraryGraphBindings.set(binding.bindingId, binding),
+      get: (bindingId) => this.state.phenotypeLibraryGraphBindings.get(bindingId),
+      listByGraph: (graphId) => [...this.state.phenotypeLibraryGraphBindings.values()].filter((binding) => binding.graphId === graphId),
+      listByLibrary: (libraryId) =>
+        [...this.state.phenotypeLibraryGraphBindings.values()]
+          .filter((binding) => binding.libraryId === libraryId)
+          .sort((left, right) => left.graphId.localeCompare(right.graphId))
+    };
+    this.externalLibraryMappings = {
+      create: (mapping) => this.state.externalLibraryMappings.set(mapping.mappingId, mapping),
+      update: (mapping) => this.state.externalLibraryMappings.set(mapping.mappingId, mapping),
+      get: (mappingId) => this.state.externalLibraryMappings.get(mappingId),
+      listByLibrary: (libraryId) => [...this.state.externalLibraryMappings.values()].filter((mapping) => mapping.libraryId === libraryId)
+    };
     this.generationJobs = {
       create: (job) => this.state.generationJobs.set(job.generationJobId, job),
       update: (job) => this.state.generationJobs.set(job.generationJobId, job),
@@ -214,6 +284,11 @@ function createState(): MemoryState {
     phenotypes: new Map(),
     phenotypeVersions: new Map(),
     assets: new Map(),
+    outputReferences: new Map(),
+    phenotypeLibraries: new Map(),
+    storageMounts: new Map(),
+    phenotypeLibraryGraphBindings: new Map(),
+    externalLibraryMappings: new Map(),
     generationJobs: new Map(),
     reviews: new Map(),
     impacts: new Map(),
@@ -233,6 +308,11 @@ function cloneState(state: MemoryState): MemoryState {
     phenotypes: new Map(state.phenotypes),
     phenotypeVersions: new Map(state.phenotypeVersions),
     assets: new Map(state.assets),
+    outputReferences: new Map(state.outputReferences),
+    phenotypeLibraries: new Map(state.phenotypeLibraries),
+    storageMounts: new Map(state.storageMounts),
+    phenotypeLibraryGraphBindings: new Map(state.phenotypeLibraryGraphBindings),
+    externalLibraryMappings: new Map(state.externalLibraryMappings),
     generationJobs: new Map(state.generationJobs),
     reviews: new Map(state.reviews),
     impacts: new Map(state.impacts),

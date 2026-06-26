@@ -24,7 +24,7 @@ DNA: Design Network Atlas 是一套本地优先、可扩展、可版本化的设
 - CLI：`dna`
 - npm 包命名空间：`@dna/*`
 
-DNA 的核心对象是图谱和谱系，不是素材库。素材只通过 `AssetIndex` 保存位置和元数据，文件本体由用户指定的外部存储负责。
+DNA 的核心对象是图谱和谱系，不是二进制文件仓库。生成结果通过 `OutputReference` 和 `AssetIndex` 保存位置和元数据，文件本体由用户指定的 Git、NAS、Eagle、Figma、数据库、对象存储、引擎导出目录或其他外部存储负责。`PhenotypeLibrary` 是可选的统一目录层，可以和多个图谱多对多绑定，也可以完全不用。
 
 ## 3. 分层架构
 
@@ -78,6 +78,15 @@ Graph
   ├─ GenerationJob
   ├─ ReviewRecord
   └─ ImpactRecord
+
+PhenotypeLibrary
+  ├─ StorageMount
+  ├─ PhenotypeLibraryGraphBinding
+  └─ ExternalLibraryMapping
+
+PhenotypeVersion
+  ├─ OutputReference[]
+  └─ AssetIndex[]
 ```
 
 ### 4.2 核心对象
@@ -90,6 +99,11 @@ Graph
 | `SpeciesNode` | `nodeId` | `NodeVersion` | 稳定设计对象 |
 | `EvolutionEdge` | `edgeId` | `EdgeVersion` | 父节点到子节点的演化关系 |
 | `Phenotype` | `phenotypeId` | `PhenotypeVersion` | 物种在任务中的结果对象 |
+| `OutputReference` | `outputReferenceId` | 无独立版本 | 表型版本的输出位置，可不绑定表型库 |
+| `PhenotypeLibrary` | `libraryId` | 无独立版本 | 可选表型目录，和图谱多对多绑定 |
+| `StorageMount` | `mountId` | 无独立版本 | 表型库对外部存储介质的挂载 |
+| `PhenotypeLibraryGraphBinding` | `bindingId` | 无独立版本 | 表型库和图谱的绑定关系 |
+| `ExternalLibraryMapping` | `mappingId` | 无独立版本 | Eagle/NAS/DB 等外部库字段与 DNA 字段的兼容映射 |
 | `AssetIndex` | `assetId` | 无独立版本 | 素材指针，不保存素材本体 |
 | `GenerationJob` | `generationJobId` | 无独立版本 | 一次生成或整理运行 |
 | `ReviewRecord` | `reviewRecordId` | 无独立版本 | 审查结论和输入快照 |
@@ -196,6 +210,11 @@ v0.1 必须实现：
 - `phenotype_versions`
 - `phenotype_version_assets`
 - `assets`
+- `output_references`
+- `phenotype_libraries`
+- `storage_mounts`
+- `phenotype_library_graph_bindings`
+- `external_library_mappings`
 - `generation_jobs`
 - `review_records`
 - `tags`
@@ -209,11 +228,16 @@ v0.1 必须实现：
 ```text
 dna.project.json
 templates/
+libraries/<library_id>/library.json
+libraries/<library_id>/mounts/
+libraries/<library_id>/bindings/
+libraries/<library_id>/mappings/
 graphs/<graph_id>/graph.json
 graphs/<graph_id>/nodes/
 graphs/<graph_id>/edges/
 graphs/<graph_id>/phenotypes/
 graphs/<graph_id>/assets/
+graphs/<graph_id>/output-references/
 graphs/<graph_id>/reviews/
 graphs/<graph_id>/impacts/
 ```
@@ -232,6 +256,8 @@ CLI 是本地核心阶段的主要产品入口。CLI 必须支持：
 - edge
 - phenotype
 - asset
+- output-ref
+- library
 - review
 - impact
 - import

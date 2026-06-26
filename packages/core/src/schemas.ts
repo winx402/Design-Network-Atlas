@@ -32,7 +32,18 @@ export const PhenotypeVersionStatusSchema = z.enum([
 ]);
 export const AssetStatusSchema = z.enum(["active", "pending", "rejected", "deleted", "archived"]);
 export const AssetTypeSchema = z.enum(["image", "video", "svg", "pdf", "prompt", "text", "model-output", "other"]);
-export const StorageTypeSchema = z.enum(["local", "url", "figma", "eagle", "object-storage", "other"]);
+export const StorageTypeSchema = z.enum([
+  "local",
+  "url",
+  "figma",
+  "eagle",
+  "object-storage",
+  "nas",
+  "git",
+  "database",
+  "engine-export",
+  "other"
+]);
 export const AssetRoleSchema = z.enum([
   "output",
   "positive-example",
@@ -53,6 +64,69 @@ export const ReviewStatusSchema = z.enum(["pass", "needs-review", "fail"]);
 export const ChangeOperationSchema = z.enum(["create", "update", "archive", "delete", "import"]);
 export const WriteModeSchema = z.enum(["preview-confirm", "draft-write", "changeset-apply"]);
 export const ChangeSetStatusSchema = z.enum(["preview", "applied", "discarded"]);
+export const OutputReferenceTypeSchema = z.enum([
+  "local-file",
+  "url",
+  "object-storage",
+  "eagle",
+  "figma",
+  "git",
+  "database",
+  "engine-export",
+  "inline-text",
+  "external-system",
+  "other"
+]);
+export const OutputReferenceRoleSchema = z.enum([
+  "primary-output",
+  "candidate",
+  "preview",
+  "source",
+  "reference",
+  "negative-example",
+  "runtime-export",
+  "review-material"
+]);
+export const OutputReferenceStatusSchema = z.enum(["pending", "active", "missing", "stale", "rejected", "archived", "deleted"]);
+export const PhenotypeLibraryProfileSchema = z.enum([
+  "media-asset",
+  "git-artifact",
+  "database-record",
+  "figma-object",
+  "structured-data",
+  "document",
+  "engine-export",
+  "mixed"
+]);
+export const PhenotypeLibraryStatusSchema = z.enum(["active", "draft", "read-only", "archived", "deleted"]);
+export const StorageMountStatusSchema = z.enum(["active", "read-only", "disconnected", "archived", "deleted"]);
+export const StorageAdapterKindSchema = z.enum(["pointer-only", "managed-library", "object-store", "git", "database", "custom"]);
+export const PhenotypeLibraryBindingRoleSchema = z.enum([
+  "primary-library",
+  "reference-library",
+  "generation-output",
+  "review-source",
+  "archive",
+  "runtime-export"
+]);
+export const PhenotypeLibraryBindingStatusSchema = z.enum(["active", "paused", "archived", "deleted"]);
+export const ExternalLibrarySyncModeSchema = z.enum([
+  "pointer-only",
+  "metadata-mirror",
+  "metadata-authoritative",
+  "bidirectional-sync",
+  "import-only",
+  "export-only"
+]);
+export const ExternalLibraryConflictPolicySchema = z.enum([
+  "dna-wins",
+  "external-wins",
+  "manual-review",
+  "namespace-split",
+  "last-write-wins"
+]);
+export const ExternalLibraryMappingStatusSchema = z.enum(["active", "paused", "archived", "deleted"]);
+export const ExternalFieldMappingDirectionSchema = z.enum(["external-to-dna", "dna-to-external", "bidirectional"]);
 
 export const CompilePolicySchema = z.object({
   type: z.enum([
@@ -269,6 +343,97 @@ export const AssetIndexSchema = z.object({
   updatedAt: IsoDateSchema
 });
 
+export const OutputReferenceSchema = z.object({
+  outputReferenceId: z.string().min(1),
+  graphId: z.string().min(1),
+  phenotypeId: z.string().min(1).optional(),
+  phenotypeVersionId: z.string().min(1),
+  libraryId: z.string().min(1).optional(),
+  storageMountId: z.string().min(1).optional(),
+  externalId: z.string().min(1).optional(),
+  uri: z.string().min(1),
+  referenceType: OutputReferenceTypeSchema,
+  role: OutputReferenceRoleSchema,
+  status: OutputReferenceStatusSchema,
+  tags: z.array(z.string()).default([]),
+  normalizedTags: z.array(z.string()).default([]),
+  metadata: JsonRecordSchema,
+  externalMetadata: JsonRecordSchema,
+  checksum: z.string().optional(),
+  facets: FacetsSchema,
+  createdAt: IsoDateSchema,
+  updatedAt: IsoDateSchema
+});
+
+export const PhenotypeLibrarySchema = z.object({
+  libraryId: z.string().min(1),
+  name: z.string().min(1),
+  purpose: z.string().min(1),
+  profile: PhenotypeLibraryProfileSchema,
+  status: PhenotypeLibraryStatusSchema,
+  graphIds: z.array(z.string()).default([]),
+  acceptedReferenceTypes: z.array(OutputReferenceTypeSchema).default([]),
+  tags: z.array(z.string()).default([]),
+  metadata: JsonRecordSchema,
+  facets: FacetsSchema,
+  createdAt: IsoDateSchema,
+  updatedAt: IsoDateSchema
+});
+
+export const StorageMountSchema = z.object({
+  mountId: z.string().min(1),
+  libraryId: z.string().min(1),
+  storageType: StorageTypeSchema,
+  adapterKind: StorageAdapterKindSchema,
+  displayName: z.string().min(1),
+  location: z.string().min(1),
+  status: StorageMountStatusSchema,
+  capabilities: z.array(z.string()).default([]),
+  credentialRef: z.string().optional(),
+  metadata: JsonRecordSchema,
+  facets: FacetsSchema,
+  createdAt: IsoDateSchema,
+  updatedAt: IsoDateSchema
+});
+
+export const PhenotypeLibraryGraphBindingSchema = z.object({
+  bindingId: z.string().min(1),
+  libraryId: z.string().min(1),
+  graphId: z.string().min(1),
+  role: PhenotypeLibraryBindingRoleSchema,
+  status: PhenotypeLibraryBindingStatusSchema,
+  syncPolicy: JsonRecordSchema,
+  facets: FacetsSchema,
+  createdAt: IsoDateSchema,
+  updatedAt: IsoDateSchema
+});
+
+export const ExternalLibraryMappingSchema = z.object({
+  mappingId: z.string().min(1),
+  libraryId: z.string().min(1),
+  mountId: z.string().min(1),
+  adapterId: z.string().min(1),
+  syncMode: ExternalLibrarySyncModeSchema,
+  conflictPolicy: ExternalLibraryConflictPolicySchema,
+  status: ExternalLibraryMappingStatusSchema,
+  tagMappings: z
+    .array(
+      z.object({
+        externalTag: z.string().min(1),
+        normalizedTag: z.string().min(1),
+        direction: ExternalFieldMappingDirectionSchema,
+        confidence: z.number().min(0).max(1).optional()
+      })
+    )
+    .default([]),
+  fieldMappings: z.record(z.string(), z.string()).default({}),
+  externalSchemaSnapshot: JsonRecordSchema,
+  notes: z.string().default(""),
+  facets: FacetsSchema,
+  createdAt: IsoDateSchema,
+  updatedAt: IsoDateSchema
+});
+
 export const GenerationJobSchema = z.object({
   generationJobId: z.string().min(1),
   graphId: z.string().min(1),
@@ -345,6 +510,11 @@ export type EdgeVersion = z.infer<typeof EdgeVersionSchema>;
 export type Phenotype = z.infer<typeof PhenotypeSchema>;
 export type PhenotypeVersion = z.infer<typeof PhenotypeVersionSchema>;
 export type AssetIndex = z.infer<typeof AssetIndexSchema>;
+export type OutputReference = z.infer<typeof OutputReferenceSchema>;
+export type PhenotypeLibrary = z.infer<typeof PhenotypeLibrarySchema>;
+export type StorageMount = z.infer<typeof StorageMountSchema>;
+export type PhenotypeLibraryGraphBinding = z.infer<typeof PhenotypeLibraryGraphBindingSchema>;
+export type ExternalLibraryMapping = z.infer<typeof ExternalLibraryMappingSchema>;
 export type GenerationJob = z.infer<typeof GenerationJobSchema>;
 export type ReviewRecord = z.infer<typeof ReviewRecordSchema>;
 export type ImpactRecord = z.infer<typeof ImpactRecordSchema>;

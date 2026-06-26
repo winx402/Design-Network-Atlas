@@ -5,6 +5,11 @@ import {
   compareStyleDistance,
   compileSpecies,
   createDefaultAsset,
+  createDefaultOutputReference,
+  createDefaultExternalLibraryMapping,
+  createDefaultPhenotypeLibrary,
+  createDefaultPhenotypeLibraryGraphBinding,
+  createDefaultStorageMount,
   createDefaultPhenotype,
   createDefaultPhenotypeVersion,
   createGenerationJob,
@@ -66,6 +71,18 @@ function parseKeyValue(values: string[] | undefined) {
     result[key] = rest.join("=");
   }
   return result;
+}
+
+function parseTagMappings(values: string[] | undefined) {
+  return (values ?? []).map((value) => {
+    const [externalTag, ...rest] = value.split("=");
+    if (!externalTag || rest.length === 0) throw new Error(`Expected external=normalized, got ${value}`);
+    return {
+      externalTag,
+      normalizedTag: rest.join("="),
+      direction: "bidirectional" as const
+    };
+  });
 }
 
 const program = new Command()
@@ -399,6 +416,184 @@ asset
       });
     }
     console.log(JSON.stringify(results, null, 2));
+    store.close();
+  });
+
+const library = program.command("library").description("Manage phenotype libraries and external storage adapters");
+library
+  .command("create")
+  .requiredOption("--id <libraryId>", "library id")
+  .requiredOption("--name <name>", "library name")
+  .requiredOption("--purpose <purpose>", "library purpose")
+  .option("--profile <profile>", "library profile", "media-asset")
+  .option("--accepted-reference <type>", "accepted output reference type", collect, [])
+  .option("--tag <tag>", "library tag", collect, [])
+  .action((options, command) => {
+    const libraryValue = createDefaultPhenotypeLibrary({
+      libraryId: options.id,
+      name: options.name,
+      purpose: options.purpose,
+      profile: options.profile,
+      acceptedReferenceTypes: options.acceptedReference,
+      tags: options.tag
+    });
+    if (!shouldApply(command)) return preview(command, `create phenotype library ${libraryValue.libraryId}`, libraryValue);
+    const store = openStore(command);
+    store.phenotypeLibraries.create(libraryValue);
+    console.log(`created phenotype library ${libraryValue.libraryId}`);
+    store.close();
+  });
+library
+  .command("bind-graph")
+  .requiredOption("--id <bindingId>", "binding id")
+  .requiredOption("--library <libraryId>", "library id")
+  .requiredOption("--graph <graphId>", "graph id")
+  .option("--role <role>", "binding role", "primary-library")
+  .option("--sync <key=value>", "sync policy field", collect, [])
+  .action((options, command) => {
+    const binding = createDefaultPhenotypeLibraryGraphBinding({
+      bindingId: options.id,
+      libraryId: options.library,
+      graphId: options.graph,
+      role: options.role,
+      syncPolicy: parseKeyValue(options.sync)
+    });
+    if (!shouldApply(command)) return preview(command, `bind library ${binding.libraryId} to graph ${binding.graphId}`, binding);
+    const store = openStore(command);
+    store.phenotypeLibraryGraphBindings.create(binding);
+    console.log(`bound phenotype library ${binding.libraryId} to graph ${binding.graphId}`);
+    store.close();
+  });
+library.command("list").action((_options, command) => {
+  const store = openStore(command);
+  const libraries = store.phenotypeLibraries.list().map((libraryValue) => ({
+    library: libraryValue,
+    bindings: store.phenotypeLibraryGraphBindings.listByLibrary(libraryValue.libraryId),
+    storageMounts: store.storageMounts.listByLibrary(libraryValue.libraryId),
+    externalMappings: store.externalLibraryMappings.listByLibrary(libraryValue.libraryId)
+  }));
+  console.log(JSON.stringify(libraries, null, 2));
+  store.close();
+});
+
+const libraryMount = library.command("mount").description("Manage phenotype library storage mounts");
+libraryMount
+  .command("add")
+  .requiredOption("--id <mountId>", "mount id")
+  .requiredOption("--library <libraryId>", "library id")
+  .requiredOption("--storage-type <storageType>", "storage type")
+  .requiredOption("--adapter-kind <adapterKind>", "adapter kind")
+  .requiredOption("--name <name>", "display name")
+  .requiredOption("--location <location>", "storage location")
+  .option("--capability <capability>", "adapter capability", collect, [])
+  .option("--metadata <key=value>", "metadata field", collect, [])
+  .action((options, command) => {
+    const mount = createDefaultStorageMount({
+      mountId: options.id,
+      libraryId: options.library,
+      storageType: options.storageType,
+      adapterKind: options.adapterKind,
+      displayName: options.name,
+      location: options.location,
+      capabilities: options.capability,
+      metadata: parseKeyValue(options.metadata)
+    });
+    if (!shouldApply(command)) return preview(command, `add storage mount ${mount.mountId}`, mount);
+    const store = openStore(command);
+    store.storageMounts.create(mount);
+    console.log(`added storage mount ${mount.mountId}`);
+    store.close();
+  });
+
+const libraryMapping = library.command("mapping").description("Manage external library metadata mappings");
+libraryMapping
+  .command("add")
+  .requiredOption("--id <mappingId>", "mapping id")
+  .requiredOption("--library <libraryId>", "library id")
+  .requiredOption("--mount <mountId>", "mount id")
+  .requiredOption("--adapter <adapterId>", "adapter id")
+  .option("--sync-mode <mode>", "sync mode", "pointer-only")
+  .option("--conflict-policy <policy>", "conflict policy", "manual-review")
+  .option("--tag-map <external=normalized>", "tag mapping", collect, [])
+  .option("--field-map <external=target>", "field mapping", collect, [])
+  .action((options, command) => {
+    const mapping = createDefaultExternalLibraryMapping({
+      mappingId: options.id,
+      libraryId: options.library,
+      mountId: options.mount,
+      adapterId: options.adapter,
+      syncMode: options.syncMode,
+      conflictPolicy: options.conflictPolicy,
+      tagMappings: parseTagMappings(options.tagMap),
+      fieldMappings: parseKeyValue(options.fieldMap)
+    });
+    if (!shouldApply(command)) return preview(command, `add external library mapping ${mapping.mappingId}`, mapping);
+    const store = openStore(command);
+    store.externalLibraryMappings.create(mapping);
+    console.log(`added external library mapping ${mapping.mappingId}`);
+    store.close();
+  });
+
+const outputRef = program.command("output-ref").description("Manage phenotype output references");
+outputRef
+  .command("add")
+  .requiredOption("--id <outputReferenceId>", "output reference id")
+  .requiredOption("--graph <graphId>", "graph id")
+  .requiredOption("--phenotype-version <phenotypeVersionId>", "phenotype version id")
+  .requiredOption("--uri <uri>", "output uri")
+  .requiredOption("--type <referenceType>", "reference type")
+  .requiredOption("--role <role>", "reference role")
+  .option("--phenotype <phenotypeId>", "phenotype id")
+  .option("--library <libraryId>", "phenotype library id")
+  .option("--storage-mount <mountId>", "storage mount id")
+  .option("--external-id <externalId>", "external object id")
+  .option("--tag <tag>", "raw or source tag", collect, [])
+  .option("--normalized-tag <tag>", "normalized search tag", collect, [])
+  .option("--metadata <key=value>", "metadata field", collect, [])
+  .action((options, command) => {
+    const reference = createDefaultOutputReference({
+      outputReferenceId: options.id,
+      graphId: options.graph,
+      phenotypeId: options.phenotype,
+      phenotypeVersionId: options.phenotypeVersion,
+      libraryId: options.library,
+      storageMountId: options.storageMount,
+      externalId: options.externalId,
+      uri: options.uri,
+      referenceType: options.type,
+      role: options.role,
+      tags: options.tag,
+      normalizedTags: options.normalizedTag,
+      metadata: parseKeyValue(options.metadata)
+    });
+    if (!shouldApply(command)) return preview(command, `add output reference ${reference.outputReferenceId}`, reference);
+    const store = openStore(command);
+    store.outputReferences.create(reference);
+    console.log(`added output reference ${reference.outputReferenceId}`);
+    store.close();
+  });
+outputRef
+  .command("search")
+  .option("--graph <graphId>", "graph id")
+  .option("--phenotype-version <phenotypeVersionId>", "phenotype version id")
+  .option("--library <libraryId>", "phenotype library id")
+  .option("--tag <tag>", "raw or normalized tag")
+  .option("--status <status>", "reference status")
+  .action((options, command) => {
+    const store = openStore(command);
+    console.log(
+      JSON.stringify(
+        store.outputReferences.search({
+          graphId: options.graph,
+          phenotypeVersionId: options.phenotypeVersion,
+          libraryId: options.library,
+          tag: options.tag,
+          status: options.status
+        }),
+        null,
+        2
+      )
+    );
     store.close();
   });
 

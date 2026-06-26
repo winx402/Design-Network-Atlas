@@ -3,15 +3,20 @@ import {
   ChangeSet,
   EvolutionEdge,
   EdgeVersion,
+  ExternalLibraryMapping,
   GeneTemplate,
   GenerationJob,
   Graph,
   ImpactRecord,
   NodeVersion,
+  OutputReference,
   Phenotype,
+  PhenotypeLibrary,
+  PhenotypeLibraryGraphBinding,
   PhenotypeVersion,
   ReviewRecord,
   SpeciesNode,
+  StorageMount,
   TemplatePack
 } from "@dna/core";
 
@@ -83,6 +88,44 @@ export interface AssetRepository {
   update(asset: AssetIndex): void;
   get(assetId: string): AssetIndex | undefined;
   search(filter: { graphId?: string; linkedObjectId?: string; tag?: string; status?: string }): AssetIndex[];
+}
+
+export interface OutputReferenceRepository {
+  create(reference: OutputReference): void;
+  update(reference: OutputReference): void;
+  get(outputReferenceId: string): OutputReference | undefined;
+  listByPhenotypeVersion(phenotypeVersionId: string): OutputReference[];
+  listByGraph(graphId: string): OutputReference[];
+  search(filter: { graphId?: string; phenotypeVersionId?: string; libraryId?: string; tag?: string; status?: string }): OutputReference[];
+}
+
+export interface PhenotypeLibraryRepository {
+  create(library: PhenotypeLibrary): void;
+  update(library: PhenotypeLibrary): void;
+  get(libraryId: string): PhenotypeLibrary | undefined;
+  list(): PhenotypeLibrary[];
+}
+
+export interface StorageMountRepository {
+  create(mount: StorageMount): void;
+  update(mount: StorageMount): void;
+  get(mountId: string): StorageMount | undefined;
+  listByLibrary(libraryId: string): StorageMount[];
+}
+
+export interface PhenotypeLibraryGraphBindingRepository {
+  create(binding: PhenotypeLibraryGraphBinding): void;
+  update(binding: PhenotypeLibraryGraphBinding): void;
+  get(bindingId: string): PhenotypeLibraryGraphBinding | undefined;
+  listByGraph(graphId: string): PhenotypeLibraryGraphBinding[];
+  listByLibrary(libraryId: string): PhenotypeLibraryGraphBinding[];
+}
+
+export interface ExternalLibraryMappingRepository {
+  create(mapping: ExternalLibraryMapping): void;
+  update(mapping: ExternalLibraryMapping): void;
+  get(mappingId: string): ExternalLibraryMapping | undefined;
+  listByLibrary(libraryId: string): ExternalLibraryMapping[];
 }
 
 export interface GenerationJobRepository {

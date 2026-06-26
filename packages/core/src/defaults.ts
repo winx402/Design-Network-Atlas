@@ -1,14 +1,19 @@
 import {
   AssetIndex,
   EvolutionEdge,
+  ExternalLibraryMapping,
   GenerationJob,
   Graph,
   ImpactRecord,
   NodeVersion,
+  OutputReference,
   Phenotype,
+  PhenotypeLibrary,
+  PhenotypeLibraryGraphBinding,
   PhenotypeVersion,
   ReviewRecord,
-  SpeciesNode
+  SpeciesNode,
+  StorageMount
 } from "./schemas.js";
 
 export function nowIso() {
@@ -178,6 +183,117 @@ export function createDefaultAsset(input: Partial<AssetIndex> & Pick<AssetIndex,
     tags: input.tags ?? [],
     status: input.status ?? "pending",
     checksum: input.checksum,
+    notes: input.notes ?? "",
+    facets: input.facets ?? {},
+    createdAt: input.createdAt ?? timestamp,
+    updatedAt: input.updatedAt ?? timestamp
+  };
+}
+
+export function createDefaultOutputReference(
+  input: Partial<OutputReference> &
+    Pick<OutputReference, "outputReferenceId" | "graphId" | "phenotypeVersionId" | "uri" | "referenceType" | "role">
+): OutputReference {
+  const timestamp = nowIso();
+  return {
+    outputReferenceId: input.outputReferenceId,
+    graphId: input.graphId,
+    phenotypeId: input.phenotypeId,
+    phenotypeVersionId: input.phenotypeVersionId,
+    libraryId: input.libraryId,
+    storageMountId: input.storageMountId,
+    externalId: input.externalId,
+    uri: input.uri,
+    referenceType: input.referenceType,
+    role: input.role,
+    status: input.status ?? "pending",
+    tags: input.tags ?? [],
+    normalizedTags: input.normalizedTags ?? [],
+    metadata: input.metadata ?? {},
+    externalMetadata: input.externalMetadata ?? {},
+    checksum: input.checksum,
+    facets: input.facets ?? {},
+    createdAt: input.createdAt ?? timestamp,
+    updatedAt: input.updatedAt ?? timestamp
+  };
+}
+
+export function createDefaultPhenotypeLibrary(
+  input: Partial<PhenotypeLibrary> & Pick<PhenotypeLibrary, "libraryId" | "name" | "purpose" | "profile">
+): PhenotypeLibrary {
+  const timestamp = nowIso();
+  return {
+    libraryId: input.libraryId,
+    name: input.name,
+    purpose: input.purpose,
+    profile: input.profile,
+    status: input.status ?? "active",
+    graphIds: input.graphIds ?? [],
+    acceptedReferenceTypes: input.acceptedReferenceTypes ?? [],
+    tags: input.tags ?? [],
+    metadata: input.metadata ?? {},
+    facets: input.facets ?? {},
+    createdAt: input.createdAt ?? timestamp,
+    updatedAt: input.updatedAt ?? timestamp
+  };
+}
+
+export function createDefaultStorageMount(
+  input: Partial<StorageMount> &
+    Pick<StorageMount, "mountId" | "libraryId" | "storageType" | "adapterKind" | "displayName" | "location">
+): StorageMount {
+  const timestamp = nowIso();
+  return {
+    mountId: input.mountId,
+    libraryId: input.libraryId,
+    storageType: input.storageType,
+    adapterKind: input.adapterKind,
+    displayName: input.displayName,
+    location: input.location,
+    status: input.status ?? "active",
+    capabilities: input.capabilities ?? [],
+    credentialRef: input.credentialRef,
+    metadata: input.metadata ?? {},
+    facets: input.facets ?? {},
+    createdAt: input.createdAt ?? timestamp,
+    updatedAt: input.updatedAt ?? timestamp
+  };
+}
+
+export function createDefaultPhenotypeLibraryGraphBinding(
+  input: Partial<PhenotypeLibraryGraphBinding> &
+    Pick<PhenotypeLibraryGraphBinding, "bindingId" | "libraryId" | "graphId" | "role">
+): PhenotypeLibraryGraphBinding {
+  const timestamp = nowIso();
+  return {
+    bindingId: input.bindingId,
+    libraryId: input.libraryId,
+    graphId: input.graphId,
+    role: input.role,
+    status: input.status ?? "active",
+    syncPolicy: input.syncPolicy ?? {},
+    facets: input.facets ?? {},
+    createdAt: input.createdAt ?? timestamp,
+    updatedAt: input.updatedAt ?? timestamp
+  };
+}
+
+export function createDefaultExternalLibraryMapping(
+  input: Partial<ExternalLibraryMapping> &
+    Pick<ExternalLibraryMapping, "mappingId" | "libraryId" | "mountId" | "adapterId">
+): ExternalLibraryMapping {
+  const timestamp = nowIso();
+  return {
+    mappingId: input.mappingId,
+    libraryId: input.libraryId,
+    mountId: input.mountId,
+    adapterId: input.adapterId,
+    syncMode: input.syncMode ?? "pointer-only",
+    conflictPolicy: input.conflictPolicy ?? "manual-review",
+    status: input.status ?? "active",
+    tagMappings: input.tagMappings ?? [],
+    fieldMappings: input.fieldMappings ?? {},
+    externalSchemaSnapshot: input.externalSchemaSnapshot ?? {},
     notes: input.notes ?? "",
     facets: input.facets ?? {},
     createdAt: input.createdAt ?? timestamp,
