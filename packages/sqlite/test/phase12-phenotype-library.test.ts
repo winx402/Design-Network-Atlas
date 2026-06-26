@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
@@ -9,7 +9,7 @@ import {
   createDefaultPhenotypeLibraryGraphBinding,
   createDefaultStorageMount
 } from "@dna/core";
-import { SqliteDnaStore } from "@dna/sqlite";
+import { exportProject, SqliteDnaStore } from "@dna/sqlite";
 
 function tempDb(name: string) {
   const dbPath = join(tmpdir(), `dna-${name}-${Date.now()}-${Math.random().toString(16).slice(2)}`, "dna.sqlite");
@@ -124,5 +124,51 @@ describe("Phase 12 SQLite phenotype library storage", () => {
     ]);
     expect(store.externalLibraryMappings.listByLibrary("lib-shared")[0].tagMappings[0].normalizedTag).toBe("ui-icon");
     store.close();
+  });
+
+  test("migration backfills library graphIds from historical graph bindings", () => {
+    const db = tempDb("phase12-library-graphids-repair");
+    const exportDir = join(db, "..", "export");
+    const oldStore = new SqliteDnaStore(db);
+    oldStore.migrate();
+    const library = createDefaultPhenotypeLibrary({
+      libraryId: "lib-historical",
+      name: "Historical Library",
+      purpose: "historical migration",
+      profile: "media-asset",
+      graphIds: []
+    });
+    const binding = createDefaultPhenotypeLibraryGraphBinding({
+      bindingId: "bind-historical",
+      libraryId: library.libraryId,
+      graphId: "graph-historical",
+      role: "primary-library"
+    });
+
+    oldStore.phenotypeLibraries.create(library);
+    oldStore.db
+      .prepare(
+        "INSERT INTO phenotype_library_graph_bindings (binding_id, library_id, graph_id, role, status, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+      )
+      .run(
+        binding.bindingId,
+        binding.libraryId,
+        binding.graphId,
+        binding.role,
+        binding.status,
+        JSON.stringify(binding),
+        binding.createdAt,
+        binding.updatedAt
+      );
+    oldStore.close();
+
+    const migratedStore = new SqliteDnaStore(db);
+    migratedStore.migrate();
+
+    expect(migratedStore.phenotypeLibraries.get("lib-historical")?.graphIds).toEqual(["graph-historical"]);
+    exportProject(migratedStore, exportDir);
+    const exportedLibrary = JSON.parse(readFileSync(join(exportDir, "libraries", "lib-historical", "library.json"), "utf8"));
+    expect(exportedLibrary.graphIds).toEqual(["graph-historical"]);
+    migratedStore.close();
   });
 });

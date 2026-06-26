@@ -81,14 +81,26 @@ function sortOutputReferences(references: OutputReference[]): OutputReference[] 
   });
 }
 
-function syncSqliteLibraryGraphId(store: SqliteDnaStore, libraryId: string, graphId: string) {
+function syncSqliteLibraryGraphId(store: SqliteDnaStore, libraryId: string, graphId: string): boolean {
   const library = store.phenotypeLibraries.get(libraryId);
-  if (!library || library.graphIds.includes(graphId)) return;
+  if (!library || library.graphIds.includes(graphId)) return false;
   store.phenotypeLibraries.update({
     ...library,
     graphIds: [...library.graphIds, graphId].sort(),
     updatedAt: new Date().toISOString()
   });
+  return true;
+}
+
+function repairSqliteLibraryGraphIds(store: SqliteDnaStore): number {
+  const rows = store.db
+    .prepare("SELECT DISTINCT library_id, graph_id FROM phenotype_library_graph_bindings WHERE status != 'deleted' ORDER BY library_id, graph_id")
+    .all() as Array<{ library_id: string; graph_id: string }>;
+  let repaired = 0;
+  for (const row of rows) {
+    if (syncSqliteLibraryGraphId(store, row.library_id, row.graph_id)) repaired += 1;
+  }
+  return repaired;
 }
 
 export class SqliteDnaStore implements StorageEngine {
@@ -367,6 +379,7 @@ export class SqliteDnaStore implements StorageEngine {
         applied_at TEXT
       );
     `);
+    repairSqliteLibraryGraphIds(this);
   }
 
   transaction<T>(fn: () => T): T {

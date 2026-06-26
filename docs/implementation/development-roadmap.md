@@ -1,6 +1,6 @@
 # DNA 分阶段开发路线图
 
-状态：v0.4-completed
+状态：v0.4.1-completed
 最后审阅：2026-06-27
 来源级别：authoritative implementation plan
 上游输入：[系统技术设计](../design/system-architecture.md)
@@ -529,6 +529,7 @@ E2E 场景：
 - `LibraryRoutingPolicy` 的 `fallbackMountId`、`metadataDefaults`、`requiredMetadata` 在 resolver 和 `output-ref add` 中实际生效。
 - `library bind-graph` 后同步更新 `PhenotypeLibrary.graphIds`，避免 binding 表和 library export 出现双源状态歧义。
 - `GenerationJobRepository.listByGraph`，并把 generation jobs 纳入 Git 目录导入导出。
+- SQLite migration 自动修复旧库：根据既有 `phenotype_library_graph_bindings` 回填 `PhenotypeLibrary.graphIds`。
 - `provider run-mock` 与 `provider job show`，用于本地 provider job 验证和敏感参数清理。
 - generic HTTP provider primitive，供后续真实模型 adapter 复用，不保存 API key。
 - `sync export/import`，作为显式项目目录交换命令。
@@ -543,6 +544,7 @@ E2E 场景：
 - CLI E2E 覆盖 `library bind-graph` 后导出 `library.json.graphIds`。
 - provider security 覆盖 runtime API key / secret 不进入 job、DB 或导出。
 - sync E2E 覆盖 generation jobs 随项目目录导出和导入。
+- migration test 覆盖旧库已有 binding、library.graphIds 为空、重新 migrate 后导出 graphIds 不为空。
 - HTTP API test 覆盖 health、graph tree、workbench snapshots。
 - HTTP web access test 覆盖默认 `/` 为 404，显式开启后返回 HTML。
 

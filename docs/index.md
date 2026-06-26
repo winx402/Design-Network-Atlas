@@ -17,10 +17,11 @@
 
 ## 当前实现边界
 
-- v0.4 已完成本地 SQLite + CLI + 核心库 + 导入导出 + 审查/影响分析 + mock provider / generic HTTP provider 安全边界。
+- v0.4.1 已完成本地 SQLite + CLI + 核心库 + 导入导出 + 审查/影响分析 + mock provider / generic HTTP provider 安全边界。
 - Phase 12 已补充 `PhenotypeLibrary`、外部库挂载/映射、`OutputReference`，支持不启用 DNA 表型库时直接登记外部结果位置。
 - Phase 13 已补充 `LibraryRoutingPolicy`，支持一个图谱默认绑定一个结果库，再按生成结果类型、输出角色、引用类型和标签自动路由到不同 `StorageMount`；fallback mount、metadata defaults 和 required metadata 已在 resolver 与 CLI 写入流程中执行。
 - Phase 14 已补充 `graph tree`，支持把物种节点和进化边投影成可读树状输出和 JSON 结构，便于直观看到物种关系。
 - Phase 15 已补充本地 HTTP API baseline、`dna serve`、`dna sync export/import`、generation job 导入导出和 API-backed workbench 数据加载。
+- v0.4.1 已让 SQLite migration 从历史 `phenotype_library_graph_bindings` 自动回填 `PhenotypeLibrary.graphIds`，避免旧库只 list/export 时继续保留空 graphIds。
 - HTTP API 可以读取 SQLite 数据；DNA 网页 HTTP 访问默认关闭，必须通过 `--web` 或 handler option 显式开启。
 - Web workbench 当前仍不是完整生产 Web 客户端；团队账户/权限/审批/多人同步服务属于 post-v1。

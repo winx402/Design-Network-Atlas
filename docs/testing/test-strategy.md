@@ -1,6 +1,6 @@
 # DNA 测试策略
 
-状态：v0.4-active
+状态：v0.4.1-active
 最后审阅：2026-06-27
 来源级别：authoritative test strategy
 上游输入：[系统技术设计](../design/system-architecture.md)、[阶段开发路线图](../implementation/development-roadmap.md)
@@ -12,7 +12,7 @@
 - 阶段测试通过只代表该阶段完成，不代表完整系统完成。
 - 基础完整系统只有在 Phase 11 全量验收通过后才能宣布完成。
 - Phase 12-15 属于本地优先系统的增强能力，必须单独声明、单独测试，不能反向修改 Phase 11 的完成口径。
-- 当前 v0.4 已按 Phase 15 验收口径完成；post-v1 能力必须单独声明，不能混入 v0.4 完成声明。
+- 当前 v0.4.1 已按 Phase 15 验收口径完成；post-v1 能力必须单独声明，不能混入 v0.4.1 完成声明。
 
 ## 2. 测试分层
 
@@ -215,6 +215,7 @@
 - generic HTTP provider 通过注入 fetcher 调用外部 endpoint，runtime headers 不进入 job。
 - `sync export/import` 能重放 graph、generation job 和相关引用。
 - `library bind-graph` 后导出的 `library.json.graphIds` 与 binding 保持一致。
+- 旧库已经存在 binding 但 `library.graphIds` 为空时，重新执行 SQLite migration 后会自动回填，并且导出的 `library.json.graphIds` 不为空。
 
 ## 6. Golden 输出规则
 
@@ -273,3 +274,5 @@ v0.1 作为历史基础边界，允许声明为“本地优先基础系统通过
 当前 v0.3 允许补充声明“图谱树状输出通过验收”。不得把它表述为“完整图谱可视化工作台已完成”，因为交互式布局、折叠筛选、Web 图谱编辑和大规模图布局仍属于后续阶段。
 
 当前 v0.4 允许补充声明“本地 HTTP API、provider baseline、显式 sync、routing fallback/metadata 和 library graphIds 同步通过验收”。不得把它表述为“完整团队素材平台已完成”，因为生产 Web 客户端、团队账户权限、审批流、多人同步服务、缩略图服务和外部素材库实时同步仍属于后续阶段。
+
+当前 v0.4.1 允许补充声明“历史结果库 graphIds 迁移修复通过验收”。不得把它表述为“通用迁移框架已完成”，因为后续 schema 级升级、迁移版本表和跨存储迁移仍需要单独设计。

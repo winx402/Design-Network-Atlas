@@ -81,6 +81,7 @@ DNA can manage an optional searchable result library. Internally this is represe
 - That library can contain multiple storage mounts, such as Eagle for browsing, Git for source files, NAS for raw media, and an engine export folder for runtime assets.
 - One result library can still serve multiple design graphs when teams intentionally share an asset catalog.
 - One design graph can bind to multiple result libraries when governance boundaries differ.
+- SQLite migration backfills `PhenotypeLibrary.graphIds` from existing graph bindings, so projects created before v0.4 keep exports consistent after upgrade.
 - Routing policies decide which storage mount should receive a generated-result reference when the caller only specifies a library.
 - One generated-result version can have multiple output references.
 - An output reference can point directly to an external system even when no DNA result library is used.
@@ -189,7 +190,7 @@ The root `package.json` is the only hand-authored version source. Generated runt
 
 ## Maturity
 
-DNA is currently a local-first v0.4 project. It is suitable for pilot use, local design-graph governance, graph tree inspection, prompt/brief generation, result-library routing, output reference management, review records, impact analysis, Git-friendly exchange, local HTTP API integration, and workbench data snapshots.
+DNA is currently a local-first v0.4.1 project. It is suitable for pilot use, local design-graph governance, graph tree inspection, prompt/brief generation, result-library routing, output reference management, review records, impact analysis, Git-friendly exchange, local HTTP API integration, workbench data snapshots, and upgrade repair for historical result-library graph bindings.
 
 Production npm publishing, first-party image-model provider packages, a full connected Web client, hosted team permissions, approval workflows, and multi-user sync services are future work.
 
@@ -284,6 +285,7 @@ DNA 可以管理一个可选的、可搜索的结果库。内部对象名是 `Ph
 - 这个结果库下面可以有多个存储挂载，例如 Eagle 用于浏览，Git 用于源文件，NAS 用于原始素材，引擎导出目录用于运行时资产。
 - 当团队有意共享同一个资产目录时，一个结果库仍然可以服务多个设计图谱。
 - 当治理边界不同时，一个设计图谱也可以绑定多个结果库。
+- SQLite migration 会根据既有图谱绑定回填 `PhenotypeLibrary.graphIds`，所以 v0.4 之前创建的项目升级后导出仍能保持一致。
 - 路由策略负责在调用方只指定结果库时，自动判断生成结果引用应该进入哪个存储挂载。
 - 一个生成结果版本可以有多个输出引用。
 - 输出引用可以直接指向外部系统，不要求绑定 DNA 结果库。
@@ -392,7 +394,7 @@ DNA 使用三段数字版本号：`MAJOR.MINOR.PATCH`。
 
 ## 成熟度
 
-DNA 当前是本地优先的 v0.4 项目，适合试点使用、本地设计图谱治理、图谱树检查、prompt / brief 生成、结果库路由、输出引用管理、审查记录、影响分析、Git 友好交换、本地 HTTP API 集成和工作台数据快照。
+DNA 当前是本地优先的 v0.4.1 项目，适合试点使用、本地设计图谱治理、图谱树检查、prompt / brief 生成、结果库路由、输出引用管理、审查记录、影响分析、Git 友好交换、本地 HTTP API 集成、工作台数据快照，以及历史结果库图谱绑定的升级修复。
 
 npm 正式发布、第一方图片生成 provider package、完整接入 API 的 Web 客户端、托管团队权限、审批流和多人同步服务属于后续工作。
 
