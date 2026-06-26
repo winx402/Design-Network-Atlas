@@ -2,8 +2,17 @@
   "name": "dna-design-network-atlas",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "packageManager": "pnpm@11.7.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/winx402/DNA-Design-Network-Atlas.git"
+  },
+  "homepage": "https://github.com/winx402/DNA-Design-Network-Atlas#readme",
+  "bugs": {
+    "url": "https://github.com/winx402/DNA-Design-Network-Atlas/issues"
+  },
   "scripts": {
     "build": "pnpm -r build",
     "typecheck": "pnpm -r build",
