@@ -9,6 +9,9 @@
     "typecheck": "pnpm -r build",
     "test": "vitest run",
     "test:watch": "vitest",
+    "e2e": "vitest run apps/cli/test/phase11-e2e.test.ts",
+    "security:test": "vitest run packages/core/test/phase8-provider.test.ts packages/sqlite/test/phase8-provider-security.test.ts",
+    "docs:check": "tsx scripts/check-doc-links.ts",
     "dna": "tsx apps/cli/src/index.ts"
   },
   "devDependencies": {

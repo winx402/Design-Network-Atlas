@@ -32,6 +32,7 @@ export interface CreateGraphInput {
   name: string;
   purpose: string;
   status?: Graph["status"];
+  templateIds?: string[];
 }
 
 export interface CreateNodeInput {
@@ -74,7 +75,8 @@ export function createDnaServices(store: DnaServiceStore) {
           graphId: input.graphId,
           name: input.name,
           purpose: input.purpose,
-          status: options.mode === "draft-write" ? "draft" : input.status ?? "draft"
+          status: options.mode === "draft-write" ? "draft" : input.status ?? "draft",
+          templateIds: input.templateIds ?? []
         });
         const changeSet = createChangeSet({
           mode: options.mode,

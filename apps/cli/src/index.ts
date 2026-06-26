@@ -83,6 +83,7 @@ graph
   .requiredOption("--name <name>", "graph name")
   .requiredOption("--purpose <purpose>", "graph purpose")
   .option("--status <status>", "graph status", "draft")
+  .option("--template <templateId>", "template id to bind", collect, [])
   .action((options, command) => {
     const store = openStore(command);
     const services = createDnaServices(store);
@@ -91,7 +92,8 @@ graph
         graphId: options.id,
         name: options.name,
         purpose: options.purpose,
-        status: options.status
+        status: options.status,
+        templateIds: options.template
       },
       writeOptions(command)
     );
@@ -196,6 +198,11 @@ node.command("show").requiredOption("--id <nodeId>", "node id").action((options,
   console.log(JSON.stringify(value, null, 2));
   store.close();
 });
+node.command("versions").requiredOption("--id <nodeId>", "node id").action((options, command) => {
+  const store = openStore(command);
+  console.log(JSON.stringify(store.nodeVersions.listByNode(options.id), null, 2));
+  store.close();
+});
 
 const edge = program.command("edge").description("Manage evolution edges");
 edge
@@ -209,6 +216,8 @@ edge
   .option("--operation <operation>", "operation", "merge")
   .option("--delta <key=value>", "delta gene", collect, [])
   .option("--value-resolution <key=value>", "value resolution", collect, [])
+  .option("--preserve <dimension>", "must preserve dimension or motif", collect, [])
+  .option("--avoid <badcase>", "must avoid badcase", collect, [])
   .action((options, command) => {
     const store = openStore(command);
     const services = createDnaServices(store);
@@ -222,7 +231,9 @@ edge
         direction: options.direction,
         operation: options.operation,
         deltaGenes: parseKeyValue(options.delta),
-        valueResolution: parseKeyValue(options.valueResolution)
+        valueResolution: parseKeyValue(options.valueResolution),
+        mustPreserve: options.preserve,
+        mustAvoid: options.avoid
       },
       writeOptions(command)
     );
@@ -254,6 +265,7 @@ phenotype
   .requiredOption("--type <phenotypeType>", "phenotype type")
   .requiredOption("--name <name>", "phenotype name")
   .requiredOption("--brief <brief>", "task brief")
+  .option("--phenotype-id <phenotypeId>", "existing or explicit phenotype id")
   .option("--tool <tool>", "tool", "manual")
   .action((options, command) => {
     const store = openStore(command);
@@ -276,17 +288,24 @@ phenotype
       taskBrief: options.brief,
       phenotypeType: options.type
     });
-    const phenotypeId = makeId("ph");
+    const phenotypeId = options.phenotypeId ?? makeId("ph");
+    const existingPhenotype = options.phenotypeId ? store.phenotypes.get(options.phenotypeId) : undefined;
+    if (existingPhenotype && (existingPhenotype.nodeId !== nodeValue.nodeId || existingPhenotype.phenotypeType !== options.type)) {
+      store.close();
+      throw new Error(`phenotype ${options.phenotypeId} belongs to a different node or type`);
+    }
     const phenotypeVersionId = makeId("pv");
     const jobId = makeId("job");
-    const phenotypeValue = createDefaultPhenotype({
-      graphId: graphValue.graphId,
-      nodeId: nodeValue.nodeId,
-      phenotypeId,
-      name: options.name,
-      phenotypeType: options.type,
-      objectBrief: options.brief
-    });
+    const phenotypeValue =
+      existingPhenotype ??
+      createDefaultPhenotype({
+        graphId: graphValue.graphId,
+        nodeId: nodeValue.nodeId,
+        phenotypeId,
+        name: options.name,
+        phenotypeType: options.type,
+        objectBrief: options.brief
+      });
     const phenotypeVersion = createDefaultPhenotypeVersion({
       graphId: graphValue.graphId,
       nodeId: nodeValue.nodeId,
@@ -323,7 +342,7 @@ phenotype
       return preview(command, `generate phenotype ${phenotypeId}`, { phenotype: phenotypeValue, phenotypeVersion, job, prompt: compiled.prompt });
     }
     store.transaction(() => {
-      store.phenotypes.create(phenotypeValue);
+      if (!existingPhenotype) store.phenotypes.create(phenotypeValue);
       store.phenotypeVersions.create(phenotypeVersion);
       store.generationJobs.create(job);
     });
@@ -355,11 +374,33 @@ asset
     console.log(`added asset ${assetValue.assetId}`);
     store.close();
   });
-asset.command("search").option("--tag <tag>").option("--status <status>").action((options, command) => {
-  const store = openStore(command);
-  console.log(JSON.stringify(store.assets.search({ tag: options.tag, status: options.status }), null, 2));
-  store.close();
-});
+asset
+  .command("search")
+  .option("--graph <graphId>", "graph id")
+  .option("--linked-id <objectId>", "linked object id")
+  .option("--node <nodeId>", "node id")
+  .option("--phenotype-type <phenotypeType>", "phenotype type")
+  .option("--tag <tag>")
+  .option("--status <status>")
+  .action((options, command) => {
+    const store = openStore(command);
+    let results = store.assets.search({
+      graphId: options.graph,
+      linkedObjectId: options.linkedId,
+      tag: options.tag,
+      status: options.status
+    });
+    if (options.node || options.phenotypeType) {
+      results = results.filter((assetValue) => {
+        const context = resolveAssetContext(store, assetValue.linkedObjectType, assetValue.linkedObjectId);
+        if (options.node && context.nodeId !== options.node) return false;
+        if (options.phenotypeType && context.phenotypeType !== options.phenotypeType) return false;
+        return true;
+      });
+    }
+    console.log(JSON.stringify(results, null, 2));
+    store.close();
+  });
 
 const review = program.command("review").description("Review nodes and phenotypes");
 review.command("node").requiredOption("--node <nodeId>", "node id").option("--required <dimension>", "required dimension", collect, []).action((options, command) => {
@@ -507,6 +548,20 @@ program.command("import").requiredOption("--in <directory>", "input directory").
 function collect(value: string, previous: string[]) {
   previous.push(value);
   return previous;
+}
+
+function resolveAssetContext(store: SqliteDnaStore, linkedObjectType: string, linkedObjectId: string) {
+  if (linkedObjectType === "node") return { nodeId: linkedObjectId, phenotypeType: undefined };
+  if (linkedObjectType === "phenotype") {
+    const phenotypeValue = store.phenotypes.get(linkedObjectId);
+    return { nodeId: phenotypeValue?.nodeId, phenotypeType: phenotypeValue?.phenotypeType };
+  }
+  if (linkedObjectType === "phenotype-version") {
+    const version = store.phenotypeVersions.get(linkedObjectId);
+    const phenotypeValue = version ? store.phenotypes.get(version.phenotypeId) : undefined;
+    return { nodeId: version?.nodeId, phenotypeType: phenotypeValue?.phenotypeType };
+  }
+  return { nodeId: undefined, phenotypeType: undefined };
 }
 
 program.parse();

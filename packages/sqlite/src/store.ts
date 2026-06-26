@@ -463,8 +463,19 @@ class SqliteAssetRepository implements AssetRepository {
     if (filter.tag) assets = assets.filter((asset) => asset.tags.includes(filter.tag!));
     if (filter.graphId) {
       const nodeIds = new Set(this.store.nodes.listByGraph(filter.graphId).map((node) => node.nodeId));
-      const phenotypeIds = new Set(this.store.phenotypes.listByGraph(filter.graphId).map((phenotype) => phenotype.phenotypeId));
-      assets = assets.filter((asset) => nodeIds.has(asset.linkedObjectId) || phenotypeIds.has(asset.linkedObjectId));
+      const phenotypes = this.store.phenotypes.listByGraph(filter.graphId);
+      const phenotypeIds = new Set(phenotypes.map((phenotype) => phenotype.phenotypeId));
+      const phenotypeVersionIds = new Set(
+        phenotypes.flatMap((phenotype) =>
+          this.store.phenotypeVersions.listByPhenotype(phenotype.phenotypeId).map((version) => version.phenotypeVersionId)
+        )
+      );
+      assets = assets.filter(
+        (asset) =>
+          nodeIds.has(asset.linkedObjectId) ||
+          phenotypeIds.has(asset.linkedObjectId) ||
+          phenotypeVersionIds.has(asset.linkedObjectId)
+      );
     }
     return assets;
   }
@@ -569,8 +580,8 @@ export function exportProject(store: SqliteDnaStore, outDir: string): void {
 export function importProject(store: SqliteDnaStore, inDir: string): void {
   for (const file of listJsonFiles(join(inDir, "templates"))) {
     const value = JSON.parse(readFileSync(file, "utf8"));
-    if ("templatePackId" in value) store.templates.createPack(value);
     if ("templateId" in value) store.templates.createTemplate(value);
+    else if ("templatePackId" in value) store.templates.createPack(value);
   }
   for (const graphDir of safeReadDirs(join(inDir, "graphs"))) {
     const graph = JSON.parse(readFileSync(join(graphDir, "graph.json"), "utf8")) as Graph;
