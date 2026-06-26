@@ -13,6 +13,7 @@ export interface CompileSpeciesInput {
   node: SpeciesNode;
   parentSnapshots?: Array<{ nodeVersionId: string; snapshot: Record<string, unknown> }>;
   edgeDeltas?: Array<{ edgeVersionId: string; delta: Record<string, unknown> }>;
+  fixedSnapshot?: Record<string, unknown>;
   taskBrief: string;
   phenotypeType: string;
 }
@@ -52,18 +53,22 @@ export function compileSpecies(input: CompileSpeciesInput): CompileSpeciesResult
   const resolved: Record<string, unknown> = {};
   const policy = input.node.compilePolicy?.type ?? input.graph.compilePolicy.type;
 
-  for (const parent of input.parentSnapshots ?? []) {
-    mergeWithConflicts(resolved, parent.snapshot, `parent:${parent.nodeVersionId}`, conflicts);
-  }
-  for (const edge of input.edgeDeltas ?? []) {
-    mergeWithConflicts(resolved, edge.delta, `edge:${edge.edgeVersionId}`, conflicts);
-  }
-  mergeWithConflicts(resolved, input.node.constraints, `node:${input.node.nodeId}`, conflicts);
-  if (input.node.motifs.length > 0) {
-    resolved.motifs = input.node.motifs;
-  }
-  if (input.node.badcases.length > 0) {
-    resolved.badcases = input.node.badcases;
+  if (policy === "snapshot-fixed" && input.fixedSnapshot) {
+    Object.assign(resolved, input.fixedSnapshot);
+  } else {
+    for (const parent of input.parentSnapshots ?? []) {
+      mergeWithConflicts(resolved, parent.snapshot, `parent:${parent.nodeVersionId}`, conflicts);
+    }
+    for (const edge of input.edgeDeltas ?? []) {
+      mergeWithConflicts(resolved, edge.delta, `edge:${edge.edgeVersionId}`, conflicts);
+    }
+    mergeWithConflicts(resolved, input.node.constraints, `node:${input.node.nodeId}`, conflicts);
+    if (input.node.motifs.length > 0) {
+      resolved.motifs = input.node.motifs;
+    }
+    if (input.node.badcases.length > 0) {
+      resolved.badcases = input.node.badcases;
+    }
   }
 
   const motifText = input.node.motifs.length ? `Motifs: ${input.node.motifs.join(", ")}.` : "Motifs: none specified.";
