@@ -5,6 +5,7 @@ import {
   GenerationJob,
   Graph,
   ImpactRecord,
+  LibraryRoutingPolicy,
   NodeVersion,
   OutputReference,
   Phenotype,
@@ -294,6 +295,32 @@ export function createDefaultExternalLibraryMapping(
     tagMappings: input.tagMappings ?? [],
     fieldMappings: input.fieldMappings ?? {},
     externalSchemaSnapshot: input.externalSchemaSnapshot ?? {},
+    notes: input.notes ?? "",
+    facets: input.facets ?? {},
+    createdAt: input.createdAt ?? timestamp,
+    updatedAt: input.updatedAt ?? timestamp
+  };
+}
+
+export function createDefaultLibraryRoutingPolicy(
+  input: Partial<Omit<LibraryRoutingPolicy, "match">> &
+    Pick<LibraryRoutingPolicy, "routingPolicyId" | "libraryId" | "name" | "targetMountId"> & {
+      match?: Partial<LibraryRoutingPolicy["match"]>;
+    }
+): LibraryRoutingPolicy {
+  const timestamp = nowIso();
+  return {
+    routingPolicyId: input.routingPolicyId,
+    libraryId: input.libraryId,
+    name: input.name,
+    priority: input.priority ?? 0,
+    status: input.status ?? "active",
+    match: { ...input.match, tags: input.match?.tags ?? [] },
+    targetMountId: input.targetMountId,
+    fallbackMountId: input.fallbackMountId,
+    syncMode: input.syncMode ?? "pointer-only",
+    requiredMetadata: input.requiredMetadata ?? [],
+    metadataDefaults: input.metadataDefaults ?? {},
     notes: input.notes ?? "",
     facets: input.facets ?? {},
     createdAt: input.createdAt ?? timestamp,

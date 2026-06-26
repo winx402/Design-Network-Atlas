@@ -127,6 +127,7 @@ export const ExternalLibraryConflictPolicySchema = z.enum([
 ]);
 export const ExternalLibraryMappingStatusSchema = z.enum(["active", "paused", "archived", "deleted"]);
 export const ExternalFieldMappingDirectionSchema = z.enum(["external-to-dna", "dna-to-external", "bidirectional"]);
+export const LibraryRoutingPolicyStatusSchema = z.enum(["active", "draft", "paused", "archived", "deleted"]);
 
 export const CompilePolicySchema = z.object({
   type: z.enum([
@@ -434,6 +435,31 @@ export const ExternalLibraryMappingSchema = z.object({
   updatedAt: IsoDateSchema
 });
 
+export const LibraryRoutingPolicyMatchSchema = z.object({
+  phenotypeType: z.string().min(1).optional(),
+  outputRole: OutputReferenceRoleSchema.optional(),
+  referenceType: OutputReferenceTypeSchema.optional(),
+  tags: z.array(z.string()).default([])
+});
+
+export const LibraryRoutingPolicySchema = z.object({
+  routingPolicyId: z.string().min(1),
+  libraryId: z.string().min(1),
+  name: z.string().min(1),
+  priority: z.number().int().default(0),
+  status: LibraryRoutingPolicyStatusSchema,
+  match: LibraryRoutingPolicyMatchSchema,
+  targetMountId: z.string().min(1),
+  fallbackMountId: z.string().min(1).optional(),
+  syncMode: ExternalLibrarySyncModeSchema,
+  requiredMetadata: z.array(z.string()).default([]),
+  metadataDefaults: JsonRecordSchema,
+  notes: z.string().default(""),
+  facets: FacetsSchema,
+  createdAt: IsoDateSchema,
+  updatedAt: IsoDateSchema
+});
+
 export const GenerationJobSchema = z.object({
   generationJobId: z.string().min(1),
   graphId: z.string().min(1),
@@ -515,6 +541,8 @@ export type PhenotypeLibrary = z.infer<typeof PhenotypeLibrarySchema>;
 export type StorageMount = z.infer<typeof StorageMountSchema>;
 export type PhenotypeLibraryGraphBinding = z.infer<typeof PhenotypeLibraryGraphBindingSchema>;
 export type ExternalLibraryMapping = z.infer<typeof ExternalLibraryMappingSchema>;
+export type LibraryRoutingPolicy = z.infer<typeof LibraryRoutingPolicySchema>;
+export type LibraryRoutingPolicyMatch = z.infer<typeof LibraryRoutingPolicyMatchSchema>;
 export type GenerationJob = z.infer<typeof GenerationJobSchema>;
 export type ReviewRecord = z.infer<typeof ReviewRecordSchema>;
 export type ImpactRecord = z.infer<typeof ImpactRecordSchema>;

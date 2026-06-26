@@ -5,6 +5,7 @@ import {
   compareStyleDistance,
   compileSpecies,
   createDefaultAsset,
+  createDefaultLibraryRoutingPolicy,
   createDefaultOutputReference,
   createDefaultExternalLibraryMapping,
   createDefaultPhenotypeLibrary,
@@ -16,7 +17,10 @@ import {
   createImpactRecords,
   createReviewRecord,
   makeId,
+  OutputReferenceRoleSchema,
+  OutputReferenceTypeSchema,
   PROJECT_VERSION,
+  resolveLibraryRoutingPolicy,
   reviewNode,
   reviewPhenotypeVersion
 } from "@dna/core";
@@ -84,6 +88,47 @@ function parseTagMappings(values: string[] | undefined) {
       direction: "bidirectional" as const
     };
   });
+}
+
+function parseInteger(value: string) {
+  if (!/^-?\d+$/.test(value)) throw new Error(`Expected integer, got ${value}`);
+  const parsed = Number.parseInt(value, 10);
+  return parsed;
+}
+
+function resolveOutputReferenceMount(
+  store: SqliteDnaStore,
+  request: {
+    libraryId?: string;
+    phenotypeId?: string;
+    phenotypeVersionId?: string;
+    phenotypeType?: string;
+    outputRole?: string;
+    referenceType?: string;
+    tags?: string[];
+  }
+) {
+  if (!request.libraryId) return undefined;
+  const phenotypeType = request.phenotypeType ?? inferPhenotypeType(store, request.phenotypeId, request.phenotypeVersionId);
+  const result = resolveLibraryRoutingPolicy({
+    policies: store.libraryRoutingPolicies.listByLibrary(request.libraryId),
+    request: {
+      libraryId: request.libraryId,
+      phenotypeType,
+      outputRole: request.outputRole ? OutputReferenceRoleSchema.parse(request.outputRole) : undefined,
+      referenceType: request.referenceType ? OutputReferenceTypeSchema.parse(request.referenceType) : undefined,
+      tags: request.tags
+    }
+  });
+  return result?.targetMountId;
+}
+
+function inferPhenotypeType(store: SqliteDnaStore, phenotypeId?: string, phenotypeVersionId?: string) {
+  if (phenotypeId) return store.phenotypes.get(phenotypeId)?.phenotypeType;
+  if (!phenotypeVersionId) return undefined;
+  const version = store.phenotypeVersions.get(phenotypeVersionId);
+  if (!version) return undefined;
+  return store.phenotypes.get(version.phenotypeId)?.phenotypeType;
 }
 
 const program = new Command()
@@ -535,6 +580,52 @@ libraryMapping
     store.close();
   });
 
+const libraryRouting = library.command("routing").description("Manage output routing policies for a phenotype library");
+libraryRouting
+  .command("add")
+  .requiredOption("--id <routingPolicyId>", "routing policy id")
+  .requiredOption("--library <libraryId>", "library id")
+  .requiredOption("--name <name>", "routing policy name")
+  .requiredOption("--target-mount <mountId>", "target storage mount id")
+  .option("--priority <number>", "routing priority", parseInteger, 0)
+  .option("--phenotype-type <phenotypeType>", "phenotype/result type to match")
+  .option("--role <role>", "output role to match")
+  .option("--reference-type <referenceType>", "output reference type to match")
+  .option("--tag <tag>", "required output tag", collect, [])
+  .option("--fallback-mount <mountId>", "fallback storage mount id")
+  .option("--sync-mode <mode>", "sync mode", "pointer-only")
+  .option("--required-metadata <key>", "required metadata key", collect, [])
+  .option("--metadata-default <key=value>", "default metadata field", collect, [])
+  .action((options, command) => {
+    const policy = createDefaultLibraryRoutingPolicy({
+      routingPolicyId: options.id,
+      libraryId: options.library,
+      name: options.name,
+      priority: options.priority,
+      match: {
+        phenotypeType: options.phenotypeType,
+        outputRole: options.role,
+        referenceType: options.referenceType,
+        tags: options.tag
+      },
+      targetMountId: options.targetMount,
+      fallbackMountId: options.fallbackMount,
+      syncMode: options.syncMode,
+      requiredMetadata: options.requiredMetadata,
+      metadataDefaults: parseKeyValue(options.metadataDefault)
+    });
+    if (!shouldApply(command)) return preview(command, `add library routing policy ${policy.routingPolicyId}`, policy);
+    const store = openStore(command);
+    store.libraryRoutingPolicies.create(policy);
+    console.log(`added library routing policy ${policy.routingPolicyId}`);
+    store.close();
+  });
+libraryRouting.command("list").requiredOption("--library <libraryId>", "library id").action((options, command) => {
+  const store = openStore(command);
+  console.log(JSON.stringify(store.libraryRoutingPolicies.listByLibrary(options.library), null, 2));
+  store.close();
+});
+
 const outputRef = program.command("output-ref").description("Manage phenotype output references");
 outputRef
   .command("add")
@@ -545,6 +636,7 @@ outputRef
   .requiredOption("--type <referenceType>", "reference type")
   .requiredOption("--role <role>", "reference role")
   .option("--phenotype <phenotypeId>", "phenotype id")
+  .option("--phenotype-type <phenotypeType>", "phenotype/result type for routing")
   .option("--library <libraryId>", "phenotype library id")
   .option("--storage-mount <mountId>", "storage mount id")
   .option("--external-id <externalId>", "external object id")
@@ -552,13 +644,23 @@ outputRef
   .option("--normalized-tag <tag>", "normalized search tag", collect, [])
   .option("--metadata <key=value>", "metadata field", collect, [])
   .action((options, command) => {
+    const store = openStore(command);
+    const routedMountId = options.storageMount ?? resolveOutputReferenceMount(store, {
+      libraryId: options.library,
+      phenotypeId: options.phenotype,
+      phenotypeVersionId: options.phenotypeVersion,
+      phenotypeType: options.phenotypeType,
+      outputRole: options.role,
+      referenceType: options.type,
+      tags: options.tag
+    });
     const reference = createDefaultOutputReference({
       outputReferenceId: options.id,
       graphId: options.graph,
       phenotypeId: options.phenotype,
       phenotypeVersionId: options.phenotypeVersion,
       libraryId: options.library,
-      storageMountId: options.storageMount,
+      storageMountId: routedMountId,
       externalId: options.externalId,
       uri: options.uri,
       referenceType: options.type,
@@ -567,8 +669,10 @@ outputRef
       normalizedTags: options.normalizedTag,
       metadata: parseKeyValue(options.metadata)
     });
-    if (!shouldApply(command)) return preview(command, `add output reference ${reference.outputReferenceId}`, reference);
-    const store = openStore(command);
+    if (!shouldApply(command)) {
+      store.close();
+      return preview(command, `add output reference ${reference.outputReferenceId}`, reference);
+    }
     store.outputReferences.create(reference);
     console.log(`added output reference ${reference.outputReferenceId}`);
     store.close();

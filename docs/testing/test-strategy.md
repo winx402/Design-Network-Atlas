@@ -1,6 +1,6 @@
 # DNA 测试策略
 
-状态：v0.1-active
+状态：v0.2-active
 最后审阅：2026-06-26
 来源级别：authoritative test strategy
 上游输入：[系统技术设计](../design/system-architecture.md)、[阶段开发路线图](../implementation/development-roadmap.md)
@@ -10,8 +10,9 @@
 - 每个开发阶段必须先定义测试，再实现功能。
 - 测试必须覆盖该阶段交付边界，不能只覆盖 happy path。
 - 阶段测试通过只代表该阶段完成，不代表完整系统完成。
-- 完整系统只有在 Phase 11 全量验收通过后才能宣布完成。
-- 当前 v0.1 已按 Phase 11 验收口径完成；post-v1 能力必须单独声明，不能混入 v0.1 完成声明。
+- 基础完整系统只有在 Phase 11 全量验收通过后才能宣布完成。
+- Phase 12/13 属于本地优先系统的结果库增强能力，必须单独声明、单独测试，不能反向修改 Phase 11 的完成口径。
+- 当前 v0.2 已按 Phase 13 验收口径完成；post-v1 能力必须单独声明，不能混入 v0.2 完成声明。
 
 ## 2. 测试分层
 
@@ -42,6 +43,8 @@
 | Phase 9 | web unit + browser QA | 资产工作台主要流程可操作，无布局重叠 |
 | Phase 10 | server/local contract tests | local 和 server adapter 行为一致，权限生效 |
 | Phase 11 | full E2E + release checks | PRD 13 条验收场景全通过 |
+| Phase 12 | result library schema + SQLite + CLI | 图谱和结果库多对多，输出引用可不用 DNA 结果库 |
+| Phase 13 | routing unit + SQLite + CLI E2E | 输出引用按策略路由到挂载，显式挂载优先 |
 
 ## 4. 关键测试数据
 
@@ -223,4 +226,6 @@ provider adapter 只能保存：
 - 只完成前端样例就说生产级 Web 工作台完成。
 - mock provider 通过就说真实 provider 已接入。
 
-当前 v0.1 允许声明为“本地优先系统通过验收”。不得把它表述为“生产级托管平台已完成”，因为真实 provider、npm 分发、HTTP 服务、Web/API 持久化接入、团队账户权限与同步仍属于 post-v1。
+v0.1 作为历史基础边界，允许声明为“本地优先基础系统通过验收”。不得把它表述为“生产级托管平台已完成”，因为真实 provider、npm 分发、HTTP 服务、Web/API 持久化接入、团队账户权限与同步仍属于 post-v1。
+
+当前 v0.2 允许补充声明“结果库路由策略通过验收”。不得把它表述为“成熟 DAM 或生产级 Web 素材库已完成”，因为缩略图服务、二进制生命周期、批量整理、外部库实时同步和生产级 Web/API 仍属于后续阶段。

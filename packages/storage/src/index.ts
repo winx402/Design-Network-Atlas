@@ -8,6 +8,7 @@ import {
   GenerationJob,
   Graph,
   ImpactRecord,
+  LibraryRoutingPolicy,
   NodeVersion,
   OutputReference,
   Phenotype,
@@ -126,6 +127,13 @@ export interface ExternalLibraryMappingRepository {
   update(mapping: ExternalLibraryMapping): void;
   get(mappingId: string): ExternalLibraryMapping | undefined;
   listByLibrary(libraryId: string): ExternalLibraryMapping[];
+}
+
+export interface LibraryRoutingPolicyRepository {
+  create(policy: LibraryRoutingPolicy): void;
+  update(policy: LibraryRoutingPolicy): void;
+  get(routingPolicyId: string): LibraryRoutingPolicy | undefined;
+  listByLibrary(libraryId: string): LibraryRoutingPolicy[];
 }
 
 export interface GenerationJobRepository {

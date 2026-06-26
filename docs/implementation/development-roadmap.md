@@ -1,6 +1,6 @@
 # DNA 分阶段开发路线图
 
-状态：v0.1-completed
+状态：v0.2-completed
 最后审阅：2026-06-26
 来源级别：authoritative implementation plan
 上游输入：[系统技术设计](../design/system-architecture.md)
@@ -16,7 +16,7 @@
 
 ## 当前状态
 
-Phase 0-11 已完成并由测试覆盖。本文件保留为历史执行计划、验收映射和 post-v1 拆分参照；后续新增能力必须继续落到明确阶段、测试和完成边界中。
+Phase 0-13 已完成并由测试覆盖。本文件保留为历史执行计划、验收映射和 post-v1 拆分参照；后续新增能力必须继续落到明确阶段、测试和完成边界中。
 
 ---
 
@@ -36,6 +36,8 @@ Phase 0-11 已完成并由测试覆盖。本文件保留为历史执行计划、
 | Phase 9 | 资产工作台 | Web 资产工作台生产流 | web unit + browser QA |
 | Phase 10 | 双模式协作 | server adapter、同步、权限、审批 | contract tests、API tests、权限 tests |
 | Phase 11 | 完整系统验收 | 跑通 PRD 全量场景和发布检查 | E2E suite、release checklist |
+| Phase 12 | 表型库与输出引用 | 可选结果库、存储挂载、外部库映射、无库输出指针 | schema、SQLite、CLI、import/export |
+| Phase 13 | 结果库路由策略 | 一个结果库下按类型/角色/标签自动选择存储挂载 | routing unit、SQLite、CLI E2E |
 
 ## Phase 0：设计冻结与工程基线
 
@@ -433,3 +435,61 @@ E2E 场景：
 - 所有 PRD v0.1 验收场景通过。
 - README、设计文档、CLI help、Skill 文档一致。
 - 未完成的长期能力明确标记为 post-v1，而不是混入完成声明。
+
+## Phase 12：表型库与输出引用
+
+目标：让 DNA 能在不保存二进制文件的前提下，提供统一的结果库、外部存储挂载和输出引用管理能力。
+
+交付：
+
+- `PhenotypeLibrary`
+- `StorageMount`
+- `PhenotypeLibraryGraphBinding`
+- `ExternalLibraryMapping`
+- `OutputReference`
+- SQLite repository、CLI 命令、Git 目录导入导出。
+
+测试：
+
+- 一个图谱默认可绑定一个主结果库。
+- 一个结果库可以拥有多个挂载。
+- 一个结果库可以绑定多个图谱，一个图谱也可以绑定多个结果库。
+- 不启用结果库时，输出引用仍可直接指向外部 URI。
+- 外部库字段映射能保存标签、目录、评分、集合等兼容关系。
+- 导出导入保留结果库、挂载、映射和输出引用。
+
+验收：
+
+- 结果库和图谱 ID 解耦，多对多关系清晰。
+- DNA 仍不接管二进制素材生命周期，只管理可搜索、可审查、可追踪的结果指针。
+
+## Phase 13：结果库路由策略
+
+目标：落实“默认大于约定，可开箱即用，也可深度定制”的结果库策略。默认一个图谱绑定一个主结果库，多个结果类型和输出角色通过该库下的多个 `StorageMount` 承载。
+
+交付：
+
+- `LibraryRoutingPolicy`
+- Core routing resolver。
+- Repository port、内存实现、SQLite repository 和 migration。
+- CLI：`dna library routing add/list`。
+- `output-ref add` 在未显式指定 `--storage-mount` 时，根据 `libraryId`、表型类型、输出角色、引用类型和标签自动选择挂载。
+- Git 目录：`libraries/<library_id>/routing-policies/`。
+
+测试：
+
+- schema 接受合法路由策略并拒绝非法对象。
+- resolver 只选择 active 策略。
+- resolver 按 priority 降序选择最高优先级匹配策略。
+- 标签匹配要求策略标签全部出现在请求标签中。
+- SQLite migration 创建 `library_routing_policies`。
+- repository 支持 create/update/get/listByLibrary。
+- CLI 能创建路由策略。
+- CLI 创建输出引用时能自动填入路由得到的 `storageMountId`。
+- 显式 `--storage-mount` 优先于路由策略。
+- export/import 保留路由策略目录。
+
+验收：
+
+- 简单项目可以只创建一个结果库和几条路由策略就开始登记输出。
+- 复杂项目仍可按治理边界创建多个结果库，并用路由策略细分挂载。

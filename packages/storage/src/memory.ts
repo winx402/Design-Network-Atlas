@@ -8,6 +8,7 @@ import {
   GenerationJob,
   Graph,
   ImpactRecord,
+  LibraryRoutingPolicy,
   NodeVersion,
   OutputReference,
   Phenotype,
@@ -28,6 +29,7 @@ import {
   GenerationJobRepository,
   GraphRepository,
   ImpactRepository,
+  LibraryRoutingPolicyRepository,
   LineageRepository,
   NodeVersionRepository,
   OutputReferenceRepository,
@@ -57,6 +59,7 @@ export interface DnaServiceStore extends StorageEngine {
   storageMounts: StorageMountRepository;
   phenotypeLibraryGraphBindings: PhenotypeLibraryGraphBindingRepository;
   externalLibraryMappings: ExternalLibraryMappingRepository;
+  libraryRoutingPolicies: LibraryRoutingPolicyRepository;
   generationJobs: GenerationJobRepository;
   reviews: ReviewRepository;
   impacts: ImpactRepository;
@@ -84,6 +87,7 @@ interface MemoryState {
   storageMounts: Map<string, StorageMount>;
   phenotypeLibraryGraphBindings: Map<string, PhenotypeLibraryGraphBinding>;
   externalLibraryMappings: Map<string, ExternalLibraryMapping>;
+  libraryRoutingPolicies: Map<string, LibraryRoutingPolicy>;
   generationJobs: Map<string, GenerationJob>;
   reviews: Map<string, ReviewRecord>;
   impacts: Map<string, ImpactRecord>;
@@ -106,6 +110,7 @@ export class InMemoryDnaStore implements DnaServiceStore {
   readonly storageMounts: StorageMountRepository;
   readonly phenotypeLibraryGraphBindings: PhenotypeLibraryGraphBindingRepository;
   readonly externalLibraryMappings: ExternalLibraryMappingRepository;
+  readonly libraryRoutingPolicies: LibraryRoutingPolicyRepository;
   readonly generationJobs: GenerationJobRepository;
   readonly reviews: ReviewRepository;
   readonly impacts: ImpactRepository;
@@ -225,6 +230,19 @@ export class InMemoryDnaStore implements DnaServiceStore {
       get: (mappingId) => this.state.externalLibraryMappings.get(mappingId),
       listByLibrary: (libraryId) => [...this.state.externalLibraryMappings.values()].filter((mapping) => mapping.libraryId === libraryId)
     };
+    this.libraryRoutingPolicies = {
+      create: (policy) => this.state.libraryRoutingPolicies.set(policy.routingPolicyId, policy),
+      update: (policy) => this.state.libraryRoutingPolicies.set(policy.routingPolicyId, policy),
+      get: (routingPolicyId) => this.state.libraryRoutingPolicies.get(routingPolicyId),
+      listByLibrary: (libraryId) =>
+        [...this.state.libraryRoutingPolicies.values()]
+          .filter((policy) => policy.libraryId === libraryId)
+          .sort((left, right) => {
+            const byPriority = right.priority - left.priority;
+            if (byPriority !== 0) return byPriority;
+            return left.routingPolicyId.localeCompare(right.routingPolicyId);
+          })
+    };
     this.generationJobs = {
       create: (job) => this.state.generationJobs.set(job.generationJobId, job),
       update: (job) => this.state.generationJobs.set(job.generationJobId, job),
@@ -289,6 +307,7 @@ function createState(): MemoryState {
     storageMounts: new Map(),
     phenotypeLibraryGraphBindings: new Map(),
     externalLibraryMappings: new Map(),
+    libraryRoutingPolicies: new Map(),
     generationJobs: new Map(),
     reviews: new Map(),
     impacts: new Map(),
@@ -313,6 +332,7 @@ function cloneState(state: MemoryState): MemoryState {
     storageMounts: new Map(state.storageMounts),
     phenotypeLibraryGraphBindings: new Map(state.phenotypeLibraryGraphBindings),
     externalLibraryMappings: new Map(state.externalLibraryMappings),
+    libraryRoutingPolicies: new Map(state.libraryRoutingPolicies),
     generationJobs: new Map(state.generationJobs),
     reviews: new Map(state.reviews),
     impacts: new Map(state.impacts),

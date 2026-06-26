@@ -12,6 +12,7 @@ import {
   GenerationJob,
   Graph,
   ImpactRecord,
+  LibraryRoutingPolicy,
   NodeVersion,
   OutputReference,
   Phenotype,
@@ -33,6 +34,7 @@ import {
   GenerationJobRepository,
   GraphRepository,
   ImpactRepository,
+  LibraryRoutingPolicyRepository,
   LineageRepository,
   NodeVersionRepository,
   OutputReferenceRepository,
@@ -95,6 +97,7 @@ export class SqliteDnaStore implements StorageEngine {
   readonly storageMounts: StorageMountRepository;
   readonly phenotypeLibraryGraphBindings: PhenotypeLibraryGraphBindingRepository;
   readonly externalLibraryMappings: ExternalLibraryMappingRepository;
+  readonly libraryRoutingPolicies: LibraryRoutingPolicyRepository;
   readonly generationJobs: GenerationJobRepository;
   readonly reviews: ReviewRepository;
   readonly impacts: ImpactRepository;
@@ -119,6 +122,7 @@ export class SqliteDnaStore implements StorageEngine {
     this.storageMounts = new SqliteStorageMountRepository(this);
     this.phenotypeLibraryGraphBindings = new SqlitePhenotypeLibraryGraphBindingRepository(this);
     this.externalLibraryMappings = new SqliteExternalLibraryMappingRepository(this);
+    this.libraryRoutingPolicies = new SqliteLibraryRoutingPolicyRepository(this);
     this.generationJobs = new SqliteGenerationJobRepository(this);
     this.reviews = new SqliteReviewRepository(this);
     this.impacts = new SqliteImpactRepository(this);
@@ -290,6 +294,16 @@ export class SqliteDnaStore implements StorageEngine {
         mount_id TEXT NOT NULL,
         adapter_id TEXT NOT NULL,
         status TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS library_routing_policies (
+        routing_policy_id TEXT PRIMARY KEY,
+        library_id TEXT NOT NULL,
+        priority INTEGER NOT NULL,
+        status TEXT NOT NULL,
+        target_mount_id TEXT NOT NULL,
         payload TEXT NOT NULL,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
@@ -788,6 +802,47 @@ class SqliteExternalLibraryMappingRepository implements ExternalLibraryMappingRe
   }
 }
 
+class SqliteLibraryRoutingPolicyRepository implements LibraryRoutingPolicyRepository {
+  constructor(private readonly store: SqliteDnaStore) {}
+  create(policy: LibraryRoutingPolicy) {
+    this.store.db
+      .prepare(
+        "INSERT INTO library_routing_policies (routing_policy_id, library_id, priority, status, target_mount_id, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+      )
+      .run(
+        policy.routingPolicyId,
+        policy.libraryId,
+        policy.priority,
+        policy.status,
+        policy.targetMountId,
+        JSON.stringify(policy),
+        policy.createdAt,
+        policy.updatedAt
+      );
+  }
+  update(policy: LibraryRoutingPolicy) {
+    this.store.db
+      .prepare(
+        "UPDATE library_routing_policies SET priority = ?, status = ?, target_mount_id = ?, payload = ?, updated_at = ? WHERE routing_policy_id = ?"
+      )
+      .run(policy.priority, policy.status, policy.targetMountId, JSON.stringify(policy), policy.updatedAt, policy.routingPolicyId);
+  }
+  get(routingPolicyId: string) {
+    return parsePayload<LibraryRoutingPolicy>(
+      this.store.db.prepare("SELECT payload FROM library_routing_policies WHERE routing_policy_id = ?").get(routingPolicyId) as
+        | Row
+        | undefined
+    );
+  }
+  listByLibrary(libraryId: string) {
+    return parseRows<LibraryRoutingPolicy>(
+      this.store.db
+        .prepare("SELECT payload FROM library_routing_policies WHERE library_id = ? ORDER BY priority DESC, routing_policy_id")
+        .all(libraryId) as Row[]
+    );
+  }
+}
+
 class SqliteGenerationJobRepository implements GenerationJobRepository {
   constructor(private readonly store: SqliteDnaStore) {}
   create(job: GenerationJob) {
@@ -888,6 +943,9 @@ export function exportProject(store: SqliteDnaStore, outDir: string): void {
     for (const mapping of store.externalLibraryMappings.listByLibrary(library.libraryId)) {
       writeJson(join(libraryDir, "mappings", `${mapping.mappingId}.json`), mapping);
     }
+    for (const policy of store.libraryRoutingPolicies.listByLibrary(library.libraryId)) {
+      writeJson(join(libraryDir, "routing-policies", `${policy.routingPolicyId}.json`), policy);
+    }
   }
   for (const graph of store.graphs.list()) {
     const graphDir = join(outDir, "graphs", graph.graphId);
@@ -924,6 +982,9 @@ export function importProject(store: SqliteDnaStore, inDir: string): void {
     }
     for (const file of listJsonFiles(join(libraryDir, "mappings"))) {
       store.externalLibraryMappings.create(JSON.parse(readFileSync(file, "utf8")));
+    }
+    for (const file of listJsonFiles(join(libraryDir, "routing-policies"))) {
+      store.libraryRoutingPolicies.create(JSON.parse(readFileSync(file, "utf8")));
     }
   }
   for (const graphDir of safeReadDirs(join(inDir, "graphs"))) {

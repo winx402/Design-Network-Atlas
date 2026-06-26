@@ -150,6 +150,17 @@ export const externalLibraryMappings = sqliteTable("external_library_mappings", 
   updatedAt: text("updated_at").notNull()
 });
 
+export const libraryRoutingPolicies = sqliteTable("library_routing_policies", {
+  routingPolicyId: text("routing_policy_id").primaryKey(),
+  libraryId: text("library_id").notNull(),
+  priority: integer("priority").notNull(),
+  status: text("status").notNull(),
+  targetMountId: text("target_mount_id").notNull(),
+  payload: text("payload", { mode: "json" }).notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull()
+});
+
 export const reviewRecords = sqliteTable("review_records", {
   reviewRecordId: text("review_record_id").primaryKey(),
   graphId: text("graph_id").notNull(),

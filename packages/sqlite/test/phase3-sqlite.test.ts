@@ -39,6 +39,7 @@ describe("Phase 3 SQLite storage requirements", () => {
       "storage_mounts",
       "phenotype_library_graph_bindings",
       "external_library_mappings",
+      "library_routing_policies",
       "generation_jobs",
       "review_records",
       "tags",
