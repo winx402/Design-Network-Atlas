@@ -1,3 +1,6 @@
+import { createImpactRecord } from "./defaults.js";
+import { ImpactRecord } from "./schemas.js";
+
 export interface ImpactNodeInput {
   nodeId: string;
   phenotypeVersionIds: string[];
@@ -37,7 +40,8 @@ export function collectImpact(input: CollectImpactInput): ImpactSummary[] {
 
   const result: ImpactSummary[] = [];
   const visited = new Set<string>();
-  const queue = [...(outgoing.get(startNode) ?? []).map((edge) => edge.toNodeId)];
+  const queue =
+    input.changed.type === "edge" ? [startNode] : [...(outgoing.get(startNode) ?? []).map((edge) => edge.toNodeId)];
 
   while (queue.length) {
     const nodeId = queue.shift()!;
@@ -61,4 +65,33 @@ export function collectImpact(input: CollectImpactInput): ImpactSummary[] {
   }
 
   return result;
+}
+
+export interface CreateImpactRecordsInput {
+  graphId: string;
+  changed: CollectImpactInput["changed"];
+  impacts: ImpactSummary[];
+  createdAt?: string;
+}
+
+export function createImpactRecords(input: CreateImpactRecordsInput): ImpactRecord[] {
+  return input.impacts.map((impact, index) =>
+    createImpactRecord({
+      impactRecordId: `impact-${stableIdPart(input.changed.id)}-${stableIdPart(impact.objectId)}-${index}`,
+      graphId: input.graphId,
+      changedObjectType: input.changed.type,
+      changedObjectId: input.changed.id,
+      changedVersionId: input.changed.versionId,
+      objectType: impact.objectType,
+      objectId: impact.objectId,
+      reason: impact.reason,
+      suggestedAction: impact.suggestedAction,
+      reviewStatus: "pending",
+      createdAt: input.createdAt
+    })
+  );
+}
+
+function stableIdPart(value: string): string {
+  return value.replace(/[^a-zA-Z0-9_-]/g, "-");
 }

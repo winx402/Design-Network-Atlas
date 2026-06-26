@@ -8,8 +8,11 @@ import {
   createDefaultPhenotype,
   createDefaultPhenotypeVersion,
   createGenerationJob,
+  createImpactRecords,
+  createReviewRecord,
   makeId,
-  reviewNode
+  reviewNode,
+  reviewPhenotypeVersion
 } from "@dna/core";
 import { exportProject, importProject, SqliteDnaStore } from "@dna/sqlite";
 import { createDnaServices } from "@dna/storage";
@@ -363,7 +366,71 @@ review.command("node").requiredOption("--node <nodeId>", "node id").option("--re
   const store = openStore(command);
   const nodeValue = store.nodes.get(options.node);
   if (!nodeValue) throw new Error(`node not found: ${options.node}`);
-  console.log(JSON.stringify(reviewNode({ node: nodeValue, requiredDimensions: options.required }), null, 2));
+  const result = reviewNode({ node: nodeValue, requiredDimensions: options.required });
+  if (shouldApply(command)) {
+    const record = createReviewRecord({
+      reviewRecordId: makeId("review"),
+      graphId: nodeValue.graphId,
+      objectType: "node",
+      objectId: nodeValue.nodeId,
+      status: result.status,
+      missingDimensions: result.missingDimensions,
+      constraintViolations: result.constraintViolations,
+      suggestedActions: result.suggestedActions,
+      inputSnapshot: { requiredDimensions: options.required },
+      confirmedByHuman: true
+    });
+    store.reviews.create(record);
+    console.log(JSON.stringify({ review: result, reviewRecord: record }, null, 2));
+  } else {
+    console.log(JSON.stringify(result, null, 2));
+  }
+  store.close();
+});
+review
+  .command("phenotype")
+  .requiredOption("--phenotype-version <phenotypeVersionId>", "phenotype version id")
+  .option("--required-motif <motif>", "required motif", collect, [])
+  .option("--required-constraint <key=value>", "required constraint", collect, [])
+  .option("--forbidden-text <text>", "forbidden prompt or brief text", collect, [])
+  .action((options, command) => {
+    const store = openStore(command);
+    const version = store.phenotypeVersions.get(options.phenotypeVersion);
+    if (!version) throw new Error(`phenotype version not found: ${options.phenotypeVersion}`);
+    const requiredConstraints = parseKeyValue(options.requiredConstraint);
+    const result = reviewPhenotypeVersion({
+      version,
+      requiredMotifs: options.requiredMotif,
+      requiredConstraints,
+      forbiddenText: options.forbiddenText
+    });
+    if (shouldApply(command)) {
+      const record = createReviewRecord({
+        reviewRecordId: makeId("review"),
+        graphId: version.graphId,
+        objectType: "phenotype-version",
+        objectId: version.phenotypeVersionId,
+        status: result.status,
+        missingDimensions: result.missingDimensions,
+        constraintViolations: result.constraintViolations,
+        suggestedActions: result.suggestedActions,
+        inputSnapshot: {
+          requiredMotifs: options.requiredMotif,
+          requiredConstraints,
+          forbiddenText: options.forbiddenText
+        },
+        confirmedByHuman: true
+      });
+      store.reviews.create(record);
+      console.log(JSON.stringify({ review: result, reviewRecord: record }, null, 2));
+    } else {
+      console.log(JSON.stringify(result, null, 2));
+    }
+    store.close();
+  });
+review.command("list").requiredOption("--type <objectType>", "object type").requiredOption("--id <objectId>", "object id").action((options, command) => {
+  const store = openStore(command);
+  console.log(JSON.stringify(store.reviews.listByObject(options.type, options.id), null, 2));
   store.close();
 });
 program
@@ -380,8 +447,18 @@ program
   });
 
 const impact = program.command("impact").description("Run impact analysis");
-impact.command("check").requiredOption("--graph <graphId>", "graph id").requiredOption("--node <nodeId>", "changed node id").option("--version <versionId>", "changed version id", "latest").action((options, command) => {
+impact
+  .command("check")
+  .requiredOption("--graph <graphId>", "graph id")
+  .option("--node <nodeId>", "changed node id")
+  .option("--edge <edgeId>", "changed edge id")
+  .option("--changed-version <versionId>", "changed version id", "latest")
+  .action((options, command) => {
   const store = openStore(command);
+  if ((options.node && options.edge) || (!options.node && !options.edge)) {
+    store.close();
+    throw new Error("Provide exactly one of --node or --edge");
+  }
   const nodes = store.nodes.listByGraph(options.graph).map((nodeValue) => ({
     nodeId: nodeValue.nodeId,
     phenotypeVersionIds: store.phenotypeVersions.listByNode(nodeValue.nodeId).map((version) => version.phenotypeVersionId)
@@ -391,7 +468,25 @@ impact.command("check").requiredOption("--graph <graphId>", "graph id").required
     fromNodeId: edgeValue.fromNodeId,
     toNodeId: edgeValue.toNodeId
   }));
-  console.log(JSON.stringify(collectImpact({ changed: { type: "node", id: options.node, versionId: options.version }, nodes, edges }), null, 2));
+  const changed = options.edge
+    ? ({ type: "edge", id: options.edge, versionId: options.changedVersion } as const)
+    : ({ type: "node", id: options.node, versionId: options.changedVersion } as const);
+  const impacts = collectImpact({ changed, nodes, edges });
+  if (shouldApply(command)) {
+    const records = createImpactRecords({ graphId: options.graph, changed, impacts });
+    store.transaction(() => {
+      for (const record of records) store.impacts.create(record);
+    });
+    console.log(JSON.stringify({ impacts, impactRecords: records }, null, 2));
+  } else {
+    console.log(JSON.stringify(impacts, null, 2));
+  }
+  store.close();
+});
+impact.command("list").requiredOption("--type <objectType>", "node or edge").requiredOption("--id <objectId>", "changed object id").action((options, command) => {
+  if (options.type !== "node" && options.type !== "edge") throw new Error("--type must be node or edge");
+  const store = openStore(command);
+  console.log(JSON.stringify(store.impacts.listByChangedObject(options.type, options.id), null, 2));
   store.close();
 });
 

@@ -1,4 +1,4 @@
-import { SpeciesNode } from "./schemas.js";
+import { PhenotypeVersion, SpeciesNode } from "./schemas.js";
 
 export interface NodeReviewResult {
   status: "pass" | "needs-review" | "fail";
@@ -24,6 +24,57 @@ export function reviewNode(input: { node: SpeciesNode; requiredDimensions: strin
     constraintViolations,
     suggestedActions: missingDimensions.map((dimension) => `fill required dimension: ${dimension}`)
   };
+}
+
+export interface PhenotypeReviewInput {
+  version: PhenotypeVersion;
+  requiredMotifs?: string[];
+  requiredConstraints?: Record<string, unknown>;
+  forbiddenText?: string[];
+}
+
+export function reviewPhenotypeVersion(input: PhenotypeReviewInput): NodeReviewResult {
+  const snapshotMotifs = readStringArray(input.version.resolvedGeneSnapshot.motifs);
+  const searchableText = [input.version.promptSnapshot, input.version.generationBrief].join("\n").toLowerCase();
+  const missingMotifs = (input.requiredMotifs ?? []).filter(
+    (motif) => !snapshotMotifs.includes(motif) || !searchableText.includes(motif.toLowerCase())
+  );
+  const missingConstraints = Object.keys(input.requiredConstraints ?? {}).filter(
+    (key) => !(key in input.version.resolvedGeneSnapshot)
+  );
+  const mismatchedConstraints = Object.entries(input.requiredConstraints ?? {})
+    .filter(([key, expected]) => key in input.version.resolvedGeneSnapshot && JSON.stringify(input.version.resolvedGeneSnapshot[key]) !== JSON.stringify(expected))
+    .map(
+      ([key, expected]) =>
+        `constraint ${key} expected ${JSON.stringify(expected)} but received ${JSON.stringify(input.version.resolvedGeneSnapshot[key])}`
+    );
+  const forbiddenTextViolations = (input.forbiddenText ?? [])
+    .filter((text) => searchableText.includes(text.toLowerCase()))
+    .map((text) => `prompt must avoid forbidden text: ${text}`);
+  const missingDimensions = [
+    ...missingMotifs.map((motif) => `motif:${motif}`),
+    ...missingConstraints.map((key) => `constraint:${key}`)
+  ];
+  const constraintViolations = [...mismatchedConstraints, ...forbiddenTextViolations];
+  const status = constraintViolations.length ? "fail" : missingDimensions.length ? "needs-review" : "pass";
+
+  return {
+    status,
+    missingDimensions,
+    constraintViolations,
+    suggestedActions: [
+      ...missingMotifs.map((motif) => `restore required motif: ${motif}`),
+      ...missingConstraints.map((key) => `fill required constraint: ${key}`),
+      ...mismatchedConstraints.map((violation) => `resolve ${violation}`),
+      ...(input.forbiddenText ?? [])
+        .filter((text) => searchableText.includes(text.toLowerCase()))
+        .map((text) => `remove forbidden prompt text: ${text}`)
+    ]
+  };
+}
+
+function readStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
 export interface StyleComparable {
