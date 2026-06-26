@@ -506,6 +506,11 @@ class SqliteReviewRepository implements ReviewRepository {
   get(reviewRecordId: string) {
     return parsePayload<ReviewRecord>(this.store.db.prepare("SELECT payload FROM review_records WHERE review_record_id = ?").get(reviewRecordId) as Row | undefined);
   }
+  listByGraph(graphId: string) {
+    return parseRows<ReviewRecord>(
+      this.store.db.prepare("SELECT payload FROM review_records WHERE graph_id = ? ORDER BY created_at, review_record_id").all(graphId) as Row[]
+    );
+  }
   listByObject(objectType: string, objectId: string) {
     return parseRows<ReviewRecord>(this.store.db.prepare("SELECT payload FROM review_records WHERE object_type = ? AND object_id = ? ORDER BY created_at").all(objectType, objectId) as Row[]);
   }
@@ -517,6 +522,11 @@ class SqliteImpactRepository implements ImpactRepository {
     this.store.db
       .prepare("INSERT INTO impact_records (impact_record_id, graph_id, changed_object_type, changed_object_id, object_type, object_id, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
       .run(record.impactRecordId, record.graphId, record.changedObjectType, record.changedObjectId, record.objectType, record.objectId, JSON.stringify(record), record.createdAt);
+  }
+  listByGraph(graphId: string) {
+    return parseRows<ImpactRecord>(
+      this.store.db.prepare("SELECT payload FROM impact_records WHERE graph_id = ? ORDER BY created_at, impact_record_id").all(graphId) as Row[]
+    );
   }
   listByChangedObject(objectType: "node" | "edge", objectId: string) {
     return parseRows<ImpactRecord>(
@@ -571,9 +581,8 @@ export function exportProject(store: SqliteDnaStore, outDir: string): void {
       }
     }
     for (const asset of store.assets.search({ graphId: graph.graphId })) writeJson(join(graphDir, "assets", `${asset.assetId}.json`), asset);
-    for (const record of store.impacts.listByChangedObject("node", "__none__")) {
-      writeJson(join(graphDir, "impacts", `${record.impactRecordId}.json`), record);
-    }
+    for (const record of store.reviews.listByGraph(graph.graphId)) writeJson(join(graphDir, "reviews", `${record.reviewRecordId}.json`), record);
+    for (const record of store.impacts.listByGraph(graph.graphId)) writeJson(join(graphDir, "impacts", `${record.impactRecordId}.json`), record);
   }
 }
 
@@ -594,6 +603,7 @@ export function importProject(store: SqliteDnaStore, inDir: string): void {
       else store.phenotypes.create(value);
     }
     for (const file of listJsonFiles(join(graphDir, "assets"))) store.assets.create(JSON.parse(readFileSync(file, "utf8")));
+    for (const file of listJsonFiles(join(graphDir, "reviews"))) store.reviews.create(JSON.parse(readFileSync(file, "utf8")));
     for (const file of listJsonFiles(join(graphDir, "impacts"))) store.impacts.create(JSON.parse(readFileSync(file, "utf8")));
   }
 }

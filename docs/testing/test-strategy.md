@@ -1,6 +1,6 @@
 # DNA 测试策略
 
-状态：draft
+状态：v0.1-active
 最后审阅：2026-06-26
 来源级别：authoritative test strategy
 上游输入：[系统技术设计](../design/system-architecture.md)、[阶段开发路线图](../implementation/development-roadmap.md)
@@ -11,6 +11,7 @@
 - 测试必须覆盖该阶段交付边界，不能只覆盖 happy path。
 - 阶段测试通过只代表该阶段完成，不代表完整系统完成。
 - 完整系统只有在 Phase 11 全量验收通过后才能宣布完成。
+- 当前 v0.1 已按 Phase 11 验收口径完成；post-v1 能力必须单独声明，不能混入 v0.1 完成声明。
 
 ## 2. 测试分层
 
@@ -21,7 +22,7 @@
 | integration tests | SQLite、CLI、import/export、adapter | `pnpm vitest run packages/sqlite apps/cli` |
 | golden tests | prompt、brief、review summary、Git export | `pnpm vitest run **/*.golden.test.ts` |
 | E2E tests | PRD 13 条端到端场景 | `pnpm e2e` |
-| UI tests | 资产工作台生产流 | `pnpm playwright test` |
+| UI tests | 资产工作台前端状态流与浏览器 QA | `pnpm vitest run apps/web` |
 | security tests | 敏感信息不入库、不导出、不进日志 | `pnpm security:test` |
 | docs tests | 文档链接和阶段覆盖 | `pnpm docs:check` |
 
@@ -38,7 +39,7 @@
 | Phase 6 | review/impact tests | 上游变化只生成影响记录，不覆盖下游 |
 | Phase 7 | skill transcript tests | Skill 调 CLI，不直接写库 |
 | Phase 8 | adapter contract + security | provider 失败不污染正式数据，API key 不落盘 |
-| Phase 9 | Playwright | 资产工作台主要流程可操作，无布局重叠 |
+| Phase 9 | web unit + browser QA | 资产工作台主要流程可操作，无布局重叠 |
 | Phase 10 | server/local contract tests | local 和 server adapter 行为一致，权限生效 |
 | Phase 11 | full E2E + release checks | PRD 13 条验收场景全通过 |
 
@@ -219,5 +220,7 @@ provider adapter 只能保存：
 
 - 只跑 unit tests 就说系统完成。
 - 只完成 CLI 就说完整产品完成。
-- UI 骨架存在就说资产工作台完成。
+- 只完成前端样例就说生产级 Web 工作台完成。
 - mock provider 通过就说真实 provider 已接入。
+
+当前 v0.1 允许声明为“本地优先系统通过验收”。不得把它表述为“生产级托管平台已完成”，因为真实 provider、npm 分发、HTTP 服务、Web/API 持久化接入、团队账户权限与同步仍属于 post-v1。

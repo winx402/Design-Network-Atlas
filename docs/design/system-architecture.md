@@ -1,6 +1,6 @@
 # DNA 系统技术设计
 
-状态：draft
+状态：v0.1-active
 最后审阅：2026-06-26
 来源级别：authoritative technical design
 上游输入：视觉基因谱系系统 PRD、阶段开发路线图
@@ -285,13 +285,16 @@ Skill 是引导层，不是持久化层：
 
 ## 10. 当前代码状态说明
 
-当前仓库已有一个早期工程骨架，用于验证方向：
+当前仓库已完成 v0.1 local-first 实现，并通过 Phase 11 端到端验收：
 
-- TypeScript workspace。
-- 核心 schema。
-- SQLite adapter。
-- CLI 最小闭环。
-- Skill 说明。
-- Web 资产工作台骨架。
+- TypeScript workspace 与核心领域模型。
+- SQLite 本地存储、repository ports、ChangeSet 写入流。
+- CLI 本地闭环，覆盖 graph/template/node/edge/phenotype/asset/review/impact/import/export。
+- 编译策略、表型版本、素材索引、审查记录、影响分析。
+- Git-friendly JSON 目录导入导出。
+- Mock provider adapter 与敏感参数清理。
+- Codex Skill preview-first 命令说明。
+- Web asset workbench 的前端样例和状态模型。
+- local/server collaboration adapter 的权限与冲突模型。
 
-这不是完整开发完成态。后续必须按[阶段开发路线图](../implementation/development-roadmap.md)重新审查、补齐、重构和验收。
+v0.1 的完成边界是“本地优先试点可用”，不是生产级托管平台。npm CLI 发布、真实 provider、HTTP server、Web/API 持久化接入、团队账户权限与同步服务属于 post-v1 路线。

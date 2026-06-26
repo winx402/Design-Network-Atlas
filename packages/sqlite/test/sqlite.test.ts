@@ -7,7 +7,9 @@ import {
   createDefaultSpeciesNode,
   createDefaultEvolutionEdge,
   createDefaultPhenotype,
-  createDefaultPhenotypeVersion
+  createDefaultPhenotypeVersion,
+  createImpactRecord,
+  createReviewRecord
 } from "@dna/core";
 import { exportProject, importProject, SqliteDnaStore } from "@dna/sqlite";
 
@@ -80,6 +82,26 @@ describe("SQLite DNA store", () => {
         phenotypeVersionId: "pv-export"
       })
     );
+    source.reviews.create(
+      createReviewRecord({
+        reviewRecordId: "review-export",
+        graphId: "graph-export",
+        objectType: "phenotype-version",
+        objectId: "pv-export",
+        status: "pass"
+      })
+    );
+    source.impacts.create(
+      createImpactRecord({
+        impactRecordId: "impact-export",
+        graphId: "graph-export",
+        changedObjectType: "node",
+        changedObjectId: "node-export",
+        changedVersionId: "node-export@2.0.0",
+        objectType: "phenotype-version",
+        objectId: "pv-export"
+      })
+    );
 
     const outDir = tempPath("export-dir");
     exportProject(source, outDir);
@@ -93,6 +115,10 @@ describe("SQLite DNA store", () => {
     expect(target.graphs.get("graph-export")?.name).toBe("Export");
     expect(target.nodes.get("node-export")?.name).toBe("Export Node");
     expect(target.phenotypeVersions.get("pv-export")?.phenotypeId).toBe("ph-export");
+    expect(target.reviews.get("review-export")?.objectId).toBe("pv-export");
+    expect(target.impacts.listByChangedObject("node", "node-export").map((record) => record.impactRecordId)).toEqual([
+      "impact-export"
+    ]);
 
     source.close();
     target.close();

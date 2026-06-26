@@ -163,11 +163,13 @@ export class InMemoryDnaStore implements DnaServiceStore {
     this.reviews = {
       create: (review) => this.state.reviews.set(review.reviewRecordId, review),
       get: (reviewRecordId) => this.state.reviews.get(reviewRecordId),
+      listByGraph: (graphId) => [...this.state.reviews.values()].filter((review) => review.graphId === graphId),
       listByObject: (objectType, objectId) =>
         [...this.state.reviews.values()].filter((review) => review.objectType === objectType && review.objectId === objectId)
     };
     this.impacts = {
       create: (record) => this.state.impacts.set(record.impactRecordId, record),
+      listByGraph: (graphId) => [...this.state.impacts.values()].filter((record) => record.graphId === graphId),
       listByChangedObject: (objectType, objectId) =>
         [...this.state.impacts.values()].filter((record) => record.changedObjectType === objectType && record.changedObjectId === objectId)
     };

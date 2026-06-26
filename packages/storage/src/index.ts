@@ -94,11 +94,13 @@ export interface GenerationJobRepository {
 export interface ReviewRepository {
   create(review: ReviewRecord): void;
   get(reviewRecordId: string): ReviewRecord | undefined;
+  listByGraph(graphId: string): ReviewRecord[];
   listByObject(objectType: string, objectId: string): ReviewRecord[];
 }
 
 export interface ImpactRepository {
   create(record: ImpactRecord): void;
+  listByGraph(graphId: string): ImpactRecord[];
   listByChangedObject(objectType: "node" | "edge", objectId: string): ImpactRecord[];
 }
 

@@ -1,6 +1,6 @@
 # DNA 分阶段开发路线图
 
-状态：draft
+状态：v0.1-completed
 最后审阅：2026-06-26
 来源级别：authoritative implementation plan
 上游输入：[系统技术设计](../design/system-architecture.md)
@@ -12,7 +12,11 @@
 
 **Architecture:** 先固定领域模型和 service/storage ports，再实现 SQLite、本地 CLI、编译/表型、审查/影响分析、生成 adapter、资产工作台和双模式协作。每个阶段只向前扩展，不用一次性原型替代完整设计。
 
-**Tech Stack:** TypeScript, Node.js, pnpm workspace, Zod, SQLite, Commander.js, Vitest, Vite/React, Playwright, future server adapter.
+**Tech Stack:** TypeScript, Node.js, pnpm workspace, Zod, SQLite, Commander.js, Vitest, Vite/React, future server adapter.
+
+## 当前状态
+
+Phase 0-11 已完成并由测试覆盖。本文件保留为历史执行计划、验收映射和 post-v1 拆分参照；后续新增能力必须继续落到明确阶段、测试和完成边界中。
 
 ---
 
@@ -22,14 +26,14 @@
 | --- | --- | --- | --- |
 | Phase 0 | 设计冻结与工程基线 | 完成设计文档、工程结构、测试框架 | 文档检查、CLI smoke、空测试套件 |
 | Phase 1 | 核心领域模型 | 完整实现核心对象、schema、状态机、facets | schema/unit tests |
-| Phase 2 | Service / Storage Ports | 建立 application service、repository ports、change-set | service unit tests、contract tests skeleton |
+| Phase 2 | Service / Storage Ports | 建立 application service、repository ports、change-set | service unit tests、contract tests |
 | Phase 3 | SQLite 本地存储 | 实现 migration、repository、事务、版本不可变 | SQLite integration tests |
 | Phase 4 | CLI 本地闭环 | 实现 graph/template/node/edge/import/export | CLI integration tests |
 | Phase 5 | 编译与表型 | 实现 compile policy、generation job、phenotype/version/asset | golden tests、E2E prompt/brief |
 | Phase 6 | 审查与影响分析 | 实现 review、style distance、impact records | review/impact unit + integration |
 | Phase 7 | Codex Skill | Skill 引导 CLI，预览、确认、审查写入 | command transcript tests |
 | Phase 8 | 生成模型 Adapter | mock provider + provider port + 安全边界 | adapter contract + security tests |
-| Phase 9 | 资产工作台 | Web 资产工作台生产流 | Playwright UI tests |
+| Phase 9 | 资产工作台 | Web 资产工作台生产流 | web unit + browser QA |
 | Phase 10 | 双模式协作 | server adapter、同步、权限、审批 | contract tests、API tests、权限 tests |
 | Phase 11 | 完整系统验收 | 跑通 PRD 全量场景和发布检查 | E2E suite、release checklist |
 
@@ -58,7 +62,7 @@
 
 - 技术设计能解释完整系统的对象、边界、依赖方向、写入机制、版本机制、测试策略。
 - 路线图把所有 PRD 能力映射到阶段。
-- 当前代码如果存在，只能标记为早期骨架，不能宣布完整开发完成。
+- Phase 0 阶段只能标记为工程基线；v0.1 完成状态以后续 Phase 11 验收为准。
 
 提交边界：
 
@@ -359,7 +363,7 @@
 
 测试：
 
-- Playwright 打开资产工作台。
+- 浏览器打开资产工作台。
 - 搜索标签和状态。
 - 查看表型版本。
 - 接受 / 拒绝 / 归档表型版本。
