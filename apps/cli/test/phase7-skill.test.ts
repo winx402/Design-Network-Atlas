@@ -1,8 +1,9 @@
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 
-const projectRoot = "/Users/bot/Documents/DNA-Design-Network-Atlas";
+const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const skillPath = join(projectRoot, "codex-skills", "dna", "SKILL.md");
 
 function dnaCommandLines() {

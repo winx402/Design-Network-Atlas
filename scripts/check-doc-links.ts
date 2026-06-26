@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, extname, join, normalize, resolve } from "node:path";
 
-const root = resolve("/Users/bot/Documents/DNA-Design-Network-Atlas");
+const root = resolve();
 const markdownFiles = listMarkdownFiles(root).filter((path) => !path.includes("/node_modules/"));
 const failures: string[] = [];
 const linkPattern = /\[[^\]]+\]\(([^)]+)\)/g;

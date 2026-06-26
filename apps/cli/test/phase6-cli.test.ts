@@ -1,10 +1,11 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 
-const projectRoot = "/Users/bot/Documents/DNA-Design-Network-Atlas";
+const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 
 function tempDir(name: string) {
   const path = join(tmpdir(), `dna-${name}-${Date.now()}-${Math.random().toString(16).slice(2)}`);

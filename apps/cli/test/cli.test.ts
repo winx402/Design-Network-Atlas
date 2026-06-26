@@ -1,10 +1,11 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 
-const projectRoot = "/Users/bot/Documents/DNA-Design-Network-Atlas";
+const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 
 function runDna(args: string[], cwd: string) {
   return execFileSync("pnpm", ["--silent", "tsx", "apps/cli/src/index.ts", ...args], {

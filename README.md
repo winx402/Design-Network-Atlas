@@ -50,8 +50,8 @@ Requirements:
 - pnpm 11+
 
 ```bash
-git clone https://github.com/winx402/DNA-Design-Network-Atlas.git
-cd DNA-Design-Network-Atlas
+git clone https://github.com/winx402/Design-Network-Atlas.git
+cd Design-Network-Atlas
 pnpm install
 pnpm test
 pnpm typecheck
@@ -91,7 +91,7 @@ pnpm dna --db .dna/dna.sqlite phenotype generate \
 Use DNA from another project:
 
 ```bash
-alias dna='pnpm --silent --dir /path/to/DNA-Design-Network-Atlas dna'
+alias dna='pnpm --silent --dir /path/to/Design-Network-Atlas dna'
 
 cd /path/to/your-project
 mkdir -p .dna
@@ -235,8 +235,8 @@ DNA 默认不保存二进制素材，只保存素材索引，例如本地路径�
 - pnpm 11+
 
 ```bash
-git clone https://github.com/winx402/DNA-Design-Network-Atlas.git
-cd DNA-Design-Network-Atlas
+git clone https://github.com/winx402/Design-Network-Atlas.git
+cd Design-Network-Atlas
 pnpm install
 pnpm test
 pnpm typecheck
@@ -276,7 +276,7 @@ pnpm dna --db .dna/dna.sqlite phenotype generate \
 在其他项目里使用 DNA：
 
 ```bash
-alias dna='pnpm --silent --dir /path/to/DNA-Design-Network-Atlas dna'
+alias dna='pnpm --silent --dir /path/to/Design-Network-Atlas dna'
 
 cd /path/to/your-project
 mkdir -p .dna
