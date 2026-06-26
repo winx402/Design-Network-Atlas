@@ -12,6 +12,7 @@
   "dependencies": {
     "@dna/core": "workspace:*",
     "@dna/sqlite": "workspace:*",
+    "@dna/storage": "workspace:*",
     "@dna/template-packs": "workspace:*",
     "commander": "^14.0.0"
   }

@@ -35,6 +35,9 @@ importers:
       '@dna/sqlite':
         specifier: workspace:*
         version: link:../../packages/sqlite
+      '@dna/storage':
+        specifier: workspace:*
+        version: link:../../packages/storage
       '@dna/template-packs':
         specifier: workspace:*
         version: link:../../packages/template-packs

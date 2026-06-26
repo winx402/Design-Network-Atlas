@@ -2,11 +2,15 @@ import {
   ChangeSet,
   createChangeSet,
   createDefaultGraph,
+  createDefaultEvolutionEdge,
   createDefaultNodeVersion,
   createDefaultSpeciesNode,
+  EdgeVersion,
+  EvolutionEdge,
   Graph,
   markChangeSetApplied,
   nowIso,
+  resolveLineageStatus,
   SpeciesNode,
   WriteMode
 } from "@dna/core";
@@ -42,6 +46,20 @@ export interface CreateNodeInput {
   motifs?: string[];
   constraints?: Record<string, unknown>;
   badcases?: string[];
+}
+
+export interface CreateEdgeInput {
+  graphId: string;
+  edgeId: string;
+  fromNodeId: string;
+  toNodeId: string;
+  edgeType?: EvolutionEdge["edgeType"];
+  direction?: string;
+  operation?: string;
+  deltaGenes?: Record<string, unknown>;
+  valueResolution?: Record<string, unknown>;
+  mustPreserve?: string[];
+  mustAvoid?: string[];
 }
 
 export function createDnaServices(store: DnaServiceStore) {
@@ -114,6 +132,50 @@ export function createDnaServices(store: DnaServiceStore) {
           return applyNodeChangeSet(store, changeSet);
         }
         return { value: { node, nodeVersionId: version.nodeVersionId }, changeSet };
+      },
+      createEdge(input: CreateEdgeInput, options: WriteOptions): ServiceResult<{ edge: EvolutionEdge; edgeVersionId: string }> {
+        if (options.mode === "changeset-apply") {
+          const existing = requireExistingChangeSet(store, options.changeSetId);
+          return applyEdgeChangeSet(store, existing);
+        }
+        const edge = createDefaultEvolutionEdge({
+          graphId: input.graphId,
+          edgeId: input.edgeId,
+          fromNodeId: input.fromNodeId,
+          toNodeId: input.toNodeId,
+          edgeType: input.edgeType ?? "inherit",
+          direction: input.direction ?? "inherits visual identity",
+          operation: input.operation ?? "merge",
+          deltaGenes: input.deltaGenes ?? {},
+          valueResolution: input.valueResolution ?? { default: "override" },
+          mustPreserve: input.mustPreserve ?? [],
+          mustAvoid: input.mustAvoid ?? []
+        });
+        const version: EdgeVersion = {
+          edgeVersionId: `${edge.edgeId}@${edge.currentVersion}`,
+          edgeId: edge.edgeId,
+          graphId: edge.graphId,
+          version: edge.currentVersion,
+          deltaGenes: edge.deltaGenes,
+          valueResolution: edge.valueResolution,
+          mustPreserve: edge.mustPreserve,
+          mustAvoid: edge.mustAvoid,
+          changeSummary: `create edge ${edge.edgeId}`,
+          createdAt: edge.createdAt
+        };
+        const changeSet = createChangeSet({
+          mode: options.mode,
+          objectType: "edge",
+          operation: "create",
+          summary: `create edge ${edge.edgeId}`,
+          diff: { edgeId: edge.edgeId, graphId: edge.graphId, fromNodeId: edge.fromNodeId, toNodeId: edge.toNodeId },
+          payload: { edge, version }
+        });
+        store.changeSets.create(changeSet);
+        if (shouldApply(options)) {
+          return applyEdgeChangeSet(store, changeSet);
+        }
+        return { value: { edge, edgeVersionId: version.edgeVersionId }, changeSet };
       }
     }
   };
@@ -163,4 +225,38 @@ function applyNodeChangeSet(
     return next;
   });
   return { value: { node, nodeVersionId: version.nodeVersionId }, changeSet: applied };
+}
+
+function applyEdgeChangeSet(
+  store: DnaServiceStore,
+  changeSet: ChangeSet
+): ServiceResult<{ edge: EvolutionEdge; edgeVersionId: string }> {
+  const edge = changeSet.payload.edge as EvolutionEdge | undefined;
+  const version = changeSet.payload.version as EdgeVersion | undefined;
+  if (!edge || !version) throw new Error("change-set payload missing edge or version");
+  const applied = store.transaction(() => {
+    const graph = store.graphs.get(edge.graphId);
+    if (!graph) throw new Error(`graph not found: ${edge.graphId}`);
+    const target = store.nodes.get(edge.toNodeId);
+    if (!target) throw new Error(`target node not found: ${edge.toNodeId}`);
+    store.edges.create(edge);
+    store.edgeVersions.create(version);
+    const incomingEdges = target.incomingEdges.includes(edge.edgeId)
+      ? target.incomingEdges
+      : [...target.incomingEdges, edge.edgeId];
+    store.nodes.update({
+      ...target,
+      incomingEdges,
+      lineageStatus: resolveLineageStatus({
+        parentNodes: target.parentNodes,
+        incomingEdges,
+        primaryParent: target.primaryParent
+      }),
+      updatedAt: nowIso()
+    });
+    const next = markChangeSetApplied(changeSet);
+    store.changeSets.update(next);
+    return next;
+  });
+  return { value: { edge, edgeVersionId: version.edgeVersionId }, changeSet: applied };
 }

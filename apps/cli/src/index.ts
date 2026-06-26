@@ -5,18 +5,14 @@ import {
   compareStyleDistance,
   compileSpecies,
   createDefaultAsset,
-  createDefaultEvolutionEdge,
-  createDefaultGraph,
-  createDefaultNodeVersion,
   createDefaultPhenotype,
   createDefaultPhenotypeVersion,
-  createDefaultSpeciesNode,
   createGenerationJob,
   makeId,
-  nowIso,
   reviewNode
 } from "@dna/core";
 import { exportProject, importProject, SqliteDnaStore } from "@dna/sqlite";
+import { createDnaServices } from "@dna/storage";
 import { installBuiltInTemplatePacks } from "@dna/template-packs";
 
 type CommandOptions = {
@@ -38,10 +34,24 @@ function shouldApply(command: Command) {
   return Boolean(options.yes || options.mode === "draft-write" || options.mode === "changeset-apply");
 }
 
+function writeOptions(command: Command) {
+  const options = command.optsWithGlobals<CommandOptions>();
+  return {
+    mode: options.mode ?? "preview-confirm",
+    apply: Boolean(options.yes)
+  };
+}
+
 function preview(command: Command, summary: string, payload: unknown) {
   const options = command.optsWithGlobals<CommandOptions>();
   console.log("ChangeSet preview");
   console.log(JSON.stringify({ mode: options.mode ?? "preview-confirm", summary, payload }, null, 2));
+  console.log("Re-run with --yes to apply, or use --mode draft-write / --mode changeset-apply.");
+}
+
+function printChangeSet(changeSet: unknown) {
+  console.log("ChangeSet preview");
+  console.log(JSON.stringify(changeSet, null, 2));
   console.log("Re-run with --yes to apply, or use --mode draft-write / --mode changeset-apply.");
 }
 
@@ -71,21 +81,46 @@ graph
   .requiredOption("--purpose <purpose>", "graph purpose")
   .option("--status <status>", "graph status", "draft")
   .action((options, command) => {
-    const graphValue = createDefaultGraph({
-      graphId: options.id,
-      name: options.name,
-      purpose: options.purpose,
-      status: options.status
-    });
-    if (!shouldApply(command)) return preview(command, `create graph ${graphValue.graphId}`, graphValue);
     const store = openStore(command);
-    store.graphs.create(graphValue);
-    console.log(`created graph ${graphValue.graphId}`);
+    const services = createDnaServices(store);
+    const result = services.graph.createGraph(
+      {
+        graphId: options.id,
+        name: options.name,
+        purpose: options.purpose,
+        status: options.status
+      },
+      writeOptions(command)
+    );
+    if (result.changeSet.status === "preview") {
+      printChangeSet(result.changeSet);
+    } else {
+      console.log(`created graph ${result.value.graphId}`);
+    }
     store.close();
   });
 graph.command("list").action((_options, command) => {
   const store = openStore(command);
   console.log(JSON.stringify(store.graphs.list(), null, 2));
+  store.close();
+});
+graph.command("show").requiredOption("--id <graphId>", "graph id").action((options, command) => {
+  const store = openStore(command);
+  const value = store.graphs.get(options.id);
+  if (!value) throw new Error(`graph not found: ${options.id}`);
+  console.log(JSON.stringify(value, null, 2));
+  store.close();
+});
+graph.command("archive").requiredOption("--id <graphId>", "graph id").action((options, command) => {
+  const store = openStore(command);
+  const value = store.graphs.get(options.id);
+  if (!value) throw new Error(`graph not found: ${options.id}`);
+  if (!shouldApply(command)) {
+    store.close();
+    return preview(command, `archive graph ${options.id}`, { before: value, after: { ...value, status: "archived" } });
+  }
+  store.graphs.archive(options.id);
+  console.log(`archived graph ${options.id}`);
   store.close();
 });
 
@@ -121,44 +156,41 @@ node
     const parentRoles = Object.fromEntries(
       parentNodes.map((parentId) => [parentId, parentId === options.primaryParent ? "primary" : "reference"])
     ) as Record<string, "primary" | "fusion" | "reference" | "constraint" | "variant-source">;
-    const nodeValue = createDefaultSpeciesNode({
-      graphId: options.graph,
-      nodeId: options.id,
-      name: options.name,
-      category: options.category,
-      level: options.level,
-      parentNodes,
-      primaryParent: options.primaryParent,
-      parentRoles,
-      motifs: options.motif,
-      constraints: parseKeyValue(options.constraint),
-      badcases: options.badcase
-    });
-    const version = createDefaultNodeVersion({
-      graphId: nodeValue.graphId,
-      nodeId: nodeValue.nodeId,
-      nodeVersionId: `${nodeValue.nodeId}@${nodeValue.currentVersion}`,
-      resolvedGeneSnapshot: { ...nodeValue.constraints, motifs: nodeValue.motifs, badcases: nodeValue.badcases },
-      ownGeneDelta: nodeValue.constraints,
-      constraintSnapshot: nodeValue.constraints,
-      compileSnapshot: nodeValue.compilePolicy ?? { type: "system-rule-first" }
-    });
-    if (!shouldApply(command)) return preview(command, `create node ${nodeValue.nodeId}`, { node: nodeValue, version });
     const store = openStore(command);
-    store.transaction(() => {
-      store.nodes.create(nodeValue);
-      store.nodeVersions.create(version);
-      const graphValue = store.graphs.get(nodeValue.graphId);
-      if (graphValue && nodeValue.parentNodes.length === 0 && !graphValue.rootNodes.includes(nodeValue.nodeId)) {
-        store.graphs.update({ ...graphValue, rootNodes: [...graphValue.rootNodes, nodeValue.nodeId], updatedAt: nowIso() });
-      }
-    });
-    console.log(`created node ${nodeValue.nodeId}`);
+    const services = createDnaServices(store);
+    const result = services.lineage.createNode(
+      {
+        graphId: options.graph,
+        nodeId: options.id,
+        name: options.name,
+        category: options.category,
+        level: options.level,
+        parentNodes,
+        primaryParent: options.primaryParent,
+        parentRoles,
+        motifs: options.motif,
+        constraints: parseKeyValue(options.constraint),
+        badcases: options.badcase
+      },
+      writeOptions(command)
+    );
+    if (result.changeSet.status === "preview") {
+      printChangeSet(result.changeSet);
+    } else {
+      console.log(`created node ${result.value.node.nodeId}`);
+    }
     store.close();
   });
 node.command("list").requiredOption("--graph <graphId>", "graph id").action((options, command) => {
   const store = openStore(command);
   console.log(JSON.stringify(store.nodes.listByGraph(options.graph), null, 2));
+  store.close();
+});
+node.command("show").requiredOption("--id <nodeId>", "node id").action((options, command) => {
+  const store = openStore(command);
+  const value = store.nodes.get(options.id);
+  if (!value) throw new Error(`node not found: ${options.id}`);
+  console.log(JSON.stringify(value, null, 2));
   store.close();
 });
 
@@ -173,32 +205,43 @@ edge
   .option("--direction <direction>", "direction", "inherits visual identity")
   .option("--operation <operation>", "operation", "merge")
   .option("--delta <key=value>", "delta gene", collect, [])
+  .option("--value-resolution <key=value>", "value resolution", collect, [])
   .action((options, command) => {
-    const edgeValue = createDefaultEvolutionEdge({
-      graphId: options.graph,
-      edgeId: options.id,
-      fromNodeId: options.from,
-      toNodeId: options.to,
-      edgeType: options.type,
-      direction: options.direction,
-      operation: options.operation,
-      deltaGenes: parseKeyValue(options.delta)
-    });
-    if (!shouldApply(command)) return preview(command, `create edge ${edgeValue.edgeId}`, edgeValue);
     const store = openStore(command);
-    store.edges.create(edgeValue);
-    const toNode = store.nodes.get(edgeValue.toNodeId);
-    if (toNode && !toNode.incomingEdges.includes(edgeValue.edgeId)) {
-      store.nodes.update({
-        ...toNode,
-        incomingEdges: [...toNode.incomingEdges, edgeValue.edgeId],
-        lineageStatus: toNode.parentNodes.length > 0 ? "complete" : toNode.lineageStatus,
-        updatedAt: nowIso()
-      });
+    const services = createDnaServices(store);
+    const result = services.lineage.createEdge(
+      {
+        graphId: options.graph,
+        edgeId: options.id,
+        fromNodeId: options.from,
+        toNodeId: options.to,
+        edgeType: options.type,
+        direction: options.direction,
+        operation: options.operation,
+        deltaGenes: parseKeyValue(options.delta),
+        valueResolution: parseKeyValue(options.valueResolution)
+      },
+      writeOptions(command)
+    );
+    if (result.changeSet.status === "preview") {
+      printChangeSet(result.changeSet);
+    } else {
+      console.log(`created edge ${result.value.edge.edgeId}`);
     }
-    console.log(`created edge ${edgeValue.edgeId}`);
     store.close();
   });
+edge.command("list").requiredOption("--graph <graphId>", "graph id").action((options, command) => {
+  const store = openStore(command);
+  console.log(JSON.stringify(store.edges.listByGraph(options.graph), null, 2));
+  store.close();
+});
+edge.command("show").requiredOption("--id <edgeId>", "edge id").action((options, command) => {
+  const store = openStore(command);
+  const value = store.edges.get(options.id);
+  if (!value) throw new Error(`edge not found: ${options.id}`);
+  console.log(JSON.stringify(value, null, 2));
+  store.close();
+});
 
 const phenotype = program.command("phenotype").description("Generate and manage phenotypes");
 phenotype
