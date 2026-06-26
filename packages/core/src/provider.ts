@@ -18,6 +18,13 @@ export interface GenerationProvider {
   generate(input: GenerationProviderInput): Promise<GenerationProviderOutput>;
 }
 
+export interface HttpGenerationProviderOptions {
+  name?: string;
+  endpoint: string;
+  headers?: Record<string, string>;
+  fetcher?: typeof fetch;
+}
+
 export interface RunGenerationProviderInput {
   provider: GenerationProvider;
   generationJobId: string;
@@ -119,6 +126,38 @@ export class MockGenerationProvider implements GenerationProvider {
       text: `${input.brief}\n${input.prompt}`,
       assetUris: [],
       metadata: { provider: this.name, parameters: input.toolParameters }
+    };
+  }
+}
+
+export class HttpGenerationProvider implements GenerationProvider {
+  readonly name: string;
+  private readonly endpoint: string;
+  private readonly headers: Record<string, string>;
+  private readonly fetcher: typeof fetch;
+
+  constructor(options: HttpGenerationProviderOptions) {
+    this.name = options.name ?? "http";
+    this.endpoint = options.endpoint;
+    this.headers = options.headers ?? {};
+    this.fetcher = options.fetcher ?? fetch;
+  }
+
+  async generate(input: GenerationProviderInput): Promise<GenerationProviderOutput> {
+    const response = await this.fetcher(this.endpoint, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...this.headers
+      },
+      body: JSON.stringify(input)
+    });
+    if (!response.ok) throw new Error(`provider request failed: ${response.status}`);
+    const body = (await response.json()) as Partial<GenerationProviderOutput>;
+    return {
+      text: body.text ?? "",
+      assetUris: body.assetUris ?? [],
+      metadata: body.metadata ?? {}
     };
   }
 }

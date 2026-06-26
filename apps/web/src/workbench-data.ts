@@ -53,6 +53,12 @@ export interface PhenotypeFilter {
   outdatedOnly: boolean;
 }
 
+export interface WorkbenchLoadOptions {
+  baseUrl: string;
+  graphId?: string;
+  fetcher?: (url: string) => Promise<{ ok?: boolean; status?: number; json(): Promise<unknown> }>;
+}
+
 export const samplePhenotypes: WorkbenchPhenotype[] = [
   {
     id: "ph-warning-icon",
@@ -247,4 +253,14 @@ export function updateVersionStatus(
 
 export function allTags(phenotypes: WorkbenchPhenotype[]): string[] {
   return [...new Set(phenotypes.flatMap((phenotype) => phenotype.tags))].sort();
+}
+
+export async function loadWorkbenchPhenotypes(options: WorkbenchLoadOptions): Promise<WorkbenchPhenotype[]> {
+  const fetcher = options.fetcher ?? fetch;
+  const url = new URL("/api/workbench/phenotypes", options.baseUrl);
+  if (options.graphId) url.searchParams.set("graphId", options.graphId);
+  const response = await fetcher(url.toString());
+  if (response.ok === false) throw new Error(`failed to load workbench phenotypes: ${response.status ?? "unknown"}`);
+  const body = (await response.json()) as { phenotypes?: WorkbenchPhenotype[] };
+  return body.phenotypes ?? [];
 }

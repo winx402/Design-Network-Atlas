@@ -81,6 +81,16 @@ function sortOutputReferences(references: OutputReference[]): OutputReference[] 
   });
 }
 
+function syncSqliteLibraryGraphId(store: SqliteDnaStore, libraryId: string, graphId: string) {
+  const library = store.phenotypeLibraries.get(libraryId);
+  if (!library || library.graphIds.includes(graphId)) return;
+  store.phenotypeLibraries.update({
+    ...library,
+    graphIds: [...library.graphIds, graphId].sort(),
+    updatedAt: new Date().toISOString()
+  });
+}
+
 export class SqliteDnaStore implements StorageEngine {
   readonly db: DatabaseSync;
   readonly graphs: GraphRepository;
@@ -724,25 +734,31 @@ class SqliteStorageMountRepository implements StorageMountRepository {
 class SqlitePhenotypeLibraryGraphBindingRepository implements PhenotypeLibraryGraphBindingRepository {
   constructor(private readonly store: SqliteDnaStore) {}
   create(binding: PhenotypeLibraryGraphBinding) {
-    this.store.db
-      .prepare(
-        "INSERT INTO phenotype_library_graph_bindings (binding_id, library_id, graph_id, role, status, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-      )
-      .run(
-        binding.bindingId,
-        binding.libraryId,
-        binding.graphId,
-        binding.role,
-        binding.status,
-        JSON.stringify(binding),
-        binding.createdAt,
-        binding.updatedAt
-      );
+    this.store.transaction(() => {
+      this.store.db
+        .prepare(
+          "INSERT INTO phenotype_library_graph_bindings (binding_id, library_id, graph_id, role, status, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        )
+        .run(
+          binding.bindingId,
+          binding.libraryId,
+          binding.graphId,
+          binding.role,
+          binding.status,
+          JSON.stringify(binding),
+          binding.createdAt,
+          binding.updatedAt
+        );
+      syncSqliteLibraryGraphId(this.store, binding.libraryId, binding.graphId);
+    });
   }
   update(binding: PhenotypeLibraryGraphBinding) {
-    this.store.db
-      .prepare("UPDATE phenotype_library_graph_bindings SET role = ?, status = ?, payload = ?, updated_at = ? WHERE binding_id = ?")
-      .run(binding.role, binding.status, JSON.stringify(binding), binding.updatedAt, binding.bindingId);
+    this.store.transaction(() => {
+      this.store.db
+        .prepare("UPDATE phenotype_library_graph_bindings SET role = ?, status = ?, payload = ?, updated_at = ? WHERE binding_id = ?")
+        .run(binding.role, binding.status, JSON.stringify(binding), binding.updatedAt, binding.bindingId);
+      syncSqliteLibraryGraphId(this.store, binding.libraryId, binding.graphId);
+    });
   }
   get(bindingId: string) {
     return parsePayload<PhenotypeLibraryGraphBinding>(
@@ -856,6 +872,11 @@ class SqliteGenerationJobRepository implements GenerationJobRepository {
   get(generationJobId: string) {
     return parsePayload<GenerationJob>(this.store.db.prepare("SELECT payload FROM generation_jobs WHERE generation_job_id = ?").get(generationJobId) as Row | undefined);
   }
+  listByGraph(graphId: string) {
+    return parseRows<GenerationJob>(
+      this.store.db.prepare("SELECT payload FROM generation_jobs WHERE graph_id = ? ORDER BY created_at, generation_job_id").all(graphId) as Row[]
+    );
+  }
 }
 
 class SqliteReviewRepository implements ReviewRepository {
@@ -959,6 +980,9 @@ export function exportProject(store: SqliteDnaStore, outDir: string): void {
       }
     }
     for (const asset of store.assets.search({ graphId: graph.graphId })) writeJson(join(graphDir, "assets", `${asset.assetId}.json`), asset);
+    for (const job of store.generationJobs.listByGraph(graph.graphId)) {
+      writeJson(join(graphDir, "generation-jobs", `${job.generationJobId}.json`), job);
+    }
     for (const reference of store.outputReferences.listByGraph(graph.graphId)) {
       writeJson(join(graphDir, "output-references", `${reference.outputReferenceId}.json`), reference);
     }
@@ -998,6 +1022,7 @@ export function importProject(store: SqliteDnaStore, inDir: string): void {
       else store.phenotypes.create(value);
     }
     for (const file of listJsonFiles(join(graphDir, "assets"))) store.assets.create(JSON.parse(readFileSync(file, "utf8")));
+    for (const file of listJsonFiles(join(graphDir, "generation-jobs"))) store.generationJobs.create(JSON.parse(readFileSync(file, "utf8")));
     for (const file of listJsonFiles(join(graphDir, "output-references"))) {
       store.outputReferences.create(JSON.parse(readFileSync(file, "utf8")));
     }

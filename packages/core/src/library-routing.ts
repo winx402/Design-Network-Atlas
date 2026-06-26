@@ -1,4 +1,4 @@
-import { LibraryRoutingPolicy, OutputReference } from "./schemas.js";
+import { LibraryRoutingPolicy, OutputReference, StorageMount } from "./schemas.js";
 
 export interface LibraryRoutingRequest {
   libraryId: string;
@@ -11,10 +11,14 @@ export interface LibraryRoutingRequest {
 export interface LibraryRoutingResult {
   policy: LibraryRoutingPolicy;
   targetMountId: string;
+  fallbackApplied: boolean;
+  requiredMetadata: string[];
+  metadataDefaults: Record<string, unknown>;
 }
 
 export function resolveLibraryRoutingPolicy(input: {
   policies: LibraryRoutingPolicy[];
+  mounts?: StorageMount[];
   request: LibraryRoutingRequest;
 }): LibraryRoutingResult | undefined {
   const requestTags = new Set(input.request.tags ?? []);
@@ -30,7 +34,14 @@ export function resolveLibraryRoutingPolicy(input: {
 
   const policy = matching[0];
   if (!policy) return undefined;
-  return { policy, targetMountId: policy.targetMountId };
+  const targetMountId = resolveTargetMountId(policy, input.mounts);
+  return {
+    policy,
+    targetMountId,
+    fallbackApplied: targetMountId !== policy.targetMountId,
+    requiredMetadata: policy.requiredMetadata,
+    metadataDefaults: policy.metadataDefaults
+  };
 }
 
 function matches(policy: LibraryRoutingPolicy, request: LibraryRoutingRequest, requestTags: Set<string>): boolean {
@@ -41,4 +52,15 @@ function matches(policy: LibraryRoutingPolicy, request: LibraryRoutingRequest, r
     if (!requestTags.has(tag)) return false;
   }
   return true;
+}
+
+function resolveTargetMountId(policy: LibraryRoutingPolicy, mounts: StorageMount[] | undefined) {
+  if (!mounts) return policy.targetMountId;
+  if (isMountAvailable(mounts, policy.targetMountId)) return policy.targetMountId;
+  if (policy.fallbackMountId && isMountAvailable(mounts, policy.fallbackMountId)) return policy.fallbackMountId;
+  return policy.targetMountId;
+}
+
+function isMountAvailable(mounts: StorageMount[], mountId: string) {
+  return mounts.some((mount) => mount.mountId === mountId && mount.status === "active");
 }

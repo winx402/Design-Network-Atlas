@@ -19,14 +19,17 @@ import {
   formatGraphTreeText,
   buildGraphTree,
   makeId,
+  MockGenerationProvider,
   OutputReferenceRoleSchema,
   OutputReferenceTypeSchema,
   PROJECT_VERSION,
   resolveLibraryRoutingPolicy,
+  runGenerationProvider,
   reviewNode,
   reviewPhenotypeVersion
 } from "@dna/core";
 import { exportProject, importProject, SqliteDnaStore } from "@dna/sqlite";
+import { startDnaHttpServer } from "@dna/server";
 import { createDnaServices } from "@dna/storage";
 import { installBuiltInTemplatePacks } from "@dna/template-packs";
 
@@ -98,6 +101,12 @@ function parseInteger(value: string) {
   return parsed;
 }
 
+function parsePort(value: string) {
+  const parsed = parseInteger(value);
+  if (parsed < 0 || parsed > 65_535) throw new Error(`Expected TCP port 0-65535, got ${value}`);
+  return parsed;
+}
+
 function resolveOutputReferenceMount(
   store: SqliteDnaStore,
   request: {
@@ -114,6 +123,7 @@ function resolveOutputReferenceMount(
   const phenotypeType = request.phenotypeType ?? inferPhenotypeType(store, request.phenotypeId, request.phenotypeVersionId);
   const result = resolveLibraryRoutingPolicy({
     policies: store.libraryRoutingPolicies.listByLibrary(request.libraryId),
+    mounts: store.storageMounts.listByLibrary(request.libraryId),
     request: {
       libraryId: request.libraryId,
       phenotypeType,
@@ -122,7 +132,7 @@ function resolveOutputReferenceMount(
       tags: request.tags
     }
   });
-  return result?.targetMountId;
+  return result;
 }
 
 function inferPhenotypeType(store: SqliteDnaStore, phenotypeId?: string, phenotypeVersionId?: string) {
@@ -669,7 +679,7 @@ outputRef
   .option("--metadata <key=value>", "metadata field", collect, [])
   .action((options, command) => {
     const store = openStore(command);
-    const routedMountId = options.storageMount ?? resolveOutputReferenceMount(store, {
+    const routingResult = options.storageMount ? undefined : resolveOutputReferenceMount(store, {
       libraryId: options.library,
       phenotypeId: options.phenotype,
       phenotypeVersionId: options.phenotypeVersion,
@@ -678,20 +688,26 @@ outputRef
       referenceType: options.type,
       tags: options.tag
     });
+    const metadata = { ...(routingResult?.metadataDefaults ?? {}), ...parseKeyValue(options.metadata) };
+    const missingMetadata = (routingResult?.requiredMetadata ?? []).filter((key) => metadata[key] === undefined);
+    if (missingMetadata.length) {
+      store.close();
+      throw new Error(`missing required routing metadata: ${missingMetadata.join(", ")}`);
+    }
     const reference = createDefaultOutputReference({
       outputReferenceId: options.id,
       graphId: options.graph,
       phenotypeId: options.phenotype,
       phenotypeVersionId: options.phenotypeVersion,
       libraryId: options.library,
-      storageMountId: routedMountId,
+      storageMountId: options.storageMount ?? routingResult?.targetMountId,
       externalId: options.externalId,
       uri: options.uri,
       referenceType: options.type,
       role: options.role,
       tags: options.tag,
       normalizedTags: options.normalizedTag,
-      metadata: parseKeyValue(options.metadata)
+      metadata
     });
     if (!shouldApply(command)) {
       store.close();
@@ -855,10 +871,110 @@ impact.command("list").requiredOption("--type <objectType>", "node or edge").req
   store.close();
 });
 
+const provider = program.command("provider").description("Run generation providers and inspect generation jobs");
+provider
+  .command("run-mock")
+  .requiredOption("--id <generationJobId>", "generation job id")
+  .requiredOption("--graph <graphId>", "graph id")
+  .requiredOption("--node <nodeId>", "node id")
+  .requiredOption("--phenotype-type <phenotypeType>", "phenotype type")
+  .requiredOption("--brief <brief>", "task brief")
+  .requiredOption("--prompt <prompt>", "compiled prompt")
+  .option("--phenotype <phenotypeId>", "phenotype id")
+  .option("--phenotype-version <phenotypeVersionId>", "phenotype version id")
+  .option("--param <key=value>", "runtime provider parameter", collect, [])
+  .action(async (options, command) => {
+    const store = openStore(command);
+    const graphValue = store.graphs.get(options.graph);
+    const nodeValue = store.nodes.get(options.node);
+    if (!graphValue || !nodeValue) {
+      store.close();
+      throw new Error("graph or node not found");
+    }
+    const result = await runGenerationProvider({
+      provider: new MockGenerationProvider(),
+      generationJobId: options.id,
+      graphId: options.graph,
+      nodeId: options.node,
+      phenotypeId: options.phenotype,
+      phenotypeVersionId: options.phenotypeVersion,
+      phenotypeType: options.phenotypeType,
+      taskBrief: options.brief,
+      compilePolicy: graphValue.compilePolicy,
+      prompt: options.prompt,
+      brief: options.brief,
+      toolParameters: parseKeyValue(options.param)
+    });
+    if (!shouldApply(command)) {
+      store.close();
+      return preview(command, `run mock provider ${result.job.generationJobId}`, result);
+    }
+    store.transaction(() => {
+      store.generationJobs.create(result.job);
+      for (const assetValue of result.assets) store.assets.create(assetValue);
+    });
+    console.log(JSON.stringify(result, null, 2));
+    store.close();
+  });
+provider
+  .command("job")
+  .command("show")
+  .requiredOption("--id <generationJobId>", "generation job id")
+  .action((options, command) => {
+    const store = openStore(command);
+    const job = store.generationJobs.get(options.id);
+    if (!job) {
+      store.close();
+      throw new Error(`generation job not found: ${options.id}`);
+    }
+    console.log(JSON.stringify(job, null, 2));
+    store.close();
+  });
+
+program
+  .command("serve")
+  .description("Start the local DNA HTTP API; web page access is disabled unless --web is passed")
+  .option("--host <host>", "bind host", "127.0.0.1")
+  .option("--port <port>", "bind port", parsePort, 3042)
+  .option("--web", "enable HTTP access to the DNA web page")
+  .action(async (options, command) => {
+    const store = openStore(command);
+    const httpServer = await startDnaHttpServer(store, {
+      host: options.host,
+      port: options.port,
+      webEnabled: Boolean(options.web)
+    });
+    console.log(`DNA HTTP API listening at ${httpServer.url}`);
+    console.log(options.web ? `DNA web page enabled at ${httpServer.url}/` : "DNA web page disabled. Restart with --web to enable /.");
+    const shutdown = async () => {
+      await httpServer.close();
+      store.close();
+      process.exit(0);
+    };
+    process.once("SIGINT", shutdown);
+    process.once("SIGTERM", shutdown);
+    await new Promise(() => {});
+  });
+
 program.command("export").requiredOption("--out <directory>", "output directory").action((options, command) => {
   const store = openStore(command);
   exportProject(store, options.out);
   console.log(`exported DNA project to ${options.out}`);
+  store.close();
+});
+
+const sync = program.command("sync").description("Exchange DNA projects through Git-friendly directories");
+sync.command("export").requiredOption("--out <directory>", "output directory").action((options, command) => {
+  const store = openStore(command);
+  exportProject(store, options.out);
+  console.log(`synced DNA project export to ${options.out}`);
+  store.close();
+});
+sync.command("import").requiredOption("--in <directory>", "input directory").action((options, command) => {
+  if (!shouldApply(command)) return preview(command, `sync import project from ${options.in}`, { in: options.in });
+  const store = openStore(command);
+  importProject(store, options.in);
+  console.log(`synced DNA project import from ${options.in}`);
   store.close();
 });
 program.command("import").requiredOption("--in <directory>", "input directory").action((options, command) => {
@@ -888,4 +1004,4 @@ function resolveAssetContext(store: SqliteDnaStore, linkedObjectType: string, li
   return { nodeId: undefined, phenotypeType: undefined };
 }
 
-program.parse();
+await program.parseAsync();

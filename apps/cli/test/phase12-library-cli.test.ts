@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -161,6 +161,8 @@ describe("Phase 12 phenotype library CLI", () => {
     expect(normalizedSearch).not.toContain("out-git");
 
     runDna(["--db", db, "export", "--out", out]);
+    const exportedLibrary = JSON.parse(readFileSync(join(out, "libraries", "lib-shared-ui", "library.json"), "utf8"));
+    expect(exportedLibrary.graphIds).toEqual(["graph-ui"]);
     expect(existsSync(join(out, "libraries", "lib-shared-ui", "library.json"))).toBe(true);
     expect(existsSync(join(out, "graphs", "graph-ui", "output-references", "out-eagle.json"))).toBe(true);
 

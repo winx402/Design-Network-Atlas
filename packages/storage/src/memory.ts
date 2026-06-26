@@ -215,8 +215,14 @@ export class InMemoryDnaStore implements DnaServiceStore {
       listByLibrary: (libraryId) => [...this.state.storageMounts.values()].filter((mount) => mount.libraryId === libraryId)
     };
     this.phenotypeLibraryGraphBindings = {
-      create: (binding) => this.state.phenotypeLibraryGraphBindings.set(binding.bindingId, binding),
-      update: (binding) => this.state.phenotypeLibraryGraphBindings.set(binding.bindingId, binding),
+      create: (binding) => {
+        this.state.phenotypeLibraryGraphBindings.set(binding.bindingId, binding);
+        syncMemoryLibraryGraphId(this.state, binding.libraryId, binding.graphId);
+      },
+      update: (binding) => {
+        this.state.phenotypeLibraryGraphBindings.set(binding.bindingId, binding);
+        syncMemoryLibraryGraphId(this.state, binding.libraryId, binding.graphId);
+      },
       get: (bindingId) => this.state.phenotypeLibraryGraphBindings.get(bindingId),
       listByGraph: (graphId) => [...this.state.phenotypeLibraryGraphBindings.values()].filter((binding) => binding.graphId === graphId),
       listByLibrary: (libraryId) =>
@@ -246,7 +252,11 @@ export class InMemoryDnaStore implements DnaServiceStore {
     this.generationJobs = {
       create: (job) => this.state.generationJobs.set(job.generationJobId, job),
       update: (job) => this.state.generationJobs.set(job.generationJobId, job),
-      get: (generationJobId) => this.state.generationJobs.get(generationJobId)
+      get: (generationJobId) => this.state.generationJobs.get(generationJobId),
+      listByGraph: (graphId) =>
+        [...this.state.generationJobs.values()]
+          .filter((job) => job.graphId === graphId)
+          .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.generationJobId.localeCompare(right.generationJobId))
     };
     this.reviews = {
       create: (review) => this.state.reviews.set(review.reviewRecordId, review),
@@ -338,4 +348,14 @@ function cloneState(state: MemoryState): MemoryState {
     impacts: new Map(state.impacts),
     changeSets: new Map(state.changeSets)
   };
+}
+
+function syncMemoryLibraryGraphId(state: MemoryState, libraryId: string, graphId: string) {
+  const library = state.phenotypeLibraries.get(libraryId);
+  if (!library || library.graphIds.includes(graphId)) return;
+  state.phenotypeLibraries.set(libraryId, {
+    ...library,
+    graphIds: [...library.graphIds, graphId].sort(),
+    updatedAt: new Date().toISOString()
+  });
 }

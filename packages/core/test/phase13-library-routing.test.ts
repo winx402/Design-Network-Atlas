@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   LibraryRoutingPolicySchema,
   createDefaultLibraryRoutingPolicy,
+  createDefaultStorageMount,
   resolveLibraryRoutingPolicy
 } from "@dna/core";
 
@@ -92,5 +93,52 @@ describe("Phase 13 library routing policy domain model", () => {
     });
 
     expect(result).toBeUndefined();
+  });
+
+  test("routing resolver applies fallback and exposes metadata policy when target mount is unavailable", () => {
+    const result = resolveLibraryRoutingPolicy({
+      policies: [
+        createDefaultLibraryRoutingPolicy({
+          routingPolicyId: "route-preview-eagle",
+          libraryId: "lib-ui",
+          name: "Preview Eagle",
+          priority: 20,
+          match: { outputRole: "preview", tags: ["ui"] },
+          targetMountId: "mount-eagle",
+          fallbackMountId: "mount-nas",
+          requiredMetadata: ["license", "source"],
+          metadataDefaults: { license: "internal", source: "routing-policy" }
+        })
+      ],
+      mounts: [
+        createDefaultStorageMount({
+          mountId: "mount-eagle",
+          libraryId: "lib-ui",
+          storageType: "eagle",
+          adapterKind: "managed-library",
+          displayName: "Eagle",
+          location: "eagle://missing",
+          status: "disconnected"
+        }),
+        createDefaultStorageMount({
+          mountId: "mount-nas",
+          libraryId: "lib-ui",
+          storageType: "nas",
+          adapterKind: "pointer-only",
+          displayName: "NAS",
+          location: "file:///nas"
+        })
+      ],
+      request: {
+        libraryId: "lib-ui",
+        outputRole: "preview",
+        tags: ["ui"]
+      }
+    });
+
+    expect(result?.targetMountId).toBe("mount-nas");
+    expect(result?.fallbackApplied).toBe(true);
+    expect(result?.requiredMetadata).toEqual(["license", "source"]);
+    expect(result?.metadataDefaults).toEqual({ license: "internal", source: "routing-policy" });
   });
 });

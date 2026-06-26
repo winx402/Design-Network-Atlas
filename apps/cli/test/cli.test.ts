@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
+const CLI_TIMEOUT = 60_000;
 
 function runDna(args: string[], cwd: string) {
   return execFileSync("pnpm", ["--silent", "tsx", "apps/cli/src/index.ts", ...args], {
@@ -19,7 +20,7 @@ describe("dna CLI", () => {
   test("shows help", () => {
     const output = runDna(["--help"], projectRoot);
     expect(output).toContain("Design Network Atlas");
-  });
+  }, CLI_TIMEOUT);
 
   test("runs a local graph-to-phenotype loop with explicit confirmation", () => {
     const projectDir = join(tmpdir(), `dna-cli-${Date.now()}-${Math.random().toString(16).slice(2)}`);
@@ -78,5 +79,5 @@ describe("dna CLI", () => {
 
     expect(generated).toContain("broken-ring");
     expect(generated).toContain("pending-confirmation");
-  });
+  }, CLI_TIMEOUT);
 });

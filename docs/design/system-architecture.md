@@ -1,7 +1,7 @@
 # DNA 系统技术设计
 
-状态：v0.3-active
-最后审阅：2026-06-26
+状态：v0.4-active
+最后审阅：2026-06-27
 来源级别：authoritative technical design
 上游输入：视觉基因谱系系统 PRD、阶段开发路线图
 下游交付：[阶段开发路线图](../implementation/development-roadmap.md)、[测试策略](../testing/test-strategy.md)
@@ -266,6 +266,7 @@ graphs/<graph_id>/nodes/
 graphs/<graph_id>/edges/
 graphs/<graph_id>/phenotypes/
 graphs/<graph_id>/assets/
+graphs/<graph_id>/generation-jobs/
 graphs/<graph_id>/output-references/
 graphs/<graph_id>/reviews/
 graphs/<graph_id>/impacts/
@@ -290,10 +291,14 @@ CLI 是本地核心阶段的主要产品入口。CLI 必须支持：
 - library
 - review
 - impact
+- provider
+- serve
+- sync
 - import
 - export
 
 CLI 写入默认展示 preview，不确认不落库。
+`dna serve` 只启动本地 HTTP API；DNA 网页 HTTP 访问默认关闭，必须显式传入 `--web`。
 
 ### 8.2 Codex Skill
 
@@ -317,7 +322,20 @@ Skill 是引导层，不是持久化层：
 - 审查结果。
 - outdated 提示。
 
-### 8.4 中心服务
+v0.4 Web 工作台仍是轻量工作台方向和数据状态模型，但已可以通过本地 HTTP API 读取 generated-result snapshot。完整生产 Web 客户端、图谱编辑器和团队审批界面属于 post-v1。
+
+### 8.4 本地 HTTP API
+
+本地 HTTP API 是 local-first 集成边界，不等同于托管中心服务：
+
+- `GET /api/health`：返回版本与本地存储状态。
+- `GET /api/graphs`：返回图谱列表。
+- `GET /api/graphs/:graphId/tree`：返回图谱树 JSON。
+- `GET /api/workbench/phenotypes?graphId=`：返回工作台需要的生成结果、版本、素材和审查快照。
+
+网页入口 `/` 和 `/index.html` 必须默认关闭。只有 `dna serve --web` 或 `createDnaHttpHandler(store, { webEnabled: true })` 明确开启时，才返回 HTML 页面。
+
+### 8.5 中心服务
 
 中心服务是双模式协作阶段能力。它必须实现同一套 repository / service ports，使本地 adapter 和 server adapter 通过同一套 contract tests。
 
@@ -341,7 +359,7 @@ Skill 是引导层，不是持久化层：
 
 ## 10. 当前代码状态说明
 
-当前仓库已完成 v0.3 local-first 实现，并通过 Phase 14 端到端验收：
+当前仓库已完成 v0.4 local-first 实现，并通过 Phase 15 端到端验收：
 
 - TypeScript workspace 与核心领域模型。
 - SQLite 本地存储、repository ports、ChangeSet 写入流。
@@ -350,9 +368,12 @@ Skill 是引导层，不是持久化层：
 - 编译策略、表型版本、素材索引、审查记录、影响分析。
 - Git-friendly JSON 目录导入导出。
 - 结果库、存储挂载、外部库字段映射和输出路由策略。
-- Mock provider adapter 与敏感参数清理。
+- 输出路由 fallback、metadata defaults、required metadata 执行。
+- Mock provider / generic HTTP provider adapter 与敏感参数清理。
+- Generation job 随 Git-friendly JSON 目录导入导出。
+- 本地 HTTP API、`dna serve` 和可选 Web page access。
 - Codex Skill preview-first 命令说明。
-- Web asset workbench 的前端样例和状态模型。
+- Web asset workbench 的前端样例、状态模型和 API-backed snapshot loader。
 - local/server collaboration adapter 的权限与冲突模型。
 
-v0.3 的完成边界是“本地优先试点可用”，不是生产级托管平台。npm CLI 发布、真实 provider、HTTP server、Web/API 持久化接入、团队账户权限与同步服务属于 post-v1 路线。
+v0.4 的完成边界是“本地优先试点可用并可被本地 API 集成”，不是生产级托管平台。npm CLI 发布、第一方真实模型 provider package、完整 Web 客户端、团队账户权限、审批流与多人同步服务属于 post-v1 路线。

@@ -158,6 +158,40 @@ describe("Phase 13 library routing CLI", () => {
       "routing",
       "add",
       "--id",
+      "route-fallback",
+      "--library",
+      "lib-ui",
+      "--name",
+      "Fallback preview",
+      "--priority",
+      "40",
+      "--role",
+      "preview",
+      "--reference-type",
+      "eagle",
+      "--tag",
+      "fallback",
+      "--target-mount",
+      "mount-missing",
+      "--fallback-mount",
+      "mount-git",
+      "--required-metadata",
+      "license",
+      "--required-metadata",
+      "source",
+      "--metadata-default",
+      "license=internal",
+      "--metadata-default",
+      "source=routing-policy",
+      "--yes"
+    ]);
+    runDna([
+      "--db",
+      db,
+      "library",
+      "routing",
+      "add",
+      "--id",
       "route-brief",
       "--library",
       "lib-ui",
@@ -264,10 +298,35 @@ describe("Phase 13 library routing CLI", () => {
       "mount-git",
       "--yes"
     ]);
+    runDna([
+      "--db",
+      db,
+      "output-ref",
+      "add",
+      "--id",
+      "out-fallback",
+      "--graph",
+      "graph-ui",
+      "--phenotype-version",
+      "pv-warning-1",
+      "--uri",
+      "eagle://item/fallback",
+      "--type",
+      "eagle",
+      "--role",
+      "preview",
+      "--library",
+      "lib-ui",
+      "--tag",
+      "fallback",
+      "--metadata",
+      "license=butian",
+      "--yes"
+    ]);
 
     const references = runDna(["--db", db, "output-ref", "search", "--phenotype-version", "pv-warning-1"]);
     const referencesById = new Map(
-      (JSON.parse(references) as Array<{ outputReferenceId: string; storageMountId?: string }>).map((reference) => [
+      (JSON.parse(references) as Array<{ outputReferenceId: string; storageMountId?: string; metadata?: Record<string, unknown> }>).map((reference) => [
         reference.outputReferenceId,
         reference
       ])
@@ -276,6 +335,8 @@ describe("Phase 13 library routing CLI", () => {
     expect(referencesById.get("out-source")?.storageMountId).toBe("mount-git");
     expect(referencesById.get("out-brief")?.storageMountId).toBe("mount-docs");
     expect(referencesById.get("out-brief-override")?.storageMountId).toBe("mount-git");
+    expect(referencesById.get("out-fallback")?.storageMountId).toBe("mount-git");
+    expect(referencesById.get("out-fallback")?.metadata).toEqual({ license: "butian", source: "routing-policy" });
 
     const policies = runDna(["--db", db, "library", "routing", "list", "--library", "lib-ui"]);
     expect(policies).toContain("route-preview");

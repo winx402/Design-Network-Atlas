@@ -140,6 +140,7 @@ export interface GenerationJobRepository {
   create(job: GenerationJob): void;
   update(job: GenerationJob): void;
   get(generationJobId: string): GenerationJob | undefined;
+  listByGraph(graphId: string): GenerationJob[];
 }
 
 export interface ReviewRepository {

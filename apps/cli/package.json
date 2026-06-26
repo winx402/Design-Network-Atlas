@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@dna/core": "workspace:*",
+    "@dna/server": "workspace:*",
     "@dna/sqlite": "workspace:*",
     "@dna/storage": "workspace:*",
     "@dna/template-packs": "workspace:*",

@@ -1,7 +1,7 @@
 # DNA 测试策略
 
-状态：v0.3-active
-最后审阅：2026-06-26
+状态：v0.4-active
+最后审阅：2026-06-27
 来源级别：authoritative test strategy
 上游输入：[系统技术设计](../design/system-architecture.md)、[阶段开发路线图](../implementation/development-roadmap.md)
 
@@ -11,8 +11,8 @@
 - 测试必须覆盖该阶段交付边界，不能只覆盖 happy path。
 - 阶段测试通过只代表该阶段完成，不代表完整系统完成。
 - 基础完整系统只有在 Phase 11 全量验收通过后才能宣布完成。
-- Phase 12-14 属于本地优先系统的增强能力，必须单独声明、单独测试，不能反向修改 Phase 11 的完成口径。
-- 当前 v0.3 已按 Phase 14 验收口径完成；post-v1 能力必须单独声明，不能混入 v0.3 完成声明。
+- Phase 12-15 属于本地优先系统的增强能力，必须单独声明、单独测试，不能反向修改 Phase 11 的完成口径。
+- 当前 v0.4 已按 Phase 15 验收口径完成；post-v1 能力必须单独声明，不能混入 v0.4 完成声明。
 
 ## 2. 测试分层
 
@@ -46,6 +46,7 @@
 | Phase 12 | result library schema + SQLite + CLI | 图谱和结果库多对多，输出引用可不用 DNA 结果库 |
 | Phase 13 | routing unit + SQLite + CLI E2E | 输出引用按策略路由到挂载，显式挂载优先 |
 | Phase 14 | graph tree unit + CLI E2E | 多 root、多父节点和附加关系输出清晰 |
+| Phase 15 | HTTP API + sync + provider baseline | API 可读本地数据，网页默认关闭，routing fallback/metadata 生效，generation jobs 可导入导出 |
 
 ## 4. 关键测试数据
 
@@ -177,6 +178,44 @@
 - 全量测试命令通过。
 - 未完成的长期能力被标记为 post-v1，不得写成已完成。
 
+### 5.12 Phase 12 Result Library / Output Reference Cases
+
+- 一个图谱可以绑定一个或多个结果库。
+- 一个结果库可以绑定一个或多个图谱。
+- 一个结果库可以包含 Eagle、Git、NAS、engine export 等多个 storage mounts。
+- output reference 可以直接记录外部位置，不要求启用 DNA 结果库。
+- external library mapping 能记录 tags、folders、rating、collections、annotations 等字段对齐关系。
+
+### 5.13 Phase 13 Routing Policy Cases
+
+- resolver 只选择 active policy。
+- priority 高的 policy 优先，priority 相同按 routingPolicyId 稳定排序。
+- target mount active 时使用 target。
+- target mount 缺失或不可用时，如果 fallback mount active，使用 fallback。
+- `metadataDefaults` 会自动补到 output reference metadata。
+- 显式 metadata 覆盖 defaults。
+- `requiredMetadata` 缺失时 CLI 写入失败。
+- 显式 `--storage-mount` 优先于 routing policy。
+
+### 5.14 Phase 14 Graph Tree Cases
+
+- 多 root 节点按 graph rootNodes 顺序输出。
+- 主父节点关系进入主树。
+- 多父节点/融合关系进入 additionalRelations，不伪装成单父树。
+- 文本输出展示物种名称、node id、谱系状态和附加关系。
+- JSON 输出保留 roots、relations、additionalRelations，供后续 Web 或 Agent 使用。
+
+### 5.15 Phase 15 Local Production Baseline Cases
+
+- local HTTP API `GET /api/health` 返回版本和 SQLite 状态。
+- local HTTP API 能返回 graph tree 和 workbench generated-result snapshot。
+- HTTP web page access 默认关闭，访问 `/` 返回 404。
+- 显式开启 `webEnabled` 或 `dna serve --web` 后才返回 DNA HTML 页面。
+- `provider run-mock` 能生成 sanitized generation job。
+- generic HTTP provider 通过注入 fetcher 调用外部 endpoint，runtime headers 不进入 job。
+- `sync export/import` 能重放 graph、generation job 和相关引用。
+- `library bind-graph` 后导出的 `library.json.graphIds` 与 binding 保持一致。
+
 ## 6. Golden 输出规则
 
 Golden tests 覆盖：
@@ -227,8 +266,10 @@ provider adapter 只能保存：
 - 只完成前端样例就说生产级 Web 工作台完成。
 - mock provider 通过就说真实 provider 已接入。
 
-v0.1 作为历史基础边界，允许声明为“本地优先基础系统通过验收”。不得把它表述为“生产级托管平台已完成”，因为真实 provider、npm 分发、HTTP 服务、Web/API 持久化接入、团队账户权限与同步仍属于 post-v1。
+v0.1 作为历史基础边界，允许声明为“本地优先基础系统通过验收”。不得把它表述为“生产级托管平台已完成”，因为真实 provider、npm 分发、托管 HTTP 服务、完整 Web/API 客户端、团队账户权限与同步仍属于 post-v1。
 
 当前 v0.2 允许补充声明“结果库路由策略通过验收”。不得把它表述为“成熟 DAM 或生产级 Web 素材库已完成”，因为缩略图服务、二进制生命周期、批量整理、外部库实时同步和生产级 Web/API 仍属于后续阶段。
 
 当前 v0.3 允许补充声明“图谱树状输出通过验收”。不得把它表述为“完整图谱可视化工作台已完成”，因为交互式布局、折叠筛选、Web 图谱编辑和大规模图布局仍属于后续阶段。
+
+当前 v0.4 允许补充声明“本地 HTTP API、provider baseline、显式 sync、routing fallback/metadata 和 library graphIds 同步通过验收”。不得把它表述为“完整团队素材平台已完成”，因为生产 Web 客户端、团队账户权限、审批流、多人同步服务、缩略图服务和外部素材库实时同步仍属于后续阶段。

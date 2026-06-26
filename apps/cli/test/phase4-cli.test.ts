@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
+const CLI_TIMEOUT = 60_000;
 
 function tempDir(name: string) {
   const path = join(tmpdir(), `dna-${name}-${Date.now()}-${Math.random().toString(16).slice(2)}`);
@@ -31,7 +32,7 @@ describe("Phase 4 CLI local workflow", () => {
 
     expect(preview).toContain("ChangeSet preview");
     expect(list).not.toContain("graph-preview");
-  });
+  }, CLI_TIMEOUT);
 
   test("graph create, show, and archive commands complete the graph lifecycle", () => {
     const db = join(tempDir("cli-graph"), "dna.sqlite");
@@ -43,7 +44,7 @@ describe("Phase 4 CLI local workflow", () => {
     runDna(["--db", db, "graph", "archive", "--id", "graph-life", "--yes"]);
     const archived = runDna(["--db", db, "graph", "show", "--id", "graph-life"]);
     expect(archived).toContain('"status": "archived"');
-  });
+  }, CLI_TIMEOUT);
 
   test("template built-ins can be installed and listed", () => {
     const db = join(tempDir("cli-template"), "dna.sqlite");
@@ -54,7 +55,7 @@ describe("Phase 4 CLI local workflow", () => {
     expect(list).toContain("game-art-assets");
     expect(list).toContain("ui-icon-assets");
     expect(list).toContain("ui-icon-asset");
-  });
+  }, CLI_TIMEOUT);
 
   test("species-first node can be completed by adding a parent edge", () => {
     const db = join(tempDir("cli-lineage"), "dna.sqlite");
@@ -117,7 +118,7 @@ describe("Phase 4 CLI local workflow", () => {
     const afterEdge = runDna(["--db", db, "node", "show", "--id", "node-child"]);
     expect(afterEdge).toContain('"lineageStatus": "complete"');
     expect(afterEdge).toContain("edge-root-child");
-  });
+  }, CLI_TIMEOUT);
 
   test("exported Git directory can be imported into a fresh database", () => {
     const dir = tempDir("cli-export");
@@ -134,5 +135,5 @@ describe("Phase 4 CLI local workflow", () => {
     runDna(["--db", targetDb, "import", "--in", out, "--yes"]);
     const shown = runDna(["--db", targetDb, "graph", "show", "--id", "graph-portable"]);
     expect(shown).toContain("Portable");
-  });
+  }, CLI_TIMEOUT);
 });

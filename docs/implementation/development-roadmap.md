@@ -1,7 +1,7 @@
 # DNA 分阶段开发路线图
 
-状态：v0.3-completed
-最后审阅：2026-06-26
+状态：v0.4-completed
+最后审阅：2026-06-27
 来源级别：authoritative implementation plan
 上游输入：[系统技术设计](../design/system-architecture.md)
 下游交付：代码实现、阶段验收记录、发布说明
@@ -12,11 +12,11 @@
 
 **Architecture:** 先固定领域模型和 service/storage ports，再实现 SQLite、本地 CLI、编译/表型、审查/影响分析、生成 adapter、资产工作台和双模式协作。每个阶段只向前扩展，不用一次性原型替代完整设计。
 
-**Tech Stack:** TypeScript, Node.js, pnpm workspace, Zod, SQLite, Commander.js, Vitest, Vite/React, future server adapter.
+**Tech Stack:** TypeScript, Node.js, pnpm workspace, Zod, SQLite, Commander.js, Vitest, Vite/React, local HTTP API, future hosted server adapter.
 
 ## 当前状态
 
-Phase 0-14 已完成并由测试覆盖。本文件保留为历史执行计划、验收映射和 post-v1 拆分参照；后续新增能力必须继续落到明确阶段、测试和完成边界中。
+Phase 0-15 已完成并由测试覆盖。本文件保留为历史执行计划、验收映射和 post-v1 拆分参照；后续新增能力必须继续落到明确阶段、测试和完成边界中。
 
 ---
 
@@ -39,6 +39,7 @@ Phase 0-14 已完成并由测试覆盖。本文件保留为历史执行计划、
 | Phase 12 | 表型库与输出引用 | 可选结果库、存储挂载、外部库映射、无库输出指针 | schema、SQLite、CLI、import/export |
 | Phase 13 | 结果库路由策略 | 一个结果库下按类型/角色/标签自动选择存储挂载 | routing unit、SQLite、CLI E2E |
 | Phase 14 | 图谱树状输出 | 将物种节点和进化边投影成可读树与 JSON | tree unit、CLI E2E |
+| Phase 15 | 本地生产基线补齐 | HTTP API、显式 sync、provider job、routing fallback/metadata、library graphIds 同步 | API tests、CLI E2E、provider security |
 
 ## Phase 0：设计冻结与工程基线
 
@@ -518,3 +519,36 @@ E2E 场景：
 
 - 用户可以从 CLI 直接看出物种层级。
 - Agent 和后续 Web 工作台可以复用 JSON 结构做进一步可视化。
+
+## Phase 15：本地生产基线补齐
+
+目标：修复首次真实接入暴露的问题，把本地试点从“CLI 工程骨架”推进到可集成的 local-first baseline，但不冒充完整托管团队平台。
+
+交付：
+
+- `LibraryRoutingPolicy` 的 `fallbackMountId`、`metadataDefaults`、`requiredMetadata` 在 resolver 和 `output-ref add` 中实际生效。
+- `library bind-graph` 后同步更新 `PhenotypeLibrary.graphIds`，避免 binding 表和 library export 出现双源状态歧义。
+- `GenerationJobRepository.listByGraph`，并把 generation jobs 纳入 Git 目录导入导出。
+- `provider run-mock` 与 `provider job show`，用于本地 provider job 验证和敏感参数清理。
+- generic HTTP provider primitive，供后续真实模型 adapter 复用，不保存 API key。
+- `sync export/import`，作为显式项目目录交换命令。
+- 本地 HTTP API handler 和 `dna serve`，提供 health、graph tree、workbench generated-result snapshot。
+- DNA 网页 HTTP 访问可开关，默认关闭；只有 `dna serve --web` 或 handler `webEnabled: true` 才返回页面。
+- Web workbench 数据加载函数可以从本地 HTTP API 读取，而不是只使用静态样例。
+
+测试：
+
+- routing unit 覆盖 target mount 不可用时 fallback 到 active fallback mount。
+- CLI E2E 覆盖 metadata defaults 自动补齐、显式 metadata 覆盖默认值、required metadata 缺失时报错。
+- CLI E2E 覆盖 `library bind-graph` 后导出 `library.json.graphIds`。
+- provider security 覆盖 runtime API key / secret 不进入 job、DB 或导出。
+- sync E2E 覆盖 generation jobs 随项目目录导出和导入。
+- HTTP API test 覆盖 health、graph tree、workbench snapshots。
+- HTTP web access test 覆盖默认 `/` 为 404，显式开启后返回 HTML。
+
+验收：
+
+- 补天这类项目可以用 CLI + SQLite + export + local API 做本地图谱治理和上层接入。
+- 结果库路由策略字段不再只是 schema 预留字段。
+- library graph binding 和 library export 不再互相打架。
+- 团队账户、权限、审批、多人同步、完整 Web 客户端仍明确归入 post-v1。

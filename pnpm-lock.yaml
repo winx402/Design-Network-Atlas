@@ -32,6 +32,9 @@ importers:
       '@dna/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@dna/server':
+        specifier: workspace:*
+        version: link:../../packages/server
       '@dna/sqlite':
         specifier: workspace:*
         version: link:../../packages/sqlite

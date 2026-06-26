@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   filterPhenotypes,
   getSelectedVersion,
+  loadWorkbenchPhenotypes,
   samplePhenotypes,
   updateVersionStatus
 } from "../src/workbench-data";
@@ -42,5 +43,33 @@ describe("Phase 9 asset workbench state model", () => {
 
     expect(phenotype.currentAcceptedVersionId).toBe("pv-emblem-2");
     expect(phenotype.versions.find((version) => version.id === "pv-emblem-1")?.status).toBe("archived");
+  });
+
+  test("loads workbench phenotypes from the local HTTP API", async () => {
+    const phenotypes = await loadWorkbenchPhenotypes({
+      baseUrl: "http://dna.local",
+      graphId: "graph-ui",
+      fetcher: async (url) =>
+        new Response(
+          JSON.stringify({
+            phenotypes: [
+              {
+                id: "ph-api",
+                name: "API Phenotype",
+                nodeName: "API Node",
+                phenotypeType: "image-prompt",
+                tags: ["api"],
+                outdated: false,
+                currentSpeciesVersion: "node-api@1.0.0",
+                latestSpeciesVersion: "node-api@1.0.0",
+                versions: []
+              }
+            ]
+          })
+        )
+    });
+
+    expect(phenotypes).toHaveLength(1);
+    expect(phenotypes[0].id).toBe("ph-api");
   });
 });

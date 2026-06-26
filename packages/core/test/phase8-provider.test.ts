@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   GenerationProvider,
+  HttpGenerationProvider,
   MockGenerationProvider,
   runGenerationProvider,
   sanitizeToolParameters
@@ -112,5 +113,39 @@ describe("Phase 8 generation provider adapter boundary", () => {
         }
       })
     ).toEqual({ model: "safe", nested: { size: "1024x1024" } });
+  });
+
+  test("generic HTTP provider posts compiled inputs without persisting credentials", async () => {
+    const provider = new HttpGenerationProvider({
+      name: "http-local",
+      endpoint: "https://provider.example.test/generate",
+      headers: { Authorization: "Bearer runtime-secret" },
+      fetcher: async (url, init) => {
+        expect(url).toBe("https://provider.example.test/generate");
+        expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer runtime-secret");
+        const body = JSON.parse(String(init?.body));
+        expect(body).toMatchObject({ prompt: "Prompt", brief: "Brief" });
+        expect(JSON.stringify(body)).not.toContain("sk-do-not-store");
+        return new Response(JSON.stringify({ text: "ok", assetUris: ["https://cdn.example.test/out.png"], metadata: { model: "http" } }));
+      }
+    });
+
+    const result = await runGenerationProvider({
+      provider,
+      generationJobId: "job-http",
+      graphId: "graph-provider",
+      nodeId: "node-warning",
+      phenotypeType: "image-prompt",
+      taskBrief: "toolbar warning icon",
+      compilePolicy,
+      prompt: "Prompt",
+      brief: "Brief",
+      toolParameters: { model: "http", apiKey: "sk-do-not-store" }
+    });
+
+    expect(result.job.status).toBe("generated");
+    expect(result.assets[0].uri).toBe("https://cdn.example.test/out.png");
+    expect(JSON.stringify(result.job)).not.toContain("runtime-secret");
+    expect(JSON.stringify(result.job)).not.toContain("sk-do-not-store");
   });
 });
