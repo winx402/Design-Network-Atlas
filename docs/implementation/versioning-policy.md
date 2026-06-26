@@ -33,17 +33,19 @@ Version bump rules:
 
 Every push to the remote repository that changes tracked project files must include a version bump. For routine documentation-only pushes, use a patch bump.
 
-The root package version, all workspace package versions, and `PROJECT_VERSION` must stay in sync. The CLI version and export metadata read from `PROJECT_VERSION`.
+The root `package.json` is the only hand-authored version source. Workspace package manifests should not define their own versions while the repository is private. `PROJECT_VERSION` is generated from the root version and is used by the CLI and export metadata.
 
 Required check:
 
 ```bash
+pnpm version:sync
 pnpm version:check
 ```
 
 Recommended pre-push check:
 
 ```bash
+pnpm version:sync
 pnpm version:check
 pnpm docs:check
 pnpm typecheck

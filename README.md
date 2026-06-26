@@ -156,6 +156,7 @@ The root `package.json` currently uses `private: true` to prevent accidental npm
 ## Development Checks
 
 ```bash
+pnpm version:sync
 pnpm version:check
 pnpm test
 pnpm typecheck
@@ -170,7 +171,7 @@ DNA uses three-segment numeric versions: `MAJOR.MINOR.PATCH`.
 
 Every push to the remote repository that changes tracked project files must include a version bump. Routine documentation or compatible fixes use a patch bump; compatible features use a minor bump; breaking schema, storage, CLI, import/export, or API changes use a major bump.
 
-The root package version, all workspace package versions, and `PROJECT_VERSION` must stay in sync. Run `pnpm version:check` before pushing.
+The root `package.json` is the only hand-authored version source. Generated runtime version constants must be synced from it with `pnpm version:sync`, and workspace packages should not define their own versions. Run `pnpm version:check` before pushing.
 
 ## Maturity
 
@@ -340,6 +341,7 @@ pnpm dna --help
 ## 开发检查
 
 ```bash
+pnpm version:sync
 pnpm version:check
 pnpm test
 pnpm typecheck
@@ -354,7 +356,7 @@ DNA 使用三段数字版本号：`MAJOR.MINOR.PATCH`。
 
 每次向远端仓库 push 且包含 tracked 文件变更时，都必须升级版本。普通文档或兼容修复使用 patch；兼容的新能力使用 minor；破坏 schema、存储、CLI、导入导出或 API 的变化使用 major。
 
-根 package 版本、所有 workspace package 版本和 `PROJECT_VERSION` 必须保持一致。push 前运行 `pnpm version:check`。
+根 `package.json` 是唯一手写版本源。运行时版本常量必须通过 `pnpm version:sync` 从根版本生成，workspace 子包不再定义自己的版本。push 前运行 `pnpm version:check`。
 
 ## 成熟度
 
