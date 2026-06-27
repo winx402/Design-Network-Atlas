@@ -1,44 +1,66 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
-const skillPath = join(projectRoot, "codex-skills", "dna", "SKILL.md");
+const skillRoot = join(projectRoot, "codex-skills");
 
-function dnaCommandLines() {
-  return readFileSync(skillPath, "utf8")
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.startsWith("dna "));
+function readSkill(skillName: string) {
+  const skillPath = join(skillRoot, skillName, "SKILL.md");
+  expect(existsSync(skillPath), `${skillName} should exist`).toBe(true);
+  return readFileSync(skillPath, "utf8");
 }
 
-function expectPreviewAndApplyPair(commandToken: string) {
-  const lines = dnaCommandLines().filter((line) => line.includes(commandToken));
-  const previewIndex = lines.findIndex((line) => !line.includes("--yes"));
-  const applyIndex = lines.findIndex((line) => line.includes("--yes"));
-
-  expect(previewIndex, `${commandToken} should include a preview command`).toBeGreaterThanOrEqual(0);
-  expect(applyIndex, `${commandToken} should include an apply command`).toBeGreaterThanOrEqual(0);
-  expect(previewIndex, `${commandToken} preview should be shown before apply`).toBeLessThan(applyIndex);
+function expectFrontmatter(content: string, skillName: string) {
+  expect(content).toContain(`name: ${skillName}`);
+  expect(content).toMatch(/^---\n[\s\S]*description: .+\n---/);
 }
 
-describe("Phase 7 Codex skill command recipes", () => {
-  test("skill documents preview-first CLI recipes for graph, lineage, phenotype, review, impact, and import", () => {
-    expectPreviewAndApplyPair("graph create");
-    expectPreviewAndApplyPair("node create");
-    expectPreviewAndApplyPair("edge create");
-    expectPreviewAndApplyPair("phenotype generate");
-    expectPreviewAndApplyPair("review phenotype");
-    expectPreviewAndApplyPair("impact check");
-    expectPreviewAndApplyPair("import");
+describe("Phase 7 Codex scenario skills", () => {
+  test("root dna skill routes users to workflow skills instead of duplicating CLI help", () => {
+    const content = readSkill("dna");
+
+    expectFrontmatter(content, "dna");
+    expect(content).toContain("dna-graph-modeling");
+    expect(content).toContain("dna-graph-editing");
+    expect(content).not.toContain("Preview-First Command Recipes");
+    expect(content).not.toMatch(/```bash[\s\S]*dna --db/);
   });
 
-  test("skill keeps writes behind the CLI and excludes secret material", () => {
-    const content = readFileSync(skillPath, "utf8");
+  test("graph modeling skill maps a new user scenario into DNA graph concepts and write strategy", () => {
+    const content = readSkill("dna-graph-modeling");
 
-    expect(content).toContain("Treat the CLI as the write boundary");
-    expect(content).toContain("Re-run with `--yes` only after the user accepts the preview");
+    expectFrontmatter(content, "dna-graph-modeling");
+    expect(content).toContain("SpeciesNode");
+    expect(content).toContain("EvolutionEdge");
+    expect(content).toContain("facets");
+    expect(content).toContain("Phenotype");
+    expect(content).toContain("phenotype library");
+    expect(content).toContain("preview-confirm");
+    expect(content).toContain("change-set review");
+    expect(content).toContain("proposal");
+    expect(content).toContain("直接生效");
+    expect(content).toContain("待确认问题");
+    expect(content).not.toMatch(/```bash[\s\S]*dna --db/);
+    expect(content).not.toMatch(/\bsqlite3\b|better-sqlite3|INSERT INTO|UPDATE\s+\w+/i);
+    expect(content).not.toMatch(/OPENAI_API_KEY|sk-[a-zA-Z0-9_-]{8,}|password\s*=/i);
+  });
+
+  test("graph editing skill evaluates existing graph changes with impact and risk guidance", () => {
+    const content = readSkill("dna-graph-editing");
+
+    expectFrontmatter(content, "dna-graph-editing");
+    expect(content).toContain("当前图谱");
+    expect(content).toContain("合理性");
+    expect(content).toContain("影响分析");
+    expect(content).toContain("风险等级");
+    expect(content).toContain("outdated");
+    expect(content).toContain("change-set review");
+    expect(content).toContain("proposal");
+    expect(content).toContain("impact check");
+    expect(content).toContain("替代方案");
+    expect(content).not.toMatch(/```bash[\s\S]*dna --db/);
     expect(content).not.toMatch(/\bsqlite3\b|better-sqlite3|INSERT INTO|UPDATE\s+\w+/i);
     expect(content).not.toMatch(/OPENAI_API_KEY|sk-[a-zA-Z0-9_-]{8,}|password\s*=/i);
   });

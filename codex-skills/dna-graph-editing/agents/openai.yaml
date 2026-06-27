@@ -1,0 +1,4 @@
+interface:
+  display_name: "DNA Graph Editing"
+  short_description: "Safely change existing DNA graphs"
+  default_prompt: "Use this skill to evaluate and plan changes to an existing DNA graph."

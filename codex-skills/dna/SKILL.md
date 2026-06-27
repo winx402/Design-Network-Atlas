@@ -1,57 +1,33 @@
 ---
 name: dna
-description: Guide Design Network Atlas graph edits through the local dna CLI, showing previews before durable writes.
+description: Route Design Network Atlas work to the right DNA scenario skill. Use when the user asks how to model, edit, review, generate from, or govern a DNA design graph, especially when deciding between graph modeling, graph editing, generation guidance, phenotype libraries, preview, change-set review, or proposal workflows.
 ---
 
-# DNA Skill
+# DNA Skill Router
 
-Use this skill when creating, editing, reviewing, generating, importing, or exporting DNA graph data.
+Use this as the lightweight entry point for DNA work. Do not duplicate CLI help here. Choose the workflow skill that matches the user's actual problem, then use the CLI only as the persistence boundary after the modeling or editing decision is clear.
 
-## Rules
+## Route
 
-- Treat the CLI as the write boundary. Do not write SQLite or Git directory files directly from the model.
-- Default to preview mode first. Re-run with `--yes` only after the user accepts the preview.
-- Do not invent missing graph facts. Mark uncertain fields as draft or ask for confirmation.
-- Do not store API keys, passwords, complete private links, or provider credentials.
-- Explain the command diff before applying it when a command changes graph, lineage, phenotype, review, impact, import, or export state.
+- Use `dna-graph-modeling` when the user starts from a project, design domain, visual asset system, product surface, game art direction, UI/icon family, or other natural-language scenario and needs to create a new DNA graph or a major new branch.
+- Use `dna-graph-editing` when the user already has a DNA graph and wants to add, remove, merge, split, rename, reparent, refactor, or review existing graph content.
+- Use future generation guidance when the graph is already stable and the task is to produce prompt, art brief, review checklist, or generation package from a SpeciesNode.
+- Use future phenotype library governance when the task is mainly about result objects, asset storage, tags, mounts, Eagle/NAS/Git adapters, search, or lifecycle states.
 
-## Preview-First Command Recipes
+## Shared Rules
 
-Show the preview command first. Only provide the matching `--yes` command after the user accepts the preview.
+- Treat DNA objects as domain decisions first, commands second.
+- Keep durable writes behind DNA CLI/service flows; do not write SQLite or exported JSON by hand.
+- Prefer preview-confirm for small clear writes, change-set review for complex but bounded writes, and proposal for multi-node or multi-edge graph changes that need human review.
+- Mark uncertain objects as draft or unresolved questions instead of inventing graph facts.
+- Never store API keys, passwords, complete private links, provider credentials, or unrelated private material in graph, phenotype, asset, review, or export data.
 
-```bash
-dna --db .dna/dna.sqlite graph create --id graph-id --name "Graph Name" --purpose "Purpose"
-dna --db .dna/dna.sqlite graph create --id graph-id --name "Graph Name" --purpose "Purpose" --yes
+## Expected Output
 
-dna --db .dna/dna.sqlite template install-builtins
-dna --db .dna/dna.sqlite template install-builtins --yes
+For non-trivial requests, return:
 
-dna --db .dna/dna.sqlite node create --graph graph-id --id node-id --name "Node" --motif broken-ring --constraint color=red
-dna --db .dna/dna.sqlite node create --graph graph-id --id node-id --name "Node" --motif broken-ring --constraint color=red --yes
-
-dna --db .dna/dna.sqlite edge create --graph graph-id --id edge-id --from parent-node --to child-node --delta color=amber
-dna --db .dna/dna.sqlite edge create --graph graph-id --id edge-id --from parent-node --to child-node --delta color=amber --yes
-
-dna --db .dna/dna.sqlite phenotype generate --graph graph-id --node node-id --type image-prompt --name "Prompt" --brief "Task" --tool manual
-dna --db .dna/dna.sqlite phenotype generate --graph graph-id --node node-id --type image-prompt --name "Prompt" --brief "Task" --tool manual --yes
-
-dna --db .dna/dna.sqlite review phenotype --phenotype-version phenotype-version-id --required-motif broken-ring --required-constraint color=amber
-dna --db .dna/dna.sqlite review phenotype --phenotype-version phenotype-version-id --required-motif broken-ring --required-constraint color=amber --yes
-
-dna --db .dna/dna.sqlite impact check --graph graph-id --edge edge-id --changed-version edge-id@1.0.0
-dna --db .dna/dna.sqlite impact check --graph graph-id --edge edge-id --changed-version edge-id@1.0.0 --yes
-
-dna --db .dna/dna.sqlite import --in ./dna-export
-dna --db .dna/dna.sqlite import --in ./dna-export --yes
-```
-
-## Read-Only Checks
-
-```bash
-dna --db .dna/dna.sqlite graph list
-dna --db .dna/dna.sqlite node show --id node-id
-dna --db .dna/dna.sqlite edge show --id edge-id
-dna --db .dna/dna.sqlite review list --type phenotype-version --id phenotype-version-id
-dna --db .dna/dna.sqlite impact list --type edge --id edge-id
-dna --db .dna/dna.sqlite export --out ./dna-export
-```
+- chosen workflow skill and reason
+- graph objects affected or proposed
+- recommended write mode
+- review or confirmation questions
+- next concrete CLI/service action only after the graph decision is explicit

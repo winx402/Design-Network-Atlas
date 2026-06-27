@@ -1,0 +1,4 @@
+interface:
+  display_name: "DNA Graph Modeling"
+  short_description: "Map new design scenarios into DNA graphs"
+  default_prompt: "Use this skill to turn a project or asset-system scenario into a DNA graph model."

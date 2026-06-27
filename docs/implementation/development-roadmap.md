@@ -1,6 +1,6 @@
 # DNA 分阶段开发路线图
 
-状态：v0.5.0-completed
+状态：v0.6.0-completed
 最后审阅：2026-06-27
 来源级别：authoritative implementation plan
 上游输入：[系统技术设计](../design/system-architecture.md)
@@ -31,7 +31,7 @@ Phase 0-16 已完成并由测试覆盖。本文件保留为历史执行计划、
 | Phase 4 | CLI 本地闭环 | 实现 graph/template/node/edge/import/export | CLI integration tests |
 | Phase 5 | 编译与表型 | 实现 compile policy、generation job、phenotype/version/asset | golden tests、E2E prompt/brief |
 | Phase 6 | 审查与影响分析 | 实现 review、style distance、impact records | review/impact unit + integration |
-| Phase 7 | Codex Skill | Skill 引导 CLI，预览、确认、审查写入 | command transcript tests |
+| Phase 7 | Codex Skill | Skill 将复杂设计场景映射到 DNA 图谱建模、编辑、审阅和写入策略 | scenario skill tests |
 | Phase 8 | 生成模型 Adapter | mock provider + provider port + 安全边界 | adapter contract + security tests |
 | Phase 9 | 资产工作台 | Web 资产工作台生产流 | web unit + browser QA |
 | Phase 10 | 双模式协作 | server adapter、同步、权限、审批 | contract tests、API tests、权限 tests |
@@ -312,24 +312,27 @@ Phase 0-16 已完成并由测试覆盖。本文件保留为历史执行计划、
 
 ## Phase 7：Codex Skill
 
-目标：让 Codex 作为引导层管理图谱，但正式写入仍走 CLI/service。
+目标：让 Codex 作为复杂场景引导层，把用户的设计问题映射到 DNA 图谱建模、图谱编辑、审阅和写入策略；正式写入仍走 CLI/service。
 
 交付：
 
 - `codex-skills/dna/SKILL.md`
-- skill command recipes。
-- skill transcript tests 或 fixtures。
+- `codex-skills/dna-graph-modeling/SKILL.md`
+- `codex-skills/dna-graph-editing/SKILL.md`
+- scenario skill tests。
 
 测试：
 
-- Skill 先展示 preview 命令。
-- 用户确认后才生成 `--yes` 命令。
-- Skill 不直接写 SQLite。
+- `dna` skill 只做场景路由，不复制 CLI help。
+- 图谱建模 skill 能覆盖 SpeciesNode、EvolutionEdge、facets、Phenotype、phenotype library 和写入策略。
+- 图谱编辑 skill 能覆盖当前图谱、合理性、影响分析、风险等级、outdated、替代方案和写入策略。
+- Skill 不直接写数据库内部结构、导出目录或外部素材库。
 - Skill 不保存 API key 或敏感链接。
 
 验收：
 
-- 同一条创建物种流程能通过 Skill 引导并落到 CLI。
+- 新项目能通过图谱建模 skill 形成可审阅图谱草案。
+- 既有图谱变更能通过图谱编辑 skill 形成影响分析和推荐写入路径。
 
 ## Phase 8：生成模型 Adapter
 

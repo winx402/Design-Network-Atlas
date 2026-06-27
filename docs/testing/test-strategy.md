@@ -1,6 +1,6 @@
 # DNA 测试策略
 
-状态：v0.5.0-active
+状态：v0.6.0-active
 最后审阅：2026-06-27
 来源级别：authoritative test strategy
 上游输入：[系统技术设计](../design/system-architecture.md)、[阶段开发路线图](../implementation/development-roadmap.md)
@@ -12,7 +12,7 @@
 - 阶段测试通过只代表该阶段完成，不代表完整系统完成。
 - 基础完整系统只有在 Phase 11 全量验收通过后才能宣布完成。
 - Phase 12-16 属于本地优先系统的增强能力，必须单独声明、单独测试，不能反向修改 Phase 11 的完成口径。
-- 当前 v0.5.0 已按 Phase 16 验收口径完成；post-v1 能力必须单独声明，不能混入 v0.5.0 完成声明。
+- 当前 v0.6.0 已按 Phase 16 和 Phase 7 场景 skill 验收口径完成；post-v1 能力必须单独声明，不能混入 v0.6.0 完成声明。
 
 ## 2. 测试分层
 
@@ -38,7 +38,7 @@
 | Phase 4 | CLI integration tests | 默认 preview，`--yes` 才落库，import/export 可重放 |
 | Phase 5 | golden + E2E subset | prompt/brief 稳定，表型版本记录完整 recipe |
 | Phase 6 | review/impact tests | 上游变化只生成影响记录，不覆盖下游 |
-| Phase 7 | skill transcript tests | Skill 调 CLI，不直接写库 |
+| Phase 7 | scenario skill tests | Skill 将复杂场景映射到建模/编辑工作流，不复制 CLI help，不直接写库 |
 | Phase 8 | adapter contract + security | provider 失败不污染正式数据，API key 不落盘 |
 | Phase 9 | web unit + browser QA | 资产工作台主要流程可操作，无布局重叠 |
 | Phase 10 | server/local contract tests | local 和 server adapter 行为一致，权限生效 |
@@ -145,10 +145,11 @@
 
 ### 5.7 Phase 7 Skill Cases
 
-- Skill 输出 preview 命令而不是直接写库。
-- 用户确认后 Skill 才输出带 `--yes` 的 apply 命令。
-- Skill 能把模板问题转成 CLI 参数或待确认字段。
-- Skill 不把未经确认的 LLM 推断写入正式图谱。
+- `dna` skill 作为路由入口，指向 `dna-graph-modeling` 和 `dna-graph-editing`。
+- `dna` skill 不复制 CLI help，不把命令清单当作 skill 主体。
+- `dna-graph-modeling` 能把新场景映射到 SpeciesNode、EvolutionEdge、facets、Phenotype、phenotype library 和生效策略。
+- `dna-graph-editing` 能对已有图谱变更输出合理性、影响分析、风险等级、outdated 风险、替代方案和推荐写入路径。
+- Skill 不把未经确认的 LLM 推断写入正式图谱，也不直接写数据库内部结构、导出目录或外部素材库。
 
 ### 5.8 Phase 8 Adapter / Security Cases
 
@@ -290,3 +291,5 @@ v0.1 作为历史基础边界，允许声明为“本地优先基础系统通过
 当前 v0.4.1 允许补充声明“历史结果库 graphIds 迁移修复通过验收”。不得把它表述为“通用迁移框架已完成”，因为后续 schema 级升级、迁移版本表和跨存储迁移仍需要单独设计。
 
 当前 v0.5.0 允许补充声明“preview change-set 审阅确认闭环通过验收”。不得把它表述为“完整 proposal/batch 审批系统已完成”，因为多节点/多边命名 proposal、tree diff、Web 审批和团队权限仍属于后续阶段。
+
+当前 v0.6.0 允许补充声明“图谱建模和图谱编辑场景 skill 通过验收”。不得把它表述为“自动完成所有领域图谱设计”，因为 skill 仍需要用户确认关键设计事实，且 generation guidance、phenotype library governance、proposal/batch UI 仍属于后续增强。
