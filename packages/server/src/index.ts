@@ -268,12 +268,154 @@ function createWorkbenchHtml() {
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>DNA: Design Network Atlas</title>
+    <style>
+      :root {
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: #17212b;
+        background: #f5f7f8;
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; min-width: 320px; background: #f5f7f8; }
+      main { width: min(1180px, calc(100vw - 32px)); margin: 0 auto; padding: 28px 0 36px; }
+      header { display: flex; justify-content: space-between; align-items: end; gap: 24px; padding-bottom: 18px; border-bottom: 1px solid #d5dde3; }
+      h1, h2, h3, p { margin-top: 0; }
+      h1 { margin-bottom: 0; font-size: 32px; line-height: 1.15; letter-spacing: 0; }
+      h2 { margin-bottom: 6px; font-size: 24px; line-height: 1.2; letter-spacing: 0; }
+      h3 { margin-bottom: 8px; font-size: 14px; line-height: 1.3; letter-spacing: 0; }
+      .product-name { margin: 0 0 6px; color: #577084; font-size: 13px; line-height: 1.3; }
+      .state { display: grid; gap: 4px; margin-top: 16px; padding: 12px 14px; border: 1px solid #b9c6cf; border-radius: 8px; background: #ffffff; font-size: 14px; line-height: 1.45; }
+      .state.error { border-color: #d58d91; color: #842c31; background: #fff2f2; }
+      .metrics { display: grid; grid-template-columns: repeat(3, minmax(88px, 1fr)); gap: 10px; margin: 0; }
+      .metrics div, .panel, .list { border: 1px solid #d5dde3; border-radius: 8px; background: #ffffff; }
+      .metrics div { padding: 10px 12px; }
+      .metrics dt { color: #657888; font-size: 12px; }
+      .metrics dd { margin: 2px 0 0; font-size: 22px; font-weight: 700; }
+      .workspace { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 16px; align-items: start; margin-top: 18px; }
+      .list { overflow: hidden; }
+      .row { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; min-height: 64px; padding: 12px 14px; border-bottom: 1px solid #e4e9ed; background: #ffffff; }
+      .row:last-child { border-bottom: 0; }
+      .row strong, .row small { display: block; overflow-wrap: anywhere; }
+      .row small, .muted { color: #657888; font-size: 13px; line-height: 1.35; }
+      .panel { display: grid; gap: 14px; min-width: 0; padding: 18px; }
+      .empty { min-height: 240px; align-content: center; justify-items: center; text-align: center; }
+      .chip { display: inline-flex; align-items: center; min-height: 24px; border-radius: 999px; padding: 3px 9px; color: #4f6475; background: #e7edf1; font-size: 12px; font-weight: 700; white-space: nowrap; }
+      .asset-grid { display: grid; gap: 8px; }
+      .asset { display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, 0.45fr); gap: 12px; padding: 10px; border: 1px solid #e4e9ed; border-radius: 7px; font-size: 13px; }
+      code, pre { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+      code { overflow-wrap: anywhere; color: #415669; }
+      pre { overflow: auto; margin: 0; padding: 12px; border: 1px solid #e4e9ed; border-radius: 7px; background: #f7f9fa; white-space: pre-wrap; }
+      @media (max-width: 820px) {
+        main { width: min(100vw - 20px, 760px); padding-top: 18px; }
+        header, .workspace { display: grid; grid-template-columns: 1fr; align-items: start; }
+        .metrics { grid-template-columns: 1fr; }
+        .asset { grid-template-columns: 1fr; }
+      }
+    </style>
   </head>
   <body>
-    <main id="root">
-      <h1>DNA: Design Network Atlas</h1>
-      <p>Local HTTP API is enabled. Web access is disabled by default and must be explicitly enabled.</p>
+    <main>
+      <header>
+        <div>
+          <p class="product-name">DNA: Design Network Atlas</p>
+          <h1>Read-only Workbench</h1>
+        </div>
+        <dl class="metrics" aria-label="Workbench metrics">
+          <div><dt>Phenotypes</dt><dd id="metric-phenotypes">0</dd></div>
+          <div><dt>Pending</dt><dd id="metric-pending">0</dd></div>
+          <div><dt>Outdated</dt><dd id="metric-outdated">0</dd></div>
+        </dl>
+      </header>
+      <section id="state" class="state" aria-live="polite">Loading phenotype workbench from /api/workbench/phenotypes...</section>
+      <section class="workspace" aria-label="Read-only phenotype workbench">
+        <aside id="list" class="list" aria-label="Phenotypes"></aside>
+        <section id="detail" class="panel empty" aria-label="Phenotype detail">
+          <h2>No phenotype selected</h2>
+          <p class="muted">Workbench data is loaded from the local DNA API. Durable writes stay in CLI/service boundaries.</p>
+        </section>
+      </section>
     </main>
+    <script>
+      const endpoint = "/api/workbench/phenotypes";
+      const state = document.getElementById("state");
+      const list = document.getElementById("list");
+      const detail = document.getElementById("detail");
+      const metricPhenotypes = document.getElementById("metric-phenotypes");
+      const metricPending = document.getElementById("metric-pending");
+      const metricOutdated = document.getElementById("metric-outdated");
+
+      function escapeHtml(value) {
+        return String(value ?? "").replace(/[&<>"']/g, (character) => ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;"
+        })[character]);
+      }
+
+      function selectedVersion(phenotype) {
+        if (!phenotype?.versions?.length) return undefined;
+        if (phenotype.currentAcceptedVersionId) {
+          const accepted = phenotype.versions.find((version) => version.id === phenotype.currentAcceptedVersionId);
+          if (accepted) return accepted;
+        }
+        return [...phenotype.versions].sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt)))[0];
+      }
+
+      function renderDetail(phenotype) {
+        const version = selectedVersion(phenotype);
+        const review = version?.reviews?.[0];
+        const assets = version?.assets ?? [];
+        detail.className = "panel";
+        detail.innerHTML =
+          '<div><p class="product-name">' + escapeHtml(phenotype.phenotypeType) + '</p><h2>' + escapeHtml(phenotype.name) + '</h2>' +
+          '<p class="muted">' + escapeHtml(phenotype.nodeName) + ' - ' + escapeHtml(version?.speciesVersion ?? "no version") + '</p></div>' +
+          (phenotype.outdated ? '<div class="state">Current species snapshot is ' + escapeHtml(phenotype.currentSpeciesVersion) + '; latest is ' + escapeHtml(phenotype.latestSpeciesVersion) + '.</div>' : '') +
+          '<section><h3>Assets and output references</h3><div class="asset-grid">' +
+          (assets.length ? assets.map((asset) => '<div class="asset"><strong>' + escapeHtml(asset.label) + '</strong><code>' + escapeHtml(asset.uri) + '</code></div>').join('') : '<p class="muted">No assets or output references are registered for this version.</p>') +
+          '</div></section>' +
+          '<section><h3>Review</h3><p>' + escapeHtml(review?.summary ?? 'No review record yet.') + '</p></section>' +
+          '<section><h3>Prompt Snapshot</h3><pre>' + escapeHtml(version?.promptSnapshot ?? 'No prompt snapshot recorded.') + '</pre></section>';
+      }
+
+      function render(phenotypes) {
+        metricPhenotypes.textContent = String(phenotypes.length);
+        metricPending.textContent = String(phenotypes.filter((phenotype) => selectedVersion(phenotype)?.status === "pending-confirmation").length);
+        metricOutdated.textContent = String(phenotypes.filter((phenotype) => phenotype.outdated).length);
+        if (phenotypes.length === 0) {
+          state.className = "state";
+          state.textContent = "No phenotypes found in this local store.";
+          list.innerHTML = '<div class="row"><span><strong>No phenotypes found</strong><small>Create phenotypes through the CLI/service boundary, then refresh this read-only workbench.</small></span></div>';
+          detail.className = "panel empty";
+          detail.innerHTML = '<h2>No phenotypes found</h2><p class="muted">This read-only page did not modify the DNA store.</p>';
+          return;
+        }
+        state.className = "state";
+        state.textContent = "Loaded " + phenotypes.length + " phenotype record(s) from the local API.";
+        list.innerHTML = phenotypes.map((phenotype, index) => {
+          const version = selectedVersion(phenotype);
+          return '<button class="row" type="button" data-index="' + index + '"><span><strong>' + escapeHtml(phenotype.name) + '</strong><small>' + escapeHtml(phenotype.nodeName) + '</small></span><span class="chip">' + escapeHtml(version?.status ?? 'no-version') + '</span></button>';
+        }).join('');
+        for (const row of list.querySelectorAll('button[data-index]')) {
+          row.addEventListener('click', () => renderDetail(phenotypes[Number(row.dataset.index)]));
+        }
+        renderDetail(phenotypes[0]);
+      }
+
+      fetch(endpoint)
+        .then((response) => {
+          if (!response.ok) throw new Error("HTTP " + response.status);
+          return response.json();
+        })
+        .then((body) => render(Array.isArray(body.phenotypes) ? body.phenotypes : []))
+        .catch((error) => {
+          state.className = "state error";
+          state.innerHTML = '<strong>Unable to load workbench data.</strong><span>' + escapeHtml(error.message || error) + '</span>';
+          list.innerHTML = '';
+          detail.className = "panel empty";
+          detail.innerHTML = '<h2>Unable to load workbench data.</h2><p class="muted">No durable DNA records were changed by this read-only page.</p>';
+        });
+    </script>
   </body>
 </html>`;
 }

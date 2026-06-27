@@ -6,6 +6,18 @@ DNA is a local-first, open-source architecture for managing design assets throug
 
 DNA is not a binary asset store by default. It is a graph and governance layer that can connect to Git repositories, local folders, NAS, Eagle, Figma, databases, object storage, engine export folders, or future custom asset libraries.
 
+## LLM Design Generation Focus
+
+DNA's primary product scenario is LLM-assisted design generation. The graph is the durable design context that lets an LLM generate, revise, review, and register design outputs without treating each prompt as an isolated one-off request.
+
+Principles:
+
+- Durable design facts belong in the graph; prompts and briefs are compiled views of those facts.
+- LLM work should start from existing species, evolution rules, design contexts, references, rubrics, and compile artifacts.
+- Generated outputs remain phenotypes and phenotype versions until review confirms whether they become accepted results.
+- Provider calls should not mutate the formal graph, persist raw credentials, or invent unresolved design facts.
+- Every output reference should remain traceable back to the graph object, version, task brief, compile artifact, review record, and impact loop that produced it.
+
 ## What DNA Models
 
 - **Gene layer**: reusable design dimensions, constraints, templates, and review questions.
@@ -21,13 +33,26 @@ In the internal schema, the result layer uses the term `Phenotype`. Public-facin
 DNA is split into a reusable domain core, storage ports, concrete adapters, and user-facing entrypoints.
 
 ```text
-CLI / Web / Skill / Server
+Human / Agent / LLM design task
         |
-Application services and change-set workflow
+        v
+CLI / Codex Skills / Web / Local API
         |
-@dna/core + @dna/storage ports
+        v
+Application services + preview ChangeSet review
         |
-SQLite / Git directory / generation providers / asset-library adapters
+        v
+@dna/core domain model + @dna/storage repository ports
+        |
+        +--> Graph/Atlas: SpeciesNode, EvolutionEdge, SpeciesGroup, GraphBridge
+        +--> Context: DesignContext, facts, principles, motifs, references, rubrics
+        +--> Compile: SpeciesCompileArtifact, PhenotypeCompileArtifact, trace/conflicts
+        +--> Generation: GenerationJob, provider ports, sanitized parameters
+        +--> Results: Phenotype, PhenotypeVersion, AssetIndex, OutputReference
+        +--> Governance: ReviewRecord, ImpactRecord, library routing
+        |
+        v
+SQLite / Git directory export / local HTTP snapshots / external asset libraries
 ```
 
 Key boundaries:
@@ -105,9 +130,9 @@ Generation providers should receive compiled constraints and prompts, then retur
 
 v0.4 and later include the provider contract, mock provider execution, and a generic HTTP provider primitive. Runtime credentials and sensitive parameters are sanitized from generation jobs and export snapshots.
 
-### Local HTTP API
+### Local HTTP API And Web Workbench
 
-DNA includes a local HTTP API baseline for health checks, graph tree data, and generated-result workbench snapshots. HTTP access to the DNA web page is disabled by default. It must be explicitly enabled with `dna serve --web` or `createDnaHttpHandler(store, { webEnabled: true })`.
+DNA includes a local HTTP API baseline for health checks, graph tree data, and generated-result workbench snapshots. HTTP access to the DNA web page is disabled by default. When explicitly enabled with `dna serve --web` or `createDnaHttpHandler(store, { webEnabled: true })`, it serves a read-only local workbench baseline that loads from `/api/workbench/phenotypes`. The Web workbench does not accept, reject, archive, or otherwise durably mutate DNA records.
 
 ### Review And Confirmation Workflow
 
@@ -140,25 +165,9 @@ Core objects:
 
 ## Exchange Format
 
-`dna export --out <dir>` writes a Git-friendly project directory:
+`dna export --out <dir>` writes a Git-friendly project directory with a versioned `dna.project.json` manifest. The manifest includes `projectVersion`, `exchangeVersion`, and `capabilities` so future imports can reject unsupported exchange versions clearly.
 
-- `dna.project.json`
-- `change-sets/`
-- `templates/`
-- `libraries/<library_id>/library.json`
-- `libraries/<library_id>/mounts/`
-- `libraries/<library_id>/bindings/`
-- `libraries/<library_id>/mappings/`
-- `libraries/<library_id>/routing-policies/`
-- `graphs/<graph_id>/graph.json`
-- `graphs/<graph_id>/nodes/`
-- `graphs/<graph_id>/edges/`
-- `graphs/<graph_id>/phenotypes/`
-- `graphs/<graph_id>/assets/`
-- `graphs/<graph_id>/generation-jobs/`
-- `graphs/<graph_id>/output-references/`
-- `graphs/<graph_id>/reviews/`
-- `graphs/<graph_id>/impacts/`
+The stable exchange contract includes change-sets, facets, contexts, templates, libraries, atlases, graph lineage, species groups, compile artifacts, generation jobs, output references, reviews, and impacts. The full directory map is maintained in [docs/design/system-architecture.md](docs/design/system-architecture.md).
 
 ## Install
 
@@ -174,7 +183,7 @@ pnpm install
 pnpm dna --help
 ```
 
-The CLI includes `dna graph tree --id <graph_id>` for a readable species tree, `dna changeset list/show/review/apply/discard` for preview review, `dna sync export/import` for explicit directory exchange, and `dna serve` for the local HTTP API. Web page access remains off unless `dna serve --web` is used.
+The CLI includes `dna graph tree --id <graph_id>` for a readable species tree, `dna changeset list/show/review/apply/discard` for preview review, `dna sync export/import` for explicit directory exchange, and `dna serve` for the local HTTP API. Web page access remains off unless `dna serve --web` is used; when enabled, it is a read-only local workbench baseline.
 
 The root `package.json` currently uses `private: true` to prevent accidental npm publishing from the monorepo. The GitHub source is open under the MIT license.
 
@@ -200,7 +209,7 @@ The root `package.json` is the only hand-authored version source. Generated runt
 
 ## Maturity
 
-DNA is currently a local-first project suitable for pilot use, local design-graph governance, graph modeling/editing/generation guidance skills, graph tree inspection, preview change-set review, prompt/brief generation, result-library routing, output reference management, review records, impact analysis, Git-friendly exchange, local HTTP API integration, workbench data snapshots, and upgrade repair for historical result-library graph bindings.
+DNA is currently a local-first project suitable for pilot use, local design-graph governance, graph modeling/editing/phenotype generation scenario skills, graph tree inspection, preview change-set review, prompt/brief generation, result-library routing, output reference management, review records, impact analysis, versioned Git-friendly exchange, local HTTP API integration, and a read-only local workbench baseline.
 
 Production npm publishing, first-party image-model provider packages, a full connected Web client, hosted team permissions, approval workflows, and multi-user sync services are future work.
 
@@ -220,6 +229,18 @@ DNA 是一个本地优先的开源“设计基因图谱”架构，用来通过�
 
 DNA 默认不是二进制素材仓库。它更像图谱治理层，可以连接 Git 仓库、本地目录、NAS、Eagle、Figma、数据库、对象存储、引擎导出目录或未来自定义素材库。
 
+## 面向 LLM 的设计生成定位
+
+DNA 的核心产品场景是辅助 LLM 完成设计生成。图谱是可长期复用的设计上下文，让 LLM 可以基于稳定对象、演化规则、审查约束和历史结果来生成、修改、审查和登记输出，而不是把每次 prompt 都当成孤立请求。
+
+原则：
+
+- 持久设计事实属于图谱；prompt 和 brief 只是这些事实的编译视图。
+- LLM 工作应从已有物种、演化规则、设计上下文、参考、rubric 和编译产物出发。
+- 生成输出在通过审查前只是 `Phenotype` / `PhenotypeVersion`，不能自动等同于已接受资产。
+- provider 调用不能直接修改正式图谱，不能持久化原始凭证，也不能把未确认推断写成事实。
+- 每条输出引用都应能追溯到图谱对象、版本、任务 brief、编译产物、审查记录和影响分析闭环。
+
 ## DNA 建模什么
 
 - **基因层**：可复用的设计维度、约束、模板和审查问题。
@@ -235,13 +256,26 @@ DNA 默认不是二进制素材仓库。它更像图谱治理层，可以连接 
 DNA 拆分为可复用领域核心、存储端口、具体适配器和用户入口。
 
 ```text
-CLI / Web / Skill / Server
+Human / Agent / LLM 设计任务
         |
-应用服务与 change-set 写入流程
+        v
+CLI / Codex Skills / Web / Local API
         |
-@dna/core + @dna/storage ports
+        v
+应用服务 + preview ChangeSet 审阅
         |
-SQLite / Git 目录 / 生成 provider / 素材库 adapter
+        v
+@dna/core 领域模型 + @dna/storage repository ports
+        |
+        +--> Graph/Atlas: SpeciesNode, EvolutionEdge, SpeciesGroup, GraphBridge
+        +--> Context: DesignContext, facts, principles, motifs, references, rubrics
+        +--> Compile: SpeciesCompileArtifact, PhenotypeCompileArtifact, trace/conflicts
+        +--> Generation: GenerationJob, provider ports, 脱敏参数
+        +--> Results: Phenotype, PhenotypeVersion, AssetIndex, OutputReference
+        +--> Governance: ReviewRecord, ImpactRecord, library routing
+        |
+        v
+SQLite / Git 目录导出 / 本地 HTTP 快照 / 外部素材库
 ```
 
 核心边界：
@@ -319,9 +353,9 @@ DNA 把标准化元数据和外部系统元数据隔离。
 
 v0.4 及后续版本已包含 provider contract、mock provider 执行和通用 HTTP provider 基础能力。运行时凭据和敏感参数会从 generation job 与导出快照中清理掉。
 
-### 本地 HTTP API
+### 本地 HTTP API 与 Web 工作台
 
-DNA 已包含本地 HTTP API 基线，用于 health check、图谱树数据和生成结果工作台快照。通过 HTTP 访问 DNA 网页默认关闭，必须使用 `dna serve --web` 或 `createDnaHttpHandler(store, { webEnabled: true })` 显式开启。
+DNA 已包含本地 HTTP API 基线，用于 health check、图谱树数据和生成结果工作台快照。通过 HTTP 访问 DNA 网页默认关闭；使用 `dna serve --web` 或 `createDnaHttpHandler(store, { webEnabled: true })` 显式开启后，提供从 `/api/workbench/phenotypes` 读取数据的只读本地工作台基线。Web 工作台不接受、拒绝、归档或以其他方式持久修改 DNA 记录。
 
 ### 审阅确认工作流
 
@@ -354,25 +388,9 @@ DNA 已包含本地 HTTP API 基线，用于 health check、图谱树数据和�
 
 ## 交换格式
 
-`dna export --out <dir>` 会写出 Git 友好的项目目录：
+`dna export --out <dir>` 会写出 Git 友好的项目目录，并在 `dna.project.json` 中记录版本化 manifest。manifest 包含 `projectVersion`、`exchangeVersion` 和 `capabilities`，后续 import 可以对不支持的交换格式版本给出明确错误。
 
-- `dna.project.json`
-- `change-sets/`
-- `templates/`
-- `libraries/<library_id>/library.json`
-- `libraries/<library_id>/mounts/`
-- `libraries/<library_id>/bindings/`
-- `libraries/<library_id>/mappings/`
-- `libraries/<library_id>/routing-policies/`
-- `graphs/<graph_id>/graph.json`
-- `graphs/<graph_id>/nodes/`
-- `graphs/<graph_id>/edges/`
-- `graphs/<graph_id>/phenotypes/`
-- `graphs/<graph_id>/assets/`
-- `graphs/<graph_id>/generation-jobs/`
-- `graphs/<graph_id>/output-references/`
-- `graphs/<graph_id>/reviews/`
-- `graphs/<graph_id>/impacts/`
+当前稳定交换契约覆盖 change-set、facets、contexts、templates、libraries、atlases、图谱谱系、species groups、compile artifacts、generation jobs、output references、reviews 和 impacts。完整目录结构以 [docs/design/system-architecture.md](docs/design/system-architecture.md) 为准。
 
 ## 安装
 
@@ -388,7 +406,7 @@ pnpm install
 pnpm dna --help
 ```
 
-CLI 提供 `dna graph tree --id <graph_id>` 输出可读物种树，提供 `dna changeset list/show/review/apply/discard` 做 preview 审阅确认，提供 `dna sync export/import` 做显式目录交换，也提供 `dna serve` 启动本地 HTTP API。网页访问默认关闭，只有使用 `dna serve --web` 才会开启。
+CLI 提供 `dna graph tree --id <graph_id>` 输出可读物种树，提供 `dna changeset list/show/review/apply/discard` 做 preview 审阅确认，提供 `dna sync export/import` 做显式目录交换，也提供 `dna serve` 启动本地 HTTP API。网页访问默认关闭；使用 `dna serve --web` 开启后，它是只读本地工作台基线。
 
 根目录 `package.json` 目前使用 `private: true`，用于避免 monorepo 被误发到 npm。GitHub 源码按 MIT License 开源。
 
@@ -414,7 +432,7 @@ DNA 使用三段数字版本号：`MAJOR.MINOR.PATCH`。
 
 ## 成熟度
 
-DNA 当前是本地优先项目，适合试点使用、本地设计图谱治理、图谱建模/编辑/生成引导 skill、图谱树检查、preview change-set 审阅确认、prompt / brief 生成、结果库路由、输出引用管理、审查记录、影响分析、Git 友好交换、本地 HTTP API 集成、工作台数据快照，以及历史结果库图谱绑定的升级修复。
+DNA 当前是本地优先项目，适合试点使用、本地设计图谱治理、图谱建模/编辑/表型生成场景 skill、图谱树检查、preview change-set 审阅确认、prompt / brief 生成、结果库路由、输出引用管理、审查记录、影响分析、版本化 Git 友好交换、本地 HTTP API 集成，以及只读本地工作台基线。
 
 npm 正式发布、第一方图片生成 provider package、完整接入 API 的 Web 客户端、托管团队权限、审批流和多人同步服务属于后续工作。
 

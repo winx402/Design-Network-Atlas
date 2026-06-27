@@ -1,0 +1,110 @@
+import { describe, expect, test } from "vitest";
+import {
+  filterPhenotypes,
+  getSelectedVersion,
+  loadWorkbenchPhenotypes,
+  loadWorkbenchPhenotypesForApp,
+  samplePhenotypes
+} from "../src/workbench-data";
+
+describe("Phase 9 asset workbench state model", () => {
+  test("filters phenotypes by query, status, tag, and outdated flag", () => {
+    expect(filterPhenotypes(samplePhenotypes, { query: "warning", status: "all", tag: "all", outdatedOnly: false })).toHaveLength(1);
+    expect(filterPhenotypes(samplePhenotypes, { query: "", status: "accepted", tag: "all", outdatedOnly: false })).toHaveLength(1);
+    expect(filterPhenotypes(samplePhenotypes, { query: "", status: "all", tag: "ui", outdatedOnly: false })).toHaveLength(1);
+    expect(filterPhenotypes(samplePhenotypes, { query: "", status: "all", tag: "all", outdatedOnly: true }).map((item) => item.id)).toEqual([
+      "ph-warning-icon"
+    ]);
+  });
+
+  test("selects the current accepted version when one exists and otherwise uses the newest version", () => {
+    const accepted = samplePhenotypes.find((phenotype) => phenotype.id === "ph-faction-emblem")!;
+    const pending = samplePhenotypes.find((phenotype) => phenotype.id === "ph-warning-icon")!;
+
+    expect(getSelectedVersion(accepted)?.id).toBe("pv-emblem-2");
+    expect(getSelectedVersion(pending)?.id).toBe("pv-warning-2");
+  });
+
+  test("does not expose local status mutation helpers in the read-only workbench data module", async () => {
+    const module = await import("../src/workbench-data");
+
+    expect("updateVersionStatus" in module).toBe(false);
+  });
+
+  test("loads workbench phenotypes from the local HTTP API", async () => {
+    const phenotypes = await loadWorkbenchPhenotypes({
+      baseUrl: "http://dna.local",
+      graphId: "graph-ui",
+      fetcher: async (url) =>
+        new Response(
+          JSON.stringify({
+            phenotypes: [
+              {
+                id: "ph-api",
+                name: "API Phenotype",
+                nodeName: "API Node",
+                phenotypeType: "image-prompt",
+                tags: ["api"],
+                outdated: false,
+                currentSpeciesVersion: "node-api@1.0.0",
+                latestSpeciesVersion: "node-api@1.0.0",
+                versions: []
+              }
+            ]
+          })
+        )
+    });
+
+    expect(phenotypes).toHaveLength(1);
+    expect(phenotypes[0].id).toBe("ph-api");
+  });
+
+  test("uses API data by default and demo fixtures only when explicitly requested", async () => {
+    const apiResult = await loadWorkbenchPhenotypesForApp({
+      baseUrl: "http://dna.local",
+      fetcher: async () =>
+        new Response(
+          JSON.stringify({
+            phenotypes: [
+              {
+                id: "ph-live",
+                name: "Live Phenotype",
+                nodeName: "Live Node",
+                phenotypeType: "image-prompt",
+                tags: [],
+                outdated: false,
+                currentSpeciesVersion: "node-live@1.0.0",
+                latestSpeciesVersion: "node-live@1.0.0",
+                versions: []
+              }
+            ]
+          })
+        )
+    });
+    const demoResult = await loadWorkbenchPhenotypesForApp({
+      baseUrl: "http://dna.local",
+      demo: true,
+      fetcher: async () => {
+        throw new Error("demo should not call API");
+      }
+    });
+
+    expect(apiResult.status).toBe("ready");
+    expect(apiResult.phenotypes.map((phenotype) => phenotype.id)).toEqual(["ph-live"]);
+    expect(demoResult.status).toBe("ready");
+    expect(demoResult.phenotypes).toBe(samplePhenotypes);
+  });
+
+  test("returns a non-destructive error state when API loading fails", async () => {
+    const result = await loadWorkbenchPhenotypesForApp({
+      baseUrl: "http://dna.local",
+      fetcher: async () => new Response(JSON.stringify({ error: "offline" }), { status: 503 })
+    });
+
+    expect(result).toMatchObject({
+      status: "error",
+      phenotypes: [],
+      error: "failed to load workbench phenotypes: 503"
+    });
+  });
+});

@@ -145,6 +145,25 @@ h3 {
   height: 16px;
 }
 
+.system-state {
+  display: grid;
+  gap: 4px;
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px solid #b9c6cf;
+  border-radius: 8px;
+  color: #314352;
+  background: #ffffff;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.system-state.error {
+  border-color: #d58d91;
+  color: #842c31;
+  background: #fff2f2;
+}
+
 .workspace {
   display: grid;
   grid-template-columns: 360px minmax(0, 1fr);
@@ -162,6 +181,15 @@ h3 {
 
 .phenotype-list {
   overflow: hidden;
+}
+
+.list-empty {
+  display: grid;
+  gap: 6px;
+  padding: 18px 14px;
+  color: #657888;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .list-header,

@@ -45,6 +45,14 @@ export interface RunGenerationProviderResult {
   assets: AssetIndex[];
 }
 
+export type ProviderFailureCategory = "http-error" | "provider-error";
+
+export interface ProviderFailureSummary {
+  category: ProviderFailureCategory;
+  httpStatus?: number;
+  retryHint: string;
+}
+
 const SENSITIVE_PARAMETER_PATTERN = /api[_-]?key|secret|password|token|private[_-]?key/i;
 
 export function sanitizeToolParameters(parameters: Record<string, unknown>): Record<string, unknown> {
@@ -105,12 +113,16 @@ export async function runGenerationProvider(input: RunGenerationProviderInput): 
       assets
     };
   } catch (error) {
+    const failure = summarizeProviderFailure(error);
     return {
       job: {
         ...baseJob,
         status: "failed",
-        errorMessage: error instanceof Error ? error.message : String(error),
-        outputSnapshot: {},
+        errorMessage: `provider failure: ${failure.category}`,
+        outputSnapshot: {
+          provider: input.provider.name,
+          failure
+        },
         updatedAt: nowIso()
       },
       assets: []
@@ -152,7 +164,7 @@ export class HttpGenerationProvider implements GenerationProvider {
       },
       body: JSON.stringify(input)
     });
-    if (!response.ok) throw new Error(`provider request failed: ${response.status}`);
+    if (!response.ok) throw new ProviderHttpError(response.status);
     const body = (await response.json()) as Partial<GenerationProviderOutput>;
     return {
       text: body.text ?? "",
@@ -160,6 +172,40 @@ export class HttpGenerationProvider implements GenerationProvider {
       metadata: body.metadata ?? {}
     };
   }
+}
+
+class ProviderHttpError extends Error {
+  constructor(readonly httpStatus: number) {
+    super(`provider request failed: ${httpStatus}`);
+    this.name = "ProviderHttpError";
+  }
+}
+
+function summarizeProviderFailure(error: unknown): ProviderFailureSummary {
+  const httpStatus = extractHttpStatus(error);
+  if (httpStatus !== undefined) {
+    return {
+      category: "http-error",
+      httpStatus,
+      retryHint: `Provider returned HTTP ${httpStatus}. Retry after provider availability recovers.`
+    };
+  }
+  return {
+    category: "provider-error",
+    retryHint: "Review provider availability and retry with sanitized runtime credentials."
+  };
+}
+
+function extractHttpStatus(error: unknown): number | undefined {
+  if (error && typeof error === "object") {
+    const value = (error as { httpStatus?: unknown; status?: unknown }).httpStatus ?? (error as { status?: unknown }).status;
+    if (typeof value === "number" && Number.isInteger(value) && value >= 100 && value <= 599) return value;
+  }
+  const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  const match = message.match(/\b(?:HTTP|status|failed:)\s*(\d{3})\b/i);
+  if (!match) return undefined;
+  const status = Number.parseInt(match[1], 10);
+  return status >= 100 && status <= 599 ? status : undefined;
 }
 
 function sanitizeRecord(parameters: Record<string, unknown>): Record<string, unknown> {

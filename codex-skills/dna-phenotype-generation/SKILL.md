@@ -5,7 +5,7 @@ description: Guide generation or registration of a DNA design output from an exi
 
 # DNA Phenotype Generation
 
-Use this skill when the graph already exists and the user wants a generated or curated design result. This skill does not build the graph. If the species, edge, facet, context, or relation model is missing, output a blocking question or recommend switching to `dna-graph-modeling` or `dna-graph-editing`.
+Use this formal MVP scenario skill when the graph already exists and the user wants a generated or curated design result. This skill does not build the graph. If the species, edge, facet, context, or relation model is missing, output a blocking question or recommend switching to `dna-graph-modeling` or `dna-graph-editing`.
 
 The job is to orchestrate generation, review, confirmation, and registration through DNA concepts. It is not CLI help.
 
@@ -23,8 +23,8 @@ The job is to orchestrate generation, review, confirmation, and registration thr
 ## Decision Gates
 
 1. target gate: confirm graph id, SpeciesNode, NodeVersion, and phenotype type.
-2. artifact gate: prefer existing SpeciesCompileArtifact; if missing or outdated, plan a refresh before generation.
-3. conflict gate: if compile conflicts or open questions change the visual result, ask a blocking question before using a model or external tool.
+2. artifact gate: prefer existing SpeciesCompileArtifact and PhenotypeCompileArtifact; if there is a missing compile artifact or an outdated artifact, plan a refresh before generation.
+3. conflict gate: if compile conflicts or blocking open questions change the visual result, ask a blocking question before using a model or external tool.
 4. context gate: include ContextReference and ContextReviewRubric only as traceable guidance; do not invent references.
 5. prompt gate: produce prompt, negative prompt, art brief, and review checklist from existing graph facts and compile artifacts.
 6. tool gate: select manual, mock, or external tool execution. Do not default to calling an external tool when conflicts are blocking.
@@ -46,7 +46,7 @@ The job is to orchestrate generation, review, confirmation, and registration thr
    - manual: user or artist creates the result from brief/checklist.
    - mock: test provider or placeholder workflow for validation.
    - external tool: image model, design tool, renderer, script, database, Git repository, or custom provider adapter.
-   - Never store API keys, complete private links, or raw Agent host responses in GenerationJob, compile artifacts, or exports.
+   - Never store API keys, provider credentials, complete private links, or raw Agent host responses in GenerationJob, compile artifacts, or exports.
 
 4. Review the result.
    - Compare result against resolved genes, context traces, badcases, and review checklist.
@@ -60,7 +60,7 @@ The job is to orchestrate generation, review, confirmation, and registration thr
 
 ## Output Contract
 
-Return a generation plan with these fields:
+Return a generationPlan with these fields:
 
 - selectedTarget: graph id, species node id, node version id, phenotype type, and task brief.
 - artifactReadiness: existing or required SpeciesCompileArtifact and PhenotypeCompileArtifact, with outdated/conflict status.
@@ -80,4 +80,4 @@ Return a generation plan with these fields:
 - Do not call an external tool when a blocking question, conflict, missing target, or missing storage decision would make the result misleading.
 - Do not treat generated output as accepted by default; use pending-confirmation unless the user has explicitly approved acceptance.
 - Do not bypass DNA compile artifacts when prompt or brief generation depends on graph constraints.
-- Do not store credentials, complete private links, raw Agent host responses, or sensitive provider parameters.
+- Do not store provider credentials, complete private links, raw Agent host responses, or sensitive provider parameters.

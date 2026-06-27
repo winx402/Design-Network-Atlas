@@ -7,9 +7,3 @@ coverage/
 *.sqlite-shm
 *.sqlite-wal
 .DS_Store
-
-# Project docs and local test cases are kept out of the public source tree.
-docs/
-**/test/
-**/*.test.ts
-**/*.spec.ts

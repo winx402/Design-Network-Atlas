@@ -59,6 +59,15 @@ export interface WorkbenchLoadOptions {
   fetcher?: (url: string) => Promise<{ ok?: boolean; status?: number; json(): Promise<unknown> }>;
 }
 
+export interface WorkbenchAppLoadOptions extends WorkbenchLoadOptions {
+  demo?: boolean;
+}
+
+export type WorkbenchAppLoadState =
+  | { status: "loading"; phenotypes: [] }
+  | { status: "ready"; phenotypes: WorkbenchPhenotype[] }
+  | { status: "error"; phenotypes: []; error: string };
+
 export const samplePhenotypes: WorkbenchPhenotype[] = [
   {
     id: "ph-warning-icon",
@@ -235,22 +244,6 @@ export function getSelectedVersion(phenotype: WorkbenchPhenotype, versionId?: st
   return [...phenotype.versions].sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
 }
 
-export function updateVersionStatus(
-  phenotypes: WorkbenchPhenotype[],
-  phenotypeId: string,
-  versionId: string,
-  status: WorkbenchVersionStatus
-): WorkbenchPhenotype[] {
-  return phenotypes.map((phenotype) => {
-    if (phenotype.id !== phenotypeId) return phenotype;
-    return {
-      ...phenotype,
-      currentAcceptedVersionId: status === "accepted" ? versionId : phenotype.currentAcceptedVersionId,
-      versions: phenotype.versions.map((version) => (version.id === versionId ? { ...version, status } : version))
-    };
-  });
-}
-
 export function allTags(phenotypes: WorkbenchPhenotype[]): string[] {
   return [...new Set(phenotypes.flatMap((phenotype) => phenotype.tags))].sort();
 }
@@ -263,4 +256,20 @@ export async function loadWorkbenchPhenotypes(options: WorkbenchLoadOptions): Pr
   if (response.ok === false) throw new Error(`failed to load workbench phenotypes: ${response.status ?? "unknown"}`);
   const body = (await response.json()) as { phenotypes?: WorkbenchPhenotype[] };
   return body.phenotypes ?? [];
+}
+
+export async function loadWorkbenchPhenotypesForApp(options: WorkbenchAppLoadOptions): Promise<WorkbenchAppLoadState> {
+  if (options.demo === true) return { status: "ready", phenotypes: samplePhenotypes };
+  try {
+    return {
+      status: "ready",
+      phenotypes: await loadWorkbenchPhenotypes(options)
+    };
+  } catch (error) {
+    return {
+      status: "error",
+      phenotypes: [],
+      error: error instanceof Error ? error.message : String(error)
+    };
+  }
 }

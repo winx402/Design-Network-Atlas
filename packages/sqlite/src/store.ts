@@ -87,6 +87,42 @@ import {
 
 type Row = Record<string, unknown>;
 
+export const DNA_EXCHANGE_VERSION = "1.0.0";
+
+const EXCHANGE_CAPABILITIES = [
+  "change-sets",
+  "facets",
+  "contexts",
+  "templates",
+  "libraries",
+  "atlases",
+  "graph-lineage",
+  "species-groups",
+  "compile-artifacts",
+  "generation-jobs",
+  "output-references",
+  "reviews",
+  "impacts"
+];
+
+interface ExchangeManifest {
+  format: "dna.git-directory";
+  version: string;
+  projectVersion: string;
+  exchangeVersion: string;
+  capabilities: string[];
+}
+
+function createExchangeManifest(): ExchangeManifest {
+  return {
+    format: "dna.git-directory",
+    version: PROJECT_VERSION,
+    projectVersion: PROJECT_VERSION,
+    exchangeVersion: DNA_EXCHANGE_VERSION,
+    capabilities: EXCHANGE_CAPABILITIES
+  };
+}
+
 function parsePayload<T>(row: Row | undefined): T | undefined {
   if (!row) return undefined;
   const payload = row.payload;
@@ -1769,7 +1805,7 @@ class SqliteChangeSetRepository implements ChangeSetRepository {
 
 export function exportProject(store: SqliteDnaStore, outDir: string): void {
   mkdirSync(outDir, { recursive: true });
-  writeFileSync(join(outDir, "dna.project.json"), JSON.stringify({ format: "dna.git-directory", version: PROJECT_VERSION }, null, 2));
+  writeFileSync(join(outDir, "dna.project.json"), `${JSON.stringify(createExchangeManifest(), null, 2)}\n`);
   mkdirSync(join(outDir, "templates"), { recursive: true });
   for (const changeSet of store.changeSets.list()) writeJson(join(outDir, "change-sets", `${changeSet.changeSetId}.json`), changeSet);
   for (const definition of store.facetDefinitions.list()) {
@@ -1861,6 +1897,7 @@ export function exportProject(store: SqliteDnaStore, outDir: string): void {
 }
 
 export function importProject(store: SqliteDnaStore, inDir: string): void {
+  validateExchangeManifest(readJsonIfExists<Record<string, unknown>>(join(inDir, "dna.project.json")));
   for (const file of listJsonFiles(join(inDir, "change-sets"))) store.changeSets.create(JSON.parse(readFileSync(file, "utf8")));
   for (const file of listJsonFiles(join(inDir, "facets", "definitions"))) {
     store.facetDefinitions.create(JSON.parse(readFileSync(file, "utf8")));
@@ -1944,6 +1981,17 @@ export function importProject(store: SqliteDnaStore, inDir: string): void {
     for (const file of listJsonFiles(join(atlasDir, "bridges"))) {
       store.graphBridges.create(JSON.parse(readFileSync(file, "utf8")));
     }
+  }
+}
+
+function validateExchangeManifest(manifest: Record<string, unknown> | undefined) {
+  if (!manifest) return;
+  if (manifest.format !== undefined && manifest.format !== "dna.git-directory") {
+    throw new Error(`unsupported exchange format ${String(manifest.format)}`);
+  }
+  if (manifest.exchangeVersion === undefined) return;
+  if (manifest.exchangeVersion !== DNA_EXCHANGE_VERSION) {
+    throw new Error(`unsupported exchangeVersion ${String(manifest.exchangeVersion)}; supported exchangeVersion is ${DNA_EXCHANGE_VERSION}`);
   }
 }
 

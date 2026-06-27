@@ -1,14 +1,14 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   allTags,
   filterPhenotypes,
   getSelectedVersion,
-  samplePhenotypes,
-  updateVersionStatus,
+  loadWorkbenchPhenotypesForApp,
   WorkbenchPhenotype,
   WorkbenchVersion,
-  WorkbenchVersionStatus
+  WorkbenchVersionStatus,
+  WorkbenchAppLoadState
 } from "./workbench-data";
 import "./style.css";
 
@@ -22,13 +22,14 @@ const statusOptions: Array<WorkbenchVersionStatus | "all"> = [
 ];
 
 function AssetWorkbench() {
-  const [phenotypes, setPhenotypes] = useState(samplePhenotypes);
+  const [loadState, setLoadState] = useState<WorkbenchAppLoadState>({ status: "loading", phenotypes: [] });
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<WorkbenchVersionStatus | "all">("all");
   const [tag, setTag] = useState<string | "all">("all");
   const [outdatedOnly, setOutdatedOnly] = useState(false);
-  const [selectedPhenotypeId, setSelectedPhenotypeId] = useState(samplePhenotypes[0]?.id);
+  const [selectedPhenotypeId, setSelectedPhenotypeId] = useState<string | undefined>();
   const [selectedVersionId, setSelectedVersionId] = useState<string | undefined>();
+  const phenotypes = loadState.phenotypes;
   const tags = useMemo(() => allTags(phenotypes), [phenotypes]);
   const filtered = useMemo(
     () => filterPhenotypes(phenotypes, { query, status, tag, outdatedOnly }),
@@ -40,15 +41,24 @@ function AssetWorkbench() {
   const pendingCount = phenotypes.filter((phenotype) => getSelectedVersion(phenotype)?.status === "pending-confirmation").length;
   const outdatedCount = phenotypes.filter((phenotype) => phenotype.outdated).length;
 
+  useEffect(() => {
+    let cancelled = false;
+    const params = new URLSearchParams(window.location.search);
+    void loadWorkbenchPhenotypesForApp({
+      baseUrl: window.location.origin,
+      graphId: params.get("graphId") ?? undefined,
+      demo: params.has("demo")
+    }).then((result) => {
+      if (!cancelled) setLoadState(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   function selectPhenotype(phenotype: WorkbenchPhenotype) {
     setSelectedPhenotypeId(phenotype.id);
     setSelectedVersionId(undefined);
-  }
-
-  function updateStatus(nextStatus: WorkbenchVersionStatus) {
-    if (!selectedPhenotype || !selectedVersion) return;
-    setPhenotypes((current) => updateVersionStatus(current, selectedPhenotype.id, selectedVersion.id, nextStatus));
-    setSelectedVersionId(selectedVersion.id);
   }
 
   return (
@@ -64,6 +74,19 @@ function AssetWorkbench() {
           <Metric label="Outdated" value={outdatedCount} />
         </dl>
       </header>
+
+      {loadState.status === "loading" ? (
+        <section className="system-state" aria-live="polite">
+          Loading phenotype workbench from the local DNA API...
+        </section>
+      ) : null}
+
+      {loadState.status === "error" ? (
+        <section className="system-state error" role="alert">
+          <strong>Unable to load workbench data.</strong>
+          <span>{loadState.error}</span>
+        </section>
+      ) : null}
 
       <section className="filters" aria-label="Asset workbench filters">
         <label>
@@ -103,6 +126,12 @@ function AssetWorkbench() {
             <strong>{filtered.length} results</strong>
             <span>{tag === "all" ? "all tags" : tag}</span>
           </div>
+          {loadState.status === "ready" && phenotypes.length === 0 ? (
+            <div className="list-empty">
+              <strong>No phenotypes found</strong>
+              <span>Create phenotypes through the CLI/service boundary, then refresh this read-only workbench.</span>
+            </div>
+          ) : null}
           {filtered.map((phenotype) => {
             const version = getSelectedVersion(phenotype);
             return (
@@ -127,12 +156,15 @@ function AssetWorkbench() {
             phenotype={selectedPhenotype}
             selectedVersion={selectedVersion}
             onSelectVersion={setSelectedVersionId}
-            onUpdateStatus={updateStatus}
           />
         ) : (
           <section className="detail empty-state">
-            <h2>No phenotype selected</h2>
-            <p>Adjust the filters or create a phenotype from the CLI.</p>
+            <h2>{loadState.status === "ready" && phenotypes.length === 0 ? "No phenotypes found" : "No phenotype selected"}</h2>
+            <p>
+              {loadState.status === "error"
+                ? "The local API did not return workbench data. Existing DNA records were not changed."
+                : "Adjust filters, choose a phenotype, or create one through the CLI/service boundary."}
+            </p>
           </section>
         )}
       </section>
@@ -153,7 +185,6 @@ function PhenotypeDetail(props: {
   phenotype: WorkbenchPhenotype;
   selectedVersion: WorkbenchVersion;
   onSelectVersion: (versionId: string) => void;
-  onUpdateStatus: (status: WorkbenchVersionStatus) => void;
 }) {
   const { phenotype, selectedVersion } = props;
   const review = selectedVersion.reviews[0];
@@ -188,18 +219,6 @@ function PhenotypeDetail(props: {
             <span>{version.status}</span>
           </button>
         ))}
-      </div>
-
-      <div className="actions" aria-label="Status actions">
-        <button onClick={() => props.onUpdateStatus("accepted")} type="button">
-          Accept
-        </button>
-        <button onClick={() => props.onUpdateStatus("rejected")} type="button">
-          Reject
-        </button>
-        <button onClick={() => props.onUpdateStatus("archived")} type="button">
-          Archive
-        </button>
       </div>
 
       <section className="panel">
