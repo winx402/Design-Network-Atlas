@@ -1,6 +1,6 @@
 # DNA 分阶段开发路线图
 
-状态：v0.6.0-completed
+状态：v0.6.1-completed
 最后审阅：2026-06-27
 来源级别：authoritative implementation plan
 上游输入：[系统技术设计](../design/system-architecture.md)
@@ -316,14 +316,13 @@ Phase 0-16 已完成并由测试覆盖。本文件保留为历史执行计划、
 
 交付：
 
-- `codex-skills/dna/SKILL.md`
 - `codex-skills/dna-graph-modeling/SKILL.md`
 - `codex-skills/dna-graph-editing/SKILL.md`
 - scenario skill tests。
 
 测试：
 
-- `dna` skill 只做场景路由，不复制 CLI help。
+- 不保留浅层 `dna` 路由/CLI 说明 skill，CLI 说明由 `dna --help` 承担。
 - 图谱建模 skill 能覆盖 SpeciesNode、EvolutionEdge、facets、Phenotype、phenotype library 和写入策略。
 - 图谱编辑 skill 能覆盖当前图谱、合理性、影响分析、风险等级、outdated、替代方案和写入策略。
 - Skill 不直接写数据库内部结构、导出目录或外部素材库。

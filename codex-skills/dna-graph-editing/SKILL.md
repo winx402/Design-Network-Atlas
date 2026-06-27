@@ -7,6 +7,36 @@ description: Safely edit an existing Design Network Atlas graph. Use when the us
 
 Use this skill when a DNA graph already exists and the user wants to change it. The main work is to protect graph meaning while still moving the design forward.
 
+Use `dna --help` and subcommand help such as `dna changeset --help` for CLI syntax. Do not turn this skill into command documentation.
+
+## Decision Gates
+
+Run these gates before proposing an edit:
+
+1. Context gate: confirm which current graph, branch, SpeciesNode, EvolutionEdge, facets, Phenotype versions, and library bindings are in scope. If current state is missing, say what cannot be assessed.
+2. Object gate: decide whether the requested change belongs to graph identity, Phenotype output, AssetIndex/storage, tags/metadata, review policy, or template/facet schema.
+3. History gate: decide whether existing versions, reviews, or assets must remain understandable after the edit. Prefer archive, supersede, or add over destructive rewrite when history exists.
+4. Impact gate: decide whether the change can alter downstream generated results, only changes metadata, or changes routing/search behavior.
+5. Governance gate: decide whether the edit is direct/preview-safe, needs change-set review, needs proposal review, or should stay as diagnosis only.
+
+Do not apply a change just because it is easy to encode. A graph edit is valid only if it improves the model without hiding downstream consequences.
+
+## Edit Classification Matrix
+
+Use this matrix to choose the smallest correct change:
+
+| User asks to... | First consider | Watch for |
+| --- | --- | --- |
+| Add a new concept | SpeciesNode if stable; Phenotype if task result; tag if search-only | Creating species for one file or prompt |
+| Add a style that affects many objects | shared parent, facet, fact/motif, or template revision | Repeating the same edge delta everywhere |
+| Move a node under another parent | reparent with impact check or add second parent role | Making old Phenotype versions misleading |
+| Split a broad node | new child SpeciesNode entries plus EvolutionEdge deltas | Losing shared facets or facts |
+| Merge two nodes | alias/supersede one node, preserve versions, then redirect future use | Destroying review and output history |
+| Rename | metadata-only rename if identity is unchanged | Treating a semantic change as a label cleanup |
+| Delete | archive/deprecate first | Breaking references from Phenotype, reviews, impacts, or assets |
+| Change facets | template/schema revision plus affected node review | Invalidating existing snapshots without marking outdated |
+| Change library routing | LibraryRoutingPolicy or mount binding | Coupling graph id to storage layout |
+
 ## Workflow
 
 1. Read the 当前图谱 context.
@@ -55,6 +85,19 @@ Use this skill when a DNA graph already exists and the user wants to change it. 
 - If the user says "move this under that parent", check whether old Phenotype versions become outdated.
 - If the user says "delete", check archive, deprecate, or replace first.
 - If a change affects generation guidance, revise review checklist expectations along with the graph.
+
+## Quality Bar
+
+A useful graph editing result must satisfy all of these:
+
+- It states the current graph context used and what context was unavailable.
+- It classifies the edit into graph identity, Phenotype, AssetIndex/storage, tag/metadata, review, template/facet, or routing.
+- It explains why the change is reasonable or why it should be rejected.
+- It names downstream SpeciesNode entries, EvolutionEdge versions, Phenotype versions, AssetIndex references, reviews, impacts, or routing policies that may become outdated.
+- It distinguishes visual-impacting changes from metadata-only and storage-routing changes.
+- It gives a risk level with a concrete reason, not just a label.
+- It gives at least one safer alternative when the change is medium, high, or structural risk.
+- It chooses preview-confirm, change-set review, proposal, draft-write, or no-write diagnosis and explains why.
 
 ## Required Output
 

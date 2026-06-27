@@ -7,6 +7,36 @@ description: Build a new Design Network Atlas graph from a user scenario. Use wh
 
 Use this skill to turn an ambiguous design scenario into a DNA graph plan. The job is not to explain CLI syntax; the job is to decide what the graph should mean.
 
+Use `dna --help` and subcommand help such as `dna node create --help` for CLI syntax. Do not turn this skill into command documentation.
+
+## Decision Gates
+
+Run these gates before proposing objects:
+
+1. Scope gate: decide whether the user is modeling a design graph, a phenotype library, or only a one-off generation task. If it is only a one-off output, do not force a graph.
+2. Identity gate: decide what remains stable across many outputs. Only stable identities become SpeciesNode entries.
+3. Inheritance gate: decide which constraints should be inherited through parentage, which should be stored as facts/motifs, and which are local Phenotype requirements.
+4. Variation gate: decide whether differences are EvolutionEdge deltas, facets values, Phenotype variants, or asset storage metadata.
+5. Governance gate: decide whether the proposal can be preview-confirmed, needs change-set review, or is large enough to require proposal semantics.
+
+If a gate cannot be answered from the user input, ask one focused question or mark the field as unresolved. Do not fill the graph with plausible but unconfirmed domain facts.
+
+## Classification Matrix
+
+Use this matrix to avoid shallow or wrong mappings:
+
+| User concept is mostly... | Map to | Do not map to |
+| --- | --- | --- |
+| Stable design identity that can inherit and generate many results | SpeciesNode | Phenotype or tag |
+| Transformation from one stable identity to another | EvolutionEdge | Child name or facet |
+| Reusable descriptive dimension such as silhouette, material, palette, role, state, rarity, density, mood, affordance | facet | SpeciesNode |
+| Cross-cutting lore, brand rule, motif, setting fact, or constraint reused by multiple objects | fact/motif | facet value hidden in one node |
+| Concrete output for a task, prompt, brief, generated image group, concept sheet, icon set, model brief, animation brief | Phenotype | SpeciesNode |
+| File path, external library item, Eagle item, NAS object, Git blob, runtime export copy | AssetIndex or phenotype library mount | graph identity |
+| Search term, workflow state, review label, owner label | tag/metadata | EvolutionEdge |
+
+Escalate to multiple root SpeciesNode entries when the domain has separate starting identities. Use multiple parents only when the child genuinely merges inherited constraints from parent roles; otherwise prefer facets or facts.
+
 ## Workflow
 
 1. Understand the scenario.
@@ -52,6 +82,19 @@ Use this skill to turn an ambiguous design scenario into a DNA graph plan. The j
 - If a concept answers "which dimension should every similar object carry?", it is likely a facet.
 - If a concept answers "what concrete generated or curated result exists for this task?", it is likely a Phenotype.
 - If a concept answers "where is the actual file or external object?", it is likely AssetIndex or phenotype library storage metadata.
+
+## Quality Bar
+
+A useful graph modeling result must satisfy all of these:
+
+- Every proposed SpeciesNode has a stable identity, a reason it is not just a Phenotype, and either a root reason or parent candidates.
+- Every proposed EvolutionEdge states the transformation delta and the parent role; it is not just a relationship label.
+- Every facet is reusable across multiple objects and has a clear value strategy: enum, free text, number, boolean, reference, or custom.
+- Facts/motifs are separated from facets and can apply to more than one object.
+- Phenotype types explain what will be generated or curated, and whether one Phenotype version can own multiple assets.
+- The phenotype library recommendation keeps graph identity decoupled from storage, with one logical library and multiple mounts unless governance boundaries require otherwise.
+- The write strategy explains why it is directly applied, preview-confirmed, change-set reviewed, proposal-based, or draft-only.
+- The proposal lists only material unresolved questions, not generic discovery questions.
 
 ## Required Output
 

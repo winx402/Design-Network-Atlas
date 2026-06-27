@@ -1,6 +1,6 @@
 # DNA 测试策略
 
-状态：v0.6.0-active
+状态：v0.6.1-active
 最后审阅：2026-06-27
 来源级别：authoritative test strategy
 上游输入：[系统技术设计](../design/system-architecture.md)、[阶段开发路线图](../implementation/development-roadmap.md)
@@ -12,7 +12,7 @@
 - 阶段测试通过只代表该阶段完成，不代表完整系统完成。
 - 基础完整系统只有在 Phase 11 全量验收通过后才能宣布完成。
 - Phase 12-16 属于本地优先系统的增强能力，必须单独声明、单独测试，不能反向修改 Phase 11 的完成口径。
-- 当前 v0.6.0 已按 Phase 16 和 Phase 7 场景 skill 验收口径完成；post-v1 能力必须单独声明，不能混入 v0.6.0 完成声明。
+- 当前 v0.6.1 已按 Phase 16 和 Phase 7 场景 skill 验收口径完成；post-v1 能力必须单独声明，不能混入 v0.6.1 完成声明。
 
 ## 2. 测试分层
 
@@ -145,8 +145,7 @@
 
 ### 5.7 Phase 7 Skill Cases
 
-- `dna` skill 作为路由入口，指向 `dna-graph-modeling` 和 `dna-graph-editing`。
-- `dna` skill 不复制 CLI help，不把命令清单当作 skill 主体。
+- 不保留浅层 `dna` 路由/CLI 说明 skill；CLI 命令说明由 `dna --help` 和子命令 help 承担。
 - `dna-graph-modeling` 能把新场景映射到 SpeciesNode、EvolutionEdge、facets、Phenotype、phenotype library 和生效策略。
 - `dna-graph-editing` 能对已有图谱变更输出合理性、影响分析、风险等级、outdated 风险、替代方案和推荐写入路径。
 - Skill 不把未经确认的 LLM 推断写入正式图谱，也不直接写数据库内部结构、导出目录或外部素材库。
@@ -293,3 +292,5 @@ v0.1 作为历史基础边界，允许声明为“本地优先基础系统通过
 当前 v0.5.0 允许补充声明“preview change-set 审阅确认闭环通过验收”。不得把它表述为“完整 proposal/batch 审批系统已完成”，因为多节点/多边命名 proposal、tree diff、Web 审批和团队权限仍属于后续阶段。
 
 当前 v0.6.0 允许补充声明“图谱建模和图谱编辑场景 skill 通过验收”。不得把它表述为“自动完成所有领域图谱设计”，因为 skill 仍需要用户确认关键设计事实，且 generation guidance、phenotype library governance、proposal/batch UI 仍属于后续增强。
+
+当前 v0.6.1 允许补充声明“浅层 root/CLI 说明 skill 已移除，图谱建模和图谱编辑 skill 增加决策门、分类矩阵和质量门槛”。不得把它表述为“所有 DNA skill 已完整”，因为生成引导和表型库治理 skill 仍属于后续增强。

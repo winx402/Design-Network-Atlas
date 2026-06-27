@@ -18,14 +18,8 @@ function expectFrontmatter(content: string, skillName: string) {
 }
 
 describe("Phase 7 Codex scenario skills", () => {
-  test("root dna skill routes users to workflow skills instead of duplicating CLI help", () => {
-    const content = readSkill("dna");
-
-    expectFrontmatter(content, "dna");
-    expect(content).toContain("dna-graph-modeling");
-    expect(content).toContain("dna-graph-editing");
-    expect(content).not.toContain("Preview-First Command Recipes");
-    expect(content).not.toMatch(/```bash[\s\S]*dna --db/);
+  test("does not keep a shallow root dna skill for CLI help or routing", () => {
+    expect(existsSync(join(skillRoot, "dna", "SKILL.md"))).toBe(false);
   });
 
   test("graph modeling skill maps a new user scenario into DNA graph concepts and write strategy", () => {
@@ -42,6 +36,10 @@ describe("Phase 7 Codex scenario skills", () => {
     expect(content).toContain("proposal");
     expect(content).toContain("直接生效");
     expect(content).toContain("待确认问题");
+    expect(content).toContain("Decision Gates");
+    expect(content).toContain("Classification Matrix");
+    expect(content).toContain("Quality Bar");
+    expect(content).toContain("Use `dna --help`");
     expect(content).not.toMatch(/```bash[\s\S]*dna --db/);
     expect(content).not.toMatch(/\bsqlite3\b|better-sqlite3|INSERT INTO|UPDATE\s+\w+/i);
     expect(content).not.toMatch(/OPENAI_API_KEY|sk-[a-zA-Z0-9_-]{8,}|password\s*=/i);
@@ -60,6 +58,10 @@ describe("Phase 7 Codex scenario skills", () => {
     expect(content).toContain("proposal");
     expect(content).toContain("impact check");
     expect(content).toContain("替代方案");
+    expect(content).toContain("Decision Gates");
+    expect(content).toContain("Edit Classification Matrix");
+    expect(content).toContain("Quality Bar");
+    expect(content).toContain("Use `dna --help`");
     expect(content).not.toMatch(/```bash[\s\S]*dna --db/);
     expect(content).not.toMatch(/\bsqlite3\b|better-sqlite3|INSERT INTO|UPDATE\s+\w+/i);
     expect(content).not.toMatch(/OPENAI_API_KEY|sk-[a-zA-Z0-9_-]{8,}|password\s*=/i);

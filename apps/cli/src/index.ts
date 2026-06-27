@@ -162,7 +162,18 @@ const program = new Command()
   .option("--db <path>", "SQLite database path", ".dna/dna.sqlite")
   .option("--yes", "apply write operations without preview stop")
   .option("--mode <mode>", "write mode: preview-confirm, draft-write, changeset-apply", "preview-confirm")
-  .option("--change-set <changeSetId>", "existing preview change-set id for --mode changeset-apply");
+  .option("--change-set <changeSetId>", "existing preview change-set id for --mode changeset-apply")
+  .addHelpText(
+    "after",
+    `
+Use \`dna <command> --help\` to inspect command-specific options.
+
+Write modes:
+  preview-confirm    create a preview change-set before durable writes
+  draft-write        write draft objects directly
+  changeset-apply    apply an existing preview change-set with --change-set
+`
+  );
 
 const graph = program.command("graph").description("Manage design genome graphs");
 graph
