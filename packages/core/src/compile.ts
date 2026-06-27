@@ -1,4 +1,5 @@
-import { Graph, SpeciesNode } from "./schemas.js";
+import { Graph, GraphBridge, SpeciesGroup, SpeciesGroupRelation, SpeciesNode } from "./schemas.js";
+import { isFixedRuleEligibleRelation } from "./populations.js";
 
 export interface GeneConflict {
   key: string;
@@ -13,9 +14,20 @@ export interface CompileSpeciesInput {
   node: SpeciesNode;
   parentSnapshots?: Array<{ nodeVersionId: string; snapshot: Record<string, unknown> }>;
   edgeDeltas?: Array<{ edgeVersionId: string; delta: Record<string, unknown> }>;
+  speciesGroups?: SpeciesGroup[];
+  groupRelations?: SpeciesGroupRelation[];
+  graphBridges?: GraphBridge[];
   fixedSnapshot?: Record<string, unknown>;
   taskBrief: string;
   phenotypeType: string;
+}
+
+export interface CompileContextTraceItem {
+  sourceType: "species-group" | "species-group-relation" | "graph-bridge";
+  sourceId: string;
+  relationType?: string;
+  summary: string;
+  fixedRuleEligible: boolean;
 }
 
 export interface CompileSpeciesResult {
@@ -23,6 +35,7 @@ export interface CompileSpeciesResult {
   candidateGenes: Record<string, unknown>;
   conflicts: GeneConflict[];
   resolvedGeneSnapshot: Record<string, unknown>;
+  contextTrace: CompileContextTraceItem[];
   prompt: string;
   brief: string;
   edgeVersionTrace: string[];
@@ -52,6 +65,7 @@ export function compileSpecies(input: CompileSpeciesInput): CompileSpeciesResult
   const conflicts: GeneConflict[] = [];
   const resolved: Record<string, unknown> = {};
   const policy = input.node.compilePolicy?.type ?? input.graph.compilePolicy.type;
+  const contextTrace = buildCompileContextTrace(input);
 
   if (policy === "snapshot-fixed" && input.fixedSnapshot) {
     Object.assign(resolved, input.fixedSnapshot);
@@ -75,6 +89,7 @@ export function compileSpecies(input: CompileSpeciesInput): CompileSpeciesResult
   const constraintText = Object.entries(input.node.constraints)
     .map(([key, value]) => `${key}=${String(value)}`)
     .join(", ");
+  const contextText = contextTrace.map((item) => `- ${item.sourceType}:${item.sourceId} ${item.summary}`).join("\n");
   const prompt = [
     `Design Network Atlas phenotype request.`,
     `Type: ${input.phenotypeType}.`,
@@ -82,6 +97,7 @@ export function compileSpecies(input: CompileSpeciesInput): CompileSpeciesResult
     `Species: ${input.node.name}.`,
     motifText,
     constraintText ? `Constraints: ${constraintText}.` : "Constraints: none specified.",
+    contextText ? `Context:\n${contextText}` : "",
     input.node.badcases.length ? `Avoid: ${input.node.badcases.join(", ")}.` : ""
   ]
     .filter(Boolean)
@@ -92,8 +108,42 @@ export function compileSpecies(input: CompileSpeciesInput): CompileSpeciesResult
     candidateGenes: { ...resolved },
     conflicts,
     resolvedGeneSnapshot: resolved,
+    contextTrace,
     prompt,
     brief: `Produce ${input.phenotypeType} for ${input.node.name}: ${input.taskBrief}`,
     edgeVersionTrace: (input.edgeDeltas ?? []).map((edge) => edge.edgeVersionId)
   };
+}
+
+function buildCompileContextTrace(input: CompileSpeciesInput): CompileContextTraceItem[] {
+  const traces: CompileContextTraceItem[] = [];
+  for (const group of input.speciesGroups ?? []) {
+    const facts = group.sharedFacts.length ? `facts=${group.sharedFacts.join(", ")}` : "facts=none";
+    const facetSchemas = group.facetSchemaIds.length ? `facetSchemas=${group.facetSchemaIds.join(", ")}` : "facetSchemas=none";
+    traces.push({
+      sourceType: "species-group",
+      sourceId: group.groupId,
+      summary: `${group.name}; ${facts}; ${facetSchemas}`,
+      fixedRuleEligible: true
+    });
+  }
+  for (const relation of input.groupRelations ?? []) {
+    traces.push({
+      sourceType: "species-group-relation",
+      sourceId: relation.relationId,
+      relationType: relation.relationType,
+      summary: `[${relation.relationType}] ${relation.sourceGroupId} -> ${relation.targetGroupId}. ${relation.description}`.trim(),
+      fixedRuleEligible: isFixedRuleEligibleRelation(relation.relationType)
+    });
+  }
+  for (const bridge of input.graphBridges ?? []) {
+    traces.push({
+      sourceType: "graph-bridge",
+      sourceId: bridge.bridgeId,
+      relationType: bridge.bridgeType,
+      summary: `[${bridge.bridgeType}] ${bridge.sourceGraphId} -> ${bridge.targetGraphId}. ${bridge.description}`.trim(),
+      fixedRuleEligible: isFixedRuleEligibleRelation(bridge.bridgeType)
+    });
+  }
+  return traces;
 }

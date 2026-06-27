@@ -10,6 +10,34 @@ export const graphs = sqliteTable("graphs", {
   updatedAt: text("updated_at").notNull()
 });
 
+export const facetDefinitions = sqliteTable("facet_definitions", {
+  facetId: text("facet_id").primaryKey(),
+  name: text("name").notNull(),
+  status: text("status").notNull(),
+  payload: text("payload", { mode: "json" }).notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull()
+});
+
+export const facetSchemas = sqliteTable("facet_schemas", {
+  facetSchemaId: text("facet_schema_id").primaryKey(),
+  name: text("name").notNull(),
+  status: text("status").notNull(),
+  payload: text("payload", { mode: "json" }).notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull()
+});
+
+export const facetAssignments = sqliteTable("facet_assignments", {
+  assignmentId: text("assignment_id").primaryKey(),
+  targetType: text("target_type").notNull(),
+  targetId: text("target_id").notNull(),
+  status: text("status").notNull(),
+  payload: text("payload", { mode: "json" }).notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull()
+});
+
 export const templatePacks = sqliteTable("template_packs", {
   templatePackId: text("template_pack_id").primaryKey(),
   name: text("name").notNull(),
@@ -23,6 +51,62 @@ export const geneTemplates = sqliteTable("gene_templates", {
   templateId: text("template_id").primaryKey(),
   templatePackId: text("template_pack_id"),
   domain: text("domain").notNull(),
+  status: text("status").notNull(),
+  payload: text("payload", { mode: "json" }).notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull()
+});
+
+export const speciesGroups = sqliteTable("species_groups", {
+  groupId: text("group_id").primaryKey(),
+  graphId: text("graph_id").notNull(),
+  name: text("name").notNull(),
+  groupType: text("group_type").notNull(),
+  status: text("status").notNull(),
+  payload: text("payload", { mode: "json" }).notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull()
+});
+
+export const speciesGroupMemberships = sqliteTable("species_group_memberships", {
+  membershipId: text("membership_id").primaryKey(),
+  graphId: text("graph_id").notNull(),
+  groupId: text("group_id").notNull(),
+  nodeId: text("node_id").notNull(),
+  role: text("role").notNull(),
+  status: text("status").notNull(),
+  payload: text("payload", { mode: "json" }).notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull()
+});
+
+export const speciesGroupRelations = sqliteTable("species_group_relations", {
+  relationId: text("relation_id").primaryKey(),
+  graphId: text("graph_id").notNull(),
+  sourceGroupId: text("source_group_id").notNull(),
+  targetGroupId: text("target_group_id").notNull(),
+  relationType: text("relation_type").notNull(),
+  status: text("status").notNull(),
+  payload: text("payload", { mode: "json" }).notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull()
+});
+
+export const atlases = sqliteTable("atlases", {
+  atlasId: text("atlas_id").primaryKey(),
+  name: text("name").notNull(),
+  status: text("status").notNull(),
+  payload: text("payload", { mode: "json" }).notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull()
+});
+
+export const graphBridges = sqliteTable("graph_bridges", {
+  bridgeId: text("bridge_id").primaryKey(),
+  atlasId: text("atlas_id").notNull(),
+  sourceGraphId: text("source_graph_id").notNull(),
+  targetGraphId: text("target_graph_id").notNull(),
+  bridgeType: text("bridge_type").notNull(),
   status: text("status").notNull(),
   payload: text("payload", { mode: "json" }).notNull(),
   createdAt: text("created_at").notNull(),

@@ -2,15 +2,20 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import {
+  Atlas,
   AssetIndex,
   ChangeSet,
   createImpactRecord,
   EdgeVersion,
   EvolutionEdge,
   ExternalLibraryMapping,
+  FacetAssignment,
+  FacetDefinition,
+  FacetSchema,
   GeneTemplate,
   GenerationJob,
   Graph,
+  GraphBridge,
   ImpactRecord,
   LibraryRoutingPolicy,
   NodeVersion,
@@ -21,17 +26,25 @@ import {
   PROJECT_VERSION,
   PhenotypeVersion,
   ReviewRecord,
+  SpeciesGroup,
+  SpeciesGroupMembership,
+  SpeciesGroupRelation,
   SpeciesNode,
   StorageMount,
   TemplatePack
 } from "@dna/core";
 import {
+  AtlasRepository,
   AssetRepository,
   ChangeSetRepository,
   EdgeRepository,
   EdgeVersionRepository,
   ExternalLibraryMappingRepository,
+  FacetAssignmentRepository,
+  FacetDefinitionRepository,
+  FacetSchemaRepository,
   GenerationJobRepository,
+  GraphBridgeRepository,
   GraphRepository,
   ImpactRepository,
   LibraryRoutingPolicyRepository,
@@ -44,6 +57,9 @@ import {
   PhenotypeVersionRepository,
   ReviewRepository,
   SearchRepository,
+  SpeciesGroupMembershipRepository,
+  SpeciesGroupRelationRepository,
+  SpeciesGroupRepository,
   StorageMountRepository,
   StorageEngine,
   TemplateRepository
@@ -106,7 +122,15 @@ function repairSqliteLibraryGraphIds(store: SqliteDnaStore): number {
 export class SqliteDnaStore implements StorageEngine {
   readonly db: DatabaseSync;
   readonly graphs: GraphRepository;
+  readonly facetDefinitions: FacetDefinitionRepository;
+  readonly facetSchemas: FacetSchemaRepository;
+  readonly facetAssignments: FacetAssignmentRepository;
   readonly templates: TemplateRepository;
+  readonly speciesGroups: SpeciesGroupRepository;
+  readonly speciesGroupMemberships: SpeciesGroupMembershipRepository;
+  readonly speciesGroupRelations: SpeciesGroupRelationRepository;
+  readonly atlases: AtlasRepository;
+  readonly graphBridges: GraphBridgeRepository;
   readonly nodes: LineageRepository;
   readonly nodeVersions: NodeVersionRepository;
   readonly edges: EdgeRepository;
@@ -131,7 +155,15 @@ export class SqliteDnaStore implements StorageEngine {
     this.db = new DatabaseSync(dbPath);
     this.db.exec("PRAGMA foreign_keys = ON;");
     this.graphs = new SqliteGraphRepository(this);
+    this.facetDefinitions = new SqliteFacetDefinitionRepository(this);
+    this.facetSchemas = new SqliteFacetSchemaRepository(this);
+    this.facetAssignments = new SqliteFacetAssignmentRepository(this);
     this.templates = new SqliteTemplateRepository(this);
+    this.speciesGroups = new SqliteSpeciesGroupRepository(this);
+    this.speciesGroupMemberships = new SqliteSpeciesGroupMembershipRepository(this);
+    this.speciesGroupRelations = new SqliteSpeciesGroupRelationRepository(this);
+    this.atlases = new SqliteAtlasRepository(this);
+    this.graphBridges = new SqliteGraphBridgeRepository(this);
     this.nodes = new SqliteNodeRepository(this);
     this.nodeVersions = new SqliteNodeVersionRepository(this);
     this.edges = new SqliteEdgeRepository(this);
@@ -163,6 +195,31 @@ export class SqliteDnaStore implements StorageEngine {
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS facet_definitions (
+        facet_id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        status TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS facet_schemas (
+        facet_schema_id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        status TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS facet_assignments (
+        assignment_id TEXT PRIMARY KEY,
+        target_type TEXT NOT NULL,
+        target_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS template_packs (
         template_pack_id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
@@ -175,6 +232,57 @@ export class SqliteDnaStore implements StorageEngine {
         template_id TEXT PRIMARY KEY,
         template_pack_id TEXT,
         domain TEXT NOT NULL,
+        status TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS species_groups (
+        group_id TEXT PRIMARY KEY,
+        graph_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        group_type TEXT NOT NULL,
+        status TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS species_group_memberships (
+        membership_id TEXT PRIMARY KEY,
+        graph_id TEXT NOT NULL,
+        group_id TEXT NOT NULL,
+        node_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        status TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS species_group_relations (
+        relation_id TEXT PRIMARY KEY,
+        graph_id TEXT NOT NULL,
+        source_group_id TEXT NOT NULL,
+        target_group_id TEXT NOT NULL,
+        relation_type TEXT NOT NULL,
+        status TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS atlases (
+        atlas_id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        status TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS graph_bridges (
+        bridge_id TEXT PRIMARY KEY,
+        atlas_id TEXT NOT NULL,
+        source_graph_id TEXT NOT NULL,
+        target_graph_id TEXT NOT NULL,
+        bridge_type TEXT NOT NULL,
         status TEXT NOT NULL,
         payload TEXT NOT NULL,
         created_at TEXT NOT NULL,
@@ -424,6 +532,95 @@ class SqliteGraphRepository implements GraphRepository {
   }
 }
 
+class SqliteFacetDefinitionRepository implements FacetDefinitionRepository {
+  constructor(private readonly store: SqliteDnaStore) {}
+  create(definition: FacetDefinition) {
+    this.store.db
+      .prepare("INSERT INTO facet_definitions (facet_id, name, status, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
+      .run(definition.facetId, definition.name, definition.status, JSON.stringify(definition), definition.createdAt, definition.updatedAt);
+  }
+  update(definition: FacetDefinition) {
+    this.store.db
+      .prepare("UPDATE facet_definitions SET name = ?, status = ?, payload = ?, updated_at = ? WHERE facet_id = ?")
+      .run(definition.name, definition.status, JSON.stringify(definition), definition.updatedAt, definition.facetId);
+  }
+  get(facetId: string) {
+    return parsePayload<FacetDefinition>(
+      this.store.db.prepare("SELECT payload FROM facet_definitions WHERE facet_id = ?").get(facetId) as Row | undefined
+    );
+  }
+  list() {
+    return parseRows<FacetDefinition>(
+      this.store.db.prepare("SELECT payload FROM facet_definitions ORDER BY created_at, rowid").all() as Row[]
+    );
+  }
+}
+
+class SqliteFacetSchemaRepository implements FacetSchemaRepository {
+  constructor(private readonly store: SqliteDnaStore) {}
+  create(schema: FacetSchema) {
+    this.store.db
+      .prepare("INSERT INTO facet_schemas (facet_schema_id, name, status, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
+      .run(schema.facetSchemaId, schema.name, schema.status, JSON.stringify(schema), schema.createdAt, schema.updatedAt);
+  }
+  update(schema: FacetSchema) {
+    this.store.db
+      .prepare("UPDATE facet_schemas SET name = ?, status = ?, payload = ?, updated_at = ? WHERE facet_schema_id = ?")
+      .run(schema.name, schema.status, JSON.stringify(schema), schema.updatedAt, schema.facetSchemaId);
+  }
+  get(facetSchemaId: string) {
+    return parsePayload<FacetSchema>(
+      this.store.db.prepare("SELECT payload FROM facet_schemas WHERE facet_schema_id = ?").get(facetSchemaId) as Row | undefined
+    );
+  }
+  list() {
+    return parseRows<FacetSchema>(
+      this.store.db.prepare("SELECT payload FROM facet_schemas ORDER BY created_at, rowid").all() as Row[]
+    );
+  }
+}
+
+class SqliteFacetAssignmentRepository implements FacetAssignmentRepository {
+  constructor(private readonly store: SqliteDnaStore) {}
+  create(assignment: FacetAssignment) {
+    this.store.db
+      .prepare(
+        "INSERT INTO facet_assignments (assignment_id, target_type, target_id, status, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+      )
+      .run(
+        assignment.assignmentId,
+        assignment.targetType,
+        assignment.targetId,
+        assignment.status,
+        JSON.stringify(assignment),
+        assignment.createdAt,
+        assignment.updatedAt
+      );
+  }
+  update(assignment: FacetAssignment) {
+    this.store.db
+      .prepare("UPDATE facet_assignments SET target_type = ?, target_id = ?, status = ?, payload = ?, updated_at = ? WHERE assignment_id = ?")
+      .run(assignment.targetType, assignment.targetId, assignment.status, JSON.stringify(assignment), assignment.updatedAt, assignment.assignmentId);
+  }
+  get(assignmentId: string) {
+    return parsePayload<FacetAssignment>(
+      this.store.db.prepare("SELECT payload FROM facet_assignments WHERE assignment_id = ?").get(assignmentId) as Row | undefined
+    );
+  }
+  list() {
+    return parseRows<FacetAssignment>(
+      this.store.db.prepare("SELECT payload FROM facet_assignments ORDER BY created_at, rowid").all() as Row[]
+    );
+  }
+  listByTarget(targetType: string, targetId: string) {
+    return parseRows<FacetAssignment>(
+      this.store.db
+        .prepare("SELECT payload FROM facet_assignments WHERE target_type = ? AND target_id = ? ORDER BY created_at, rowid")
+        .all(targetType, targetId) as Row[]
+    );
+  }
+}
+
 class SqliteTemplateRepository implements TemplateRepository {
   constructor(private readonly store: SqliteDnaStore) {}
   createPack(pack: TemplatePack) {
@@ -444,6 +641,179 @@ class SqliteTemplateRepository implements TemplateRepository {
   }
   listPacks() {
     return parseRows<TemplatePack>(this.store.db.prepare("SELECT payload FROM template_packs ORDER BY template_pack_id").all() as Row[]);
+  }
+}
+
+class SqliteSpeciesGroupRepository implements SpeciesGroupRepository {
+  constructor(private readonly store: SqliteDnaStore) {}
+  create(group: SpeciesGroup) {
+    this.store.db
+      .prepare("INSERT INTO species_groups (group_id, graph_id, name, group_type, status, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(group.groupId, group.graphId, group.name, group.groupType, group.status, JSON.stringify(group), group.createdAt, group.updatedAt);
+  }
+  update(group: SpeciesGroup) {
+    this.store.db
+      .prepare("UPDATE species_groups SET name = ?, group_type = ?, status = ?, payload = ?, updated_at = ? WHERE group_id = ?")
+      .run(group.name, group.groupType, group.status, JSON.stringify(group), group.updatedAt, group.groupId);
+  }
+  get(groupId: string) {
+    return parsePayload<SpeciesGroup>(this.store.db.prepare("SELECT payload FROM species_groups WHERE group_id = ?").get(groupId) as Row | undefined);
+  }
+  listByGraph(graphId: string) {
+    return parseRows<SpeciesGroup>(
+      this.store.db.prepare("SELECT payload FROM species_groups WHERE graph_id = ? ORDER BY created_at, rowid").all(graphId) as Row[]
+    );
+  }
+}
+
+class SqliteSpeciesGroupMembershipRepository implements SpeciesGroupMembershipRepository {
+  constructor(private readonly store: SqliteDnaStore) {}
+  create(membership: SpeciesGroupMembership) {
+    this.store.db
+      .prepare(
+        "INSERT INTO species_group_memberships (membership_id, graph_id, group_id, node_id, role, status, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      )
+      .run(
+        membership.membershipId,
+        membership.graphId,
+        membership.groupId,
+        membership.nodeId,
+        membership.role,
+        membership.status,
+        JSON.stringify(membership),
+        membership.createdAt,
+        membership.updatedAt
+      );
+  }
+  update(membership: SpeciesGroupMembership) {
+    this.store.db
+      .prepare("UPDATE species_group_memberships SET role = ?, status = ?, payload = ?, updated_at = ? WHERE membership_id = ?")
+      .run(membership.role, membership.status, JSON.stringify(membership), membership.updatedAt, membership.membershipId);
+  }
+  get(membershipId: string) {
+    return parsePayload<SpeciesGroupMembership>(
+      this.store.db.prepare("SELECT payload FROM species_group_memberships WHERE membership_id = ?").get(membershipId) as Row | undefined
+    );
+  }
+  listByGraph(graphId: string) {
+    return parseRows<SpeciesGroupMembership>(
+      this.store.db
+        .prepare("SELECT payload FROM species_group_memberships WHERE graph_id = ? ORDER BY created_at, rowid")
+        .all(graphId) as Row[]
+    );
+  }
+  listByGroup(groupId: string) {
+    return parseRows<SpeciesGroupMembership>(
+      this.store.db
+        .prepare("SELECT payload FROM species_group_memberships WHERE group_id = ? ORDER BY created_at, rowid")
+        .all(groupId) as Row[]
+    );
+  }
+  listByNode(nodeId: string) {
+    return parseRows<SpeciesGroupMembership>(
+      this.store.db
+        .prepare("SELECT payload FROM species_group_memberships WHERE node_id = ? ORDER BY created_at, rowid")
+        .all(nodeId) as Row[]
+    );
+  }
+}
+
+class SqliteSpeciesGroupRelationRepository implements SpeciesGroupRelationRepository {
+  constructor(private readonly store: SqliteDnaStore) {}
+  create(relation: SpeciesGroupRelation) {
+    this.store.db
+      .prepare(
+        "INSERT INTO species_group_relations (relation_id, graph_id, source_group_id, target_group_id, relation_type, status, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      )
+      .run(
+        relation.relationId,
+        relation.graphId,
+        relation.sourceGroupId,
+        relation.targetGroupId,
+        relation.relationType,
+        relation.status,
+        JSON.stringify(relation),
+        relation.createdAt,
+        relation.updatedAt
+      );
+  }
+  update(relation: SpeciesGroupRelation) {
+    this.store.db
+      .prepare("UPDATE species_group_relations SET relation_type = ?, status = ?, payload = ?, updated_at = ? WHERE relation_id = ?")
+      .run(relation.relationType, relation.status, JSON.stringify(relation), relation.updatedAt, relation.relationId);
+  }
+  get(relationId: string) {
+    return parsePayload<SpeciesGroupRelation>(
+      this.store.db.prepare("SELECT payload FROM species_group_relations WHERE relation_id = ?").get(relationId) as Row | undefined
+    );
+  }
+  listByGraph(graphId: string) {
+    return parseRows<SpeciesGroupRelation>(
+      this.store.db.prepare("SELECT payload FROM species_group_relations WHERE graph_id = ? ORDER BY created_at, rowid").all(graphId) as Row[]
+    );
+  }
+}
+
+class SqliteAtlasRepository implements AtlasRepository {
+  constructor(private readonly store: SqliteDnaStore) {}
+  create(atlas: Atlas) {
+    this.store.db
+      .prepare("INSERT INTO atlases (atlas_id, name, status, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
+      .run(atlas.atlasId, atlas.name, atlas.status, JSON.stringify(atlas), atlas.createdAt, atlas.updatedAt);
+  }
+  update(atlas: Atlas) {
+    this.store.db
+      .prepare("UPDATE atlases SET name = ?, status = ?, payload = ?, updated_at = ? WHERE atlas_id = ?")
+      .run(atlas.name, atlas.status, JSON.stringify(atlas), atlas.updatedAt, atlas.atlasId);
+  }
+  get(atlasId: string) {
+    return parsePayload<Atlas>(this.store.db.prepare("SELECT payload FROM atlases WHERE atlas_id = ?").get(atlasId) as Row | undefined);
+  }
+  list() {
+    return parseRows<Atlas>(this.store.db.prepare("SELECT payload FROM atlases ORDER BY created_at, rowid").all() as Row[]);
+  }
+}
+
+class SqliteGraphBridgeRepository implements GraphBridgeRepository {
+  constructor(private readonly store: SqliteDnaStore) {}
+  create(bridge: GraphBridge) {
+    this.store.db
+      .prepare(
+        "INSERT INTO graph_bridges (bridge_id, atlas_id, source_graph_id, target_graph_id, bridge_type, status, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      )
+      .run(
+        bridge.bridgeId,
+        bridge.atlasId,
+        bridge.sourceGraphId,
+        bridge.targetGraphId,
+        bridge.bridgeType,
+        bridge.status,
+        JSON.stringify(bridge),
+        bridge.createdAt,
+        bridge.updatedAt
+      );
+  }
+  update(bridge: GraphBridge) {
+    this.store.db
+      .prepare("UPDATE graph_bridges SET bridge_type = ?, status = ?, payload = ?, updated_at = ? WHERE bridge_id = ?")
+      .run(bridge.bridgeType, bridge.status, JSON.stringify(bridge), bridge.updatedAt, bridge.bridgeId);
+  }
+  get(bridgeId: string) {
+    return parsePayload<GraphBridge>(this.store.db.prepare("SELECT payload FROM graph_bridges WHERE bridge_id = ?").get(bridgeId) as Row | undefined);
+  }
+  listByAtlas(atlasId: string) {
+    return parseRows<GraphBridge>(
+      this.store.db.prepare("SELECT payload FROM graph_bridges WHERE atlas_id = ? ORDER BY created_at, rowid").all(atlasId) as Row[]
+    );
+  }
+  listByGraph(graphId: string) {
+    return parseRows<GraphBridge>(
+      this.store.db
+        .prepare(
+          "SELECT payload FROM graph_bridges WHERE source_graph_id = ? OR target_graph_id = ? ORDER BY created_at, rowid"
+        )
+        .all(graphId, graphId) as Row[]
+    );
   }
 }
 
@@ -924,7 +1294,7 @@ class SqliteImpactRepository implements ImpactRepository {
       this.store.db.prepare("SELECT payload FROM impact_records WHERE graph_id = ? ORDER BY created_at, impact_record_id").all(graphId) as Row[]
     );
   }
-  listByChangedObject(objectType: "node" | "edge", objectId: string) {
+  listByChangedObject(objectType: ImpactRecord["changedObjectType"], objectId: string) {
     return parseRows<ImpactRecord>(
       this.store.db
         .prepare("SELECT payload FROM impact_records WHERE changed_object_type = ? AND changed_object_id = ? ORDER BY created_at")
@@ -969,6 +1339,15 @@ export function exportProject(store: SqliteDnaStore, outDir: string): void {
   writeFileSync(join(outDir, "dna.project.json"), JSON.stringify({ format: "dna.git-directory", version: PROJECT_VERSION }, null, 2));
   mkdirSync(join(outDir, "templates"), { recursive: true });
   for (const changeSet of store.changeSets.list()) writeJson(join(outDir, "change-sets", `${changeSet.changeSetId}.json`), changeSet);
+  for (const definition of store.facetDefinitions.list()) {
+    writeJson(join(outDir, "facets", "definitions", `${definition.facetId}.json`), definition);
+  }
+  for (const schema of store.facetSchemas.list()) {
+    writeJson(join(outDir, "facets", "schemas", `${schema.facetSchemaId}.json`), schema);
+  }
+  for (const assignment of store.facetAssignments.list()) {
+    writeJson(join(outDir, "facets", "assignments", `${assignment.assignmentId}.json`), assignment);
+  }
   for (const pack of store.templates.listPacks()) writeJson(join(outDir, "templates", `${pack.templatePackId}.pack.json`), pack);
   for (const template of store.templates.listTemplates()) writeJson(join(outDir, "templates", `${template.templateId}.template.json`), template);
   for (const library of store.phenotypeLibraries.list()) {
@@ -987,9 +1366,25 @@ export function exportProject(store: SqliteDnaStore, outDir: string): void {
       writeJson(join(libraryDir, "routing-policies", `${policy.routingPolicyId}.json`), policy);
     }
   }
+  for (const atlas of store.atlases.list()) {
+    const atlasDir = join(outDir, "atlases", atlas.atlasId);
+    writeJson(join(atlasDir, "atlas.json"), atlas);
+    for (const bridge of store.graphBridges.listByAtlas(atlas.atlasId)) {
+      writeJson(join(atlasDir, "bridges", `${bridge.bridgeId}.json`), bridge);
+    }
+  }
   for (const graph of store.graphs.list()) {
     const graphDir = join(outDir, "graphs", graph.graphId);
     writeJson(join(graphDir, "graph.json"), graph);
+    for (const group of store.speciesGroups.listByGraph(graph.graphId)) {
+      writeJson(join(graphDir, "groups", `${group.groupId}.json`), group);
+    }
+    for (const membership of store.speciesGroupMemberships.listByGraph(graph.graphId)) {
+      writeJson(join(graphDir, "group-memberships", `${membership.membershipId}.json`), membership);
+    }
+    for (const relation of store.speciesGroupRelations.listByGraph(graph.graphId)) {
+      writeJson(join(graphDir, "group-relations", `${relation.relationId}.json`), relation);
+    }
     for (const node of store.nodes.listByGraph(graph.graphId)) writeJson(join(graphDir, "nodes", `${node.nodeId}.json`), node);
     for (const edge of store.edges.listByGraph(graph.graphId)) writeJson(join(graphDir, "edges", `${edge.edgeId}.json`), edge);
     for (const phenotype of store.phenotypes.listByGraph(graph.graphId)) writeJson(join(graphDir, "phenotypes", `${phenotype.phenotypeId}.json`), phenotype);
@@ -1012,6 +1407,15 @@ export function exportProject(store: SqliteDnaStore, outDir: string): void {
 
 export function importProject(store: SqliteDnaStore, inDir: string): void {
   for (const file of listJsonFiles(join(inDir, "change-sets"))) store.changeSets.create(JSON.parse(readFileSync(file, "utf8")));
+  for (const file of listJsonFiles(join(inDir, "facets", "definitions"))) {
+    store.facetDefinitions.create(JSON.parse(readFileSync(file, "utf8")));
+  }
+  for (const file of listJsonFiles(join(inDir, "facets", "schemas"))) {
+    store.facetSchemas.create(JSON.parse(readFileSync(file, "utf8")));
+  }
+  for (const file of listJsonFiles(join(inDir, "facets", "assignments"))) {
+    store.facetAssignments.create(JSON.parse(readFileSync(file, "utf8")));
+  }
   for (const file of listJsonFiles(join(inDir, "templates"))) {
     const value = JSON.parse(readFileSync(file, "utf8"));
     if ("templateId" in value) store.templates.createTemplate(value);
@@ -1034,6 +1438,14 @@ export function importProject(store: SqliteDnaStore, inDir: string): void {
   for (const graphDir of safeReadDirs(join(inDir, "graphs"))) {
     const graph = JSON.parse(readFileSync(join(graphDir, "graph.json"), "utf8")) as Graph;
     store.graphs.create(graph);
+    for (const file of listJsonFiles(join(graphDir, "groups"))) store.speciesGroups.create(JSON.parse(readFileSync(file, "utf8")));
+    for (const file of listJsonFiles(join(graphDir, "group-memberships"))) {
+      store.speciesGroupMemberships.create(JSON.parse(readFileSync(file, "utf8")));
+    }
+    for (const file of listJsonFiles(join(graphDir, "group-relations"))) {
+      store.speciesGroupRelations.create(JSON.parse(readFileSync(file, "utf8")));
+    }
+    for (const file of listJsonFiles(join(graphDir, "facets"))) store.facetAssignments.create(JSON.parse(readFileSync(file, "utf8")));
     for (const file of listJsonFiles(join(graphDir, "nodes"))) store.nodes.create(JSON.parse(readFileSync(file, "utf8")));
     for (const file of listJsonFiles(join(graphDir, "edges"))) store.edges.create(JSON.parse(readFileSync(file, "utf8")));
     for (const file of listJsonFiles(join(graphDir, "phenotypes"))) {
@@ -1048,6 +1460,13 @@ export function importProject(store: SqliteDnaStore, inDir: string): void {
     }
     for (const file of listJsonFiles(join(graphDir, "reviews"))) store.reviews.create(JSON.parse(readFileSync(file, "utf8")));
     for (const file of listJsonFiles(join(graphDir, "impacts"))) store.impacts.create(JSON.parse(readFileSync(file, "utf8")));
+  }
+  for (const atlasDir of safeReadDirs(join(inDir, "atlases"))) {
+    const atlas = readJsonIfExists<Atlas>(join(atlasDir, "atlas.json"));
+    if (atlas) store.atlases.create(atlas);
+    for (const file of listJsonFiles(join(atlasDir, "bridges"))) {
+      store.graphBridges.create(JSON.parse(readFileSync(file, "utf8")));
+    }
   }
 }
 

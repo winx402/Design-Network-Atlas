@@ -14,6 +14,7 @@ import {
   createDefaultPhenotype,
   createDefaultPhenotypeVersion,
   createGenerationJob,
+  createImpactRecord,
   createImpactRecords,
   createReviewRecord,
   formatGraphTreeText,
@@ -38,6 +39,13 @@ type CommandOptions = {
   yes?: boolean;
   mode?: "preview-confirm" | "draft-write" | "changeset-apply";
   changeSet?: string;
+};
+
+type CliImpactSummary = {
+  objectType: "graph" | "node" | "species-group" | "phenotype-version";
+  objectId: string;
+  reason: string;
+  suggestedAction: "review-or-regenerate";
 };
 
 function openStore(command: Command) {
@@ -377,6 +385,264 @@ edge.command("show").requiredOption("--id <edgeId>", "edge id").action((options,
   console.log(JSON.stringify(value, null, 2));
   store.close();
 });
+
+const group = program.command("group").description("Manage graph-local species groups and weak group relations");
+group
+  .command("create")
+  .option("--graph <graphId>", "graph id")
+  .option("--id <groupId>", "species group id")
+  .option("--name <name>", "species group name")
+  .option("--type <groupType>", "group type: domain, family, collection, layer, system", "domain")
+  .option("--parent <groupId>", "parent group id", collect, [])
+  .option("--template <templateId>", "default template id", collect, [])
+  .option("--shared-fact <fact>", "shared fact or motif", collect, [])
+  .option("--facet-schema <facetSchemaId>", "referenced facet schema id", collect, [])
+  .option("--phenotype-type <phenotypeType>", "phenotype type suggestion", collect, [])
+  .option("--owner <owner>", "owner role")
+  .option("--status <status>", "group status", "draft")
+  .option("--extension <key=value>", "custom extension field", collect, [])
+  .action((options, command) => {
+    const store = openStore(command);
+    const services = createDnaServices(store);
+    const result = services.group.createGroup(
+      {
+        graphId: requiredUnlessChangeSetApply(options.graph, "--graph", command),
+        groupId: requiredUnlessChangeSetApply(options.id, "--id", command),
+        name: requiredUnlessChangeSetApply(options.name, "--name", command),
+        groupType: options.type,
+        parentGroupIds: options.parent,
+        templateIds: options.template,
+        sharedFacts: options.sharedFact,
+        facetSchemaIds: options.facetSchema,
+        phenotypeTypeSuggestions: options.phenotypeType,
+        owner: options.owner,
+        status: options.status,
+        extensions: parseKeyValue(options.extension)
+      },
+      writeOptions(command)
+    );
+    if (result.changeSet.status === "preview") {
+      printChangeSet(result.changeSet);
+    } else {
+      console.log(`created species group ${result.value.groupId}`);
+    }
+    store.close();
+  });
+group.command("list").requiredOption("--graph <graphId>", "graph id").action((options, command) => {
+  const store = openStore(command);
+  console.log(JSON.stringify(store.speciesGroups.listByGraph(options.graph), null, 2));
+  store.close();
+});
+
+const groupMember = group.command("member").description("Manage species group memberships");
+groupMember
+  .command("add")
+  .option("--id <membershipId>", "membership id")
+  .option("--graph <graphId>", "graph id")
+  .option("--group <groupId>", "species group id")
+  .option("--node <nodeId>", "species node id")
+  .option("--role <role>", "membership role: primary, reference, bridge, source, target", "primary")
+  .option("--status <status>", "membership status", "active")
+  .action((options, command) => {
+    const store = openStore(command);
+    const services = createDnaServices(store);
+    const result = services.group.addMember(
+      {
+        membershipId: requiredUnlessChangeSetApply(options.id, "--id", command),
+        graphId: requiredUnlessChangeSetApply(options.graph, "--graph", command),
+        groupId: requiredUnlessChangeSetApply(options.group, "--group", command),
+        nodeId: requiredUnlessChangeSetApply(options.node, "--node", command),
+        role: options.role,
+        status: options.status
+      },
+      writeOptions(command)
+    );
+    if (result.changeSet.status === "preview") {
+      printChangeSet(result.changeSet);
+    } else {
+      console.log(`added node ${result.value.nodeId} to species group ${result.value.groupId}`);
+    }
+    store.close();
+  });
+
+const groupRelation = group.command("relation").description("Manage weak relations between species groups");
+groupRelation
+  .command("add")
+  .option("--id <relationId>", "relation id")
+  .option("--graph <graphId>", "graph id")
+  .option("--source <groupId>", "source species group id")
+  .option("--target <groupId>", "target species group id")
+  .option("--type <relationType>", "relation type, including custom:<name>", "references")
+  .option("--description <description>", "relation description", "")
+  .option("--status <status>", "relation status", "draft")
+  .option("--extension <key=value>", "custom extension field", collect, [])
+  .option("--allow-parallel", "allow a second relation for the same source and target when the semantics are independent")
+  .action((options, command) => {
+    const store = openStore(command);
+    const services = createDnaServices(store);
+    const result = services.group.createRelation(
+      {
+        relationId: requiredUnlessChangeSetApply(options.id, "--id", command),
+        graphId: requiredUnlessChangeSetApply(options.graph, "--graph", command),
+        sourceGroupId: requiredUnlessChangeSetApply(options.source, "--source", command),
+        targetGroupId: requiredUnlessChangeSetApply(options.target, "--target", command),
+        relationType: options.type,
+        description: options.description,
+        status: options.status,
+        extensions: parseKeyValue(options.extension),
+        allowParallel: Boolean(options.allowParallel)
+      },
+      writeOptions(command)
+    );
+    if (result.changeSet.status === "preview") {
+      printChangeSet(result.changeSet);
+    } else {
+      console.log(`created species group relation ${result.value.relationId}`);
+    }
+    store.close();
+  });
+
+group
+  .command("map")
+  .requiredOption("--graph <graphId>", "graph id")
+  .option("--format <format>", "output format: text or json", "text")
+  .action((options, command) => {
+    const store = openStore(command);
+    const graphValue = store.graphs.get(options.graph);
+    if (!graphValue) throw new Error(`graph not found: ${options.graph}`);
+    const groupMap = {
+      graph: graphValue,
+      groups: store.speciesGroups.listByGraph(options.graph),
+      memberships: store.speciesGroupMemberships.listByGraph(options.graph),
+      relations: store.speciesGroupRelations.listByGraph(options.graph)
+    };
+    if (options.format === "json") {
+      console.log(JSON.stringify(groupMap, null, 2));
+    } else if (options.format === "text") {
+      process.stdout.write(formatGroupMapText(groupMap));
+    } else {
+      throw new Error(`unknown group map format: ${options.format}`);
+    }
+    store.close();
+  });
+
+const atlas = program.command("atlas").description("Manage multi-graph atlases and graph bridges");
+atlas
+  .command("create")
+  .option("--id <atlasId>", "atlas id")
+  .option("--name <name>", "atlas name")
+  .option("--purpose <purpose>", "atlas purpose")
+  .option("--graph <graphId>", "graph id managed by this atlas", collect, [])
+  .option("--status <status>", "atlas status", "draft")
+  .option("--metadata <key=value>", "atlas metadata", collect, [])
+  .action((options, command) => {
+    const store = openStore(command);
+    const services = createDnaServices(store);
+    const result = services.atlas.createAtlas(
+      {
+        atlasId: requiredUnlessChangeSetApply(options.id, "--id", command),
+        name: requiredUnlessChangeSetApply(options.name, "--name", command),
+        purpose: requiredUnlessChangeSetApply(options.purpose, "--purpose", command),
+        graphIds: options.graph,
+        status: options.status,
+        metadata: parseKeyValue(options.metadata)
+      },
+      writeOptions(command)
+    );
+    if (result.changeSet.status === "preview") {
+      printChangeSet(result.changeSet);
+    } else {
+      console.log(`created atlas ${result.value.atlasId}`);
+    }
+    store.close();
+  });
+atlas.command("list").action((_options, command) => {
+  const store = openStore(command);
+  console.log(JSON.stringify(store.atlases.list(), null, 2));
+  store.close();
+});
+atlas.command("show").requiredOption("--id <atlasId>", "atlas id").action((options, command) => {
+  const store = openStore(command);
+  const value = store.atlases.get(options.id);
+  if (!value) throw new Error(`atlas not found: ${options.id}`);
+  console.log(JSON.stringify(value, null, 2));
+  store.close();
+});
+atlas
+  .command("add-graph")
+  .requiredOption("--id <atlasId>", "atlas id")
+  .requiredOption("--graph <graphId>", "graph id")
+  .action((options, command) => {
+    const store = openStore(command);
+    const services = createDnaServices(store);
+    const result = services.atlas.addGraph({ atlasId: options.id, graphId: options.graph }, writeOptions(command));
+    if (result.changeSet.status === "preview") {
+      printChangeSet(result.changeSet);
+    } else {
+      console.log(`added graph ${options.graph} to atlas ${options.id}`);
+    }
+    store.close();
+  });
+
+const atlasBridge = atlas.command("bridge").description("Manage graph bridges in an atlas");
+atlasBridge
+  .command("add")
+  .option("--id <bridgeId>", "bridge id")
+  .option("--atlas <atlasId>", "atlas id")
+  .option("--source <graphId>", "source graph id")
+  .option("--target <graphId>", "target graph id")
+  .option("--type <bridgeType>", "bridge type, including custom:<name>", "references-species")
+  .option("--description <description>", "bridge description", "")
+  .option("--status <status>", "bridge status", "draft")
+  .option("--extension <key=value>", "custom extension field", collect, [])
+  .option("--allow-parallel", "allow a second bridge for the same source and target when the semantics are independent")
+  .action((options, command) => {
+    const store = openStore(command);
+    const services = createDnaServices(store);
+    const result = services.atlas.createBridge(
+      {
+        bridgeId: requiredUnlessChangeSetApply(options.id, "--id", command),
+        atlasId: requiredUnlessChangeSetApply(options.atlas, "--atlas", command),
+        sourceGraphId: requiredUnlessChangeSetApply(options.source, "--source", command),
+        targetGraphId: requiredUnlessChangeSetApply(options.target, "--target", command),
+        bridgeType: options.type,
+        description: options.description,
+        status: options.status,
+        extensions: parseKeyValue(options.extension),
+        allowParallel: Boolean(options.allowParallel)
+      },
+      writeOptions(command)
+    );
+    if (result.changeSet.status === "preview") {
+      printChangeSet(result.changeSet);
+    } else {
+      console.log(`created graph bridge ${result.value.bridgeId}`);
+    }
+    store.close();
+  });
+
+atlas
+  .command("map")
+  .requiredOption("--id <atlasId>", "atlas id")
+  .option("--format <format>", "output format: text or json", "text")
+  .action((options, command) => {
+    const store = openStore(command);
+    const atlasValue = store.atlases.get(options.id);
+    if (!atlasValue) throw new Error(`atlas not found: ${options.id}`);
+    const atlasMap = {
+      atlas: atlasValue,
+      graphs: atlasValue.graphIds.map((graphId) => store.graphs.get(graphId)).filter(Boolean),
+      bridges: store.graphBridges.listByAtlas(options.id)
+    };
+    if (options.format === "json") {
+      console.log(JSON.stringify(atlasMap, null, 2));
+    } else if (options.format === "text") {
+      process.stdout.write(formatAtlasMapText(atlasMap));
+    } else {
+      throw new Error(`unknown atlas map format: ${options.format}`);
+    }
+    store.close();
+  });
 
 const phenotype = program.command("phenotype").description("Generate and manage phenotypes");
 phenotype
@@ -857,12 +1123,15 @@ impact
   .requiredOption("--graph <graphId>", "graph id")
   .option("--node <nodeId>", "changed node id")
   .option("--edge <edgeId>", "changed edge id")
+  .option("--group <groupId>", "changed species group id")
+  .option("--bridge <bridgeId>", "changed graph bridge id")
   .option("--changed-version <versionId>", "changed version id", "latest")
   .action((options, command) => {
   const store = openStore(command);
-  if ((options.node && options.edge) || (!options.node && !options.edge)) {
+  const selected = [options.node, options.edge, options.group, options.bridge].filter(Boolean);
+  if (selected.length !== 1) {
     store.close();
-    throw new Error("Provide exactly one of --node or --edge");
+    throw new Error("Provide exactly one of --node, --edge, --group, or --bridge");
   }
   const nodes = store.nodes.listByGraph(options.graph).map((nodeValue) => ({
     nodeId: nodeValue.nodeId,
@@ -875,10 +1144,29 @@ impact
   }));
   const changed = options.edge
     ? ({ type: "edge", id: options.edge, versionId: options.changedVersion } as const)
-    : ({ type: "node", id: options.node, versionId: options.changedVersion } as const);
-  const impacts = collectImpact({ changed, nodes, edges });
+    : options.node
+      ? ({ type: "node", id: options.node, versionId: options.changedVersion } as const)
+      : undefined;
+  const lineageImpacts = changed ? collectImpact({ changed, nodes, edges }) : undefined;
+  const impacts: CliImpactSummary[] =
+    lineageImpacts ?? (options.group ? collectGroupImpactForCli(store, options.graph, options.group) : collectGraphBridgeImpactForCli(store, options.bridge));
   if (shouldApply(command)) {
-    const records = createImpactRecords({ graphId: options.graph, changed, impacts });
+    const records = changed && lineageImpacts
+      ? createImpactRecords({ graphId: options.graph, changed, impacts: lineageImpacts })
+      : impacts.map((impactValue: { objectType: "graph" | "node" | "species-group" | "phenotype-version"; objectId: string; reason: string }, index: number) =>
+          createImpactRecord({
+            impactRecordId: `impact-${options.group ?? options.bridge}-${impactValue.objectId}-${index}`.replace(/[^a-zA-Z0-9_-]/g, "-"),
+            graphId: options.graph,
+            changedObjectType: options.group ? "species-group" : "graph-bridge",
+            changedObjectId: options.group ?? options.bridge,
+            changedVersionId: options.changedVersion,
+            objectType: impactValue.objectType,
+            objectId: impactValue.objectId,
+            reason: impactValue.reason,
+            suggestedAction: "review-or-regenerate",
+            reviewStatus: "pending"
+          })
+        );
     store.transaction(() => {
       for (const record of records) store.impacts.create(record);
     });
@@ -1063,6 +1351,128 @@ program.command("import").requiredOption("--in <directory>", "input directory").
   console.log(`imported DNA project from ${options.in}`);
   store.close();
 });
+
+function formatGroupMapText(input: {
+  graph: { graphId: string; name: string };
+  groups: Array<{ groupId: string; name: string; groupType: string; sharedFacts: string[]; facetSchemaIds: string[] }>;
+  memberships: Array<{ membershipId: string; groupId: string; nodeId: string; role: string }>;
+  relations: Array<{ sourceGroupId: string; targetGroupId: string; relationType: string; description: string }>;
+}) {
+  const lines = [`Group Map: ${input.graph.name} (${input.graph.graphId})`, "Groups:"];
+  for (const groupValue of input.groups) {
+    lines.push(`- ${groupValue.name} (${groupValue.groupId}) [${groupValue.groupType}]`);
+    const memberships = input.memberships.filter((membership) => membership.groupId === groupValue.groupId);
+    if (memberships.length) {
+      lines.push(`  members: ${memberships.map((membership) => `${membership.nodeId} [${membership.role}]`).join(", ")}`);
+    }
+    if (groupValue.sharedFacts.length) lines.push(`  shared facts: ${groupValue.sharedFacts.join(", ")}`);
+    if (groupValue.facetSchemaIds.length) lines.push(`  facet schemas: ${groupValue.facetSchemaIds.join(", ")}`);
+  }
+  lines.push("Relations:");
+  if (!input.relations.length) {
+    lines.push("- none");
+  } else {
+    for (const relation of input.relations) {
+      const description = relation.description ? ` - ${relation.description}` : "";
+      lines.push(`- ${relation.sourceGroupId} -> ${relation.targetGroupId} [${relation.relationType}]${description}`);
+    }
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+function formatAtlasMapText(input: {
+  atlas: { atlasId: string; name: string; graphIds: string[] };
+  graphs: Array<{ graphId: string; name: string } | undefined>;
+  bridges: Array<{ sourceGraphId: string; targetGraphId: string; bridgeType: string; description: string }>;
+}) {
+  const lines = [`Atlas Map: ${input.atlas.name} (${input.atlas.atlasId})`, "Graphs:"];
+  const graphById = new Map(input.graphs.filter((graphValue): graphValue is { graphId: string; name: string } => Boolean(graphValue)).map((graphValue) => [graphValue.graphId, graphValue]));
+  for (const graphId of input.atlas.graphIds) {
+    const graphValue = graphById.get(graphId);
+    lines.push(`- ${graphValue?.name ?? graphId} (${graphId})`);
+  }
+  lines.push("Bridges:");
+  if (!input.bridges.length) {
+    lines.push("- none");
+  } else {
+    for (const bridge of input.bridges) {
+      const description = bridge.description ? ` - ${bridge.description}` : "";
+      lines.push(`- ${bridge.sourceGraphId} -> ${bridge.targetGraphId} [${bridge.bridgeType}]${description}`);
+    }
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+function collectGroupImpactForCli(store: SqliteDnaStore, graphId: string, groupId: string) {
+  const impacts: Array<{
+    objectType: "node" | "species-group" | "phenotype-version";
+    objectId: string;
+    reason: string;
+    suggestedAction: "review-or-regenerate";
+  }> = [];
+  for (const membership of store.speciesGroupMemberships.listByGroup(groupId)) {
+    impacts.push({
+      objectType: "node",
+      objectId: membership.nodeId,
+      reason: `${membership.nodeId} belongs to changed species group ${groupId}`,
+      suggestedAction: "review-or-regenerate"
+    });
+    for (const version of store.phenotypeVersions.listByNode(membership.nodeId)) {
+      impacts.push({
+        objectType: "phenotype-version",
+        objectId: version.phenotypeVersionId,
+        reason: `${version.phenotypeVersionId} was generated from node ${membership.nodeId} in changed species group ${groupId}`,
+        suggestedAction: "review-or-regenerate"
+      });
+    }
+  }
+  for (const relation of store.speciesGroupRelations.listByGraph(graphId)) {
+    if (relation.sourceGroupId !== groupId && relation.targetGroupId !== groupId) continue;
+    const otherGroupId = relation.sourceGroupId === groupId ? relation.targetGroupId : relation.sourceGroupId;
+    impacts.push({
+      objectType: "species-group",
+      objectId: otherGroupId,
+      reason: `${otherGroupId} is connected to changed species group ${groupId} by ${relation.relationType}`,
+      suggestedAction: "review-or-regenerate"
+    });
+  }
+  return impacts;
+}
+
+function collectGraphBridgeImpactForCli(store: SqliteDnaStore, bridgeId: string) {
+  const bridge = store.graphBridges.get(bridgeId);
+  if (!bridge) throw new Error(`graph bridge not found: ${bridgeId}`);
+  const impacts: Array<{
+    objectType: "graph" | "node" | "phenotype-version";
+    objectId: string;
+    reason: string;
+    suggestedAction: "review-or-regenerate";
+  }> = [
+    {
+      objectType: "graph",
+      objectId: bridge.targetGraphId,
+      reason: `${bridge.targetGraphId} is the target graph of changed bridge ${bridgeId}`,
+      suggestedAction: "review-or-regenerate"
+    }
+  ];
+  for (const nodeValue of store.nodes.listByGraph(bridge.targetGraphId)) {
+    impacts.push({
+      objectType: "node",
+      objectId: nodeValue.nodeId,
+      reason: `${nodeValue.nodeId} belongs to target graph ${bridge.targetGraphId} of changed bridge ${bridgeId}`,
+      suggestedAction: "review-or-regenerate"
+    });
+    for (const version of store.phenotypeVersions.listByNode(nodeValue.nodeId)) {
+      impacts.push({
+        objectType: "phenotype-version",
+        objectId: version.phenotypeVersionId,
+        reason: `${version.phenotypeVersionId} was generated from node ${nodeValue.nodeId} in target graph ${bridge.targetGraphId}`,
+        suggestedAction: "review-or-regenerate"
+      });
+    }
+  }
+  return impacts;
+}
 
 function collect(value: string, previous: string[]) {
   previous.push(value);

@@ -1,8 +1,13 @@
 import {
+  Atlas,
   AssetIndex,
   EvolutionEdge,
   ExternalLibraryMapping,
+  FacetAssignment,
+  FacetDefinition,
+  FacetSchema,
   GenerationJob,
+  GraphBridge,
   Graph,
   ImpactRecord,
   LibraryRoutingPolicy,
@@ -13,6 +18,9 @@ import {
   PhenotypeLibraryGraphBinding,
   PhenotypeVersion,
   ReviewRecord,
+  SpeciesGroup,
+  SpeciesGroupMembership,
+  SpeciesGroupRelation,
   SpeciesNode,
   StorageMount
 } from "./schemas.js";
@@ -38,6 +46,140 @@ export function createDefaultGraph(input: Partial<Graph> & Pick<Graph, "graphId"
     versionPolicy: input.versionPolicy ?? { patch: "metadata", minor: "compatible gene change", major: "identity change" },
     compilePolicy: input.compilePolicy ?? { type: "system-rule-first", conflictResolution: "system" },
     facets: input.facets ?? {},
+    createdAt: input.createdAt ?? timestamp,
+    updatedAt: input.updatedAt ?? timestamp
+  };
+}
+
+export function createDefaultFacetDefinition(input: Partial<FacetDefinition> & Pick<FacetDefinition, "facetId" | "name">): FacetDefinition {
+  const timestamp = nowIso();
+  return {
+    facetId: input.facetId,
+    name: input.name,
+    description: input.description ?? "",
+    valueType: input.valueType ?? "string",
+    allowedValues: input.allowedValues ?? [],
+    status: input.status ?? "active",
+    createdAt: input.createdAt ?? timestamp,
+    updatedAt: input.updatedAt ?? timestamp
+  };
+}
+
+export function createDefaultFacetSchema(input: Partial<FacetSchema> & Pick<FacetSchema, "facetSchemaId" | "name">): FacetSchema {
+  const timestamp = nowIso();
+  return {
+    facetSchemaId: input.facetSchemaId,
+    name: input.name,
+    description: input.description ?? "",
+    facetIds: input.facetIds ?? [],
+    requiredFacetIds: input.requiredFacetIds ?? [],
+    status: input.status ?? "active",
+    createdAt: input.createdAt ?? timestamp,
+    updatedAt: input.updatedAt ?? timestamp
+  };
+}
+
+export function createDefaultFacetAssignment(
+  input: Partial<FacetAssignment> & Pick<FacetAssignment, "assignmentId" | "targetType" | "targetId">
+): FacetAssignment {
+  const timestamp = nowIso();
+  return {
+    assignmentId: input.assignmentId,
+    targetType: input.targetType,
+    targetId: input.targetId,
+    values: input.values ?? {},
+    status: input.status ?? "active",
+    createdAt: input.createdAt ?? timestamp,
+    updatedAt: input.updatedAt ?? timestamp
+  };
+}
+
+export function createDefaultSpeciesGroup(
+  input: Partial<SpeciesGroup> & Pick<SpeciesGroup, "groupId" | "graphId" | "name">
+): SpeciesGroup {
+  const timestamp = nowIso();
+  return {
+    groupId: input.groupId,
+    graphId: input.graphId,
+    name: input.name,
+    groupType: input.groupType ?? "domain",
+    parentGroupIds: input.parentGroupIds ?? [],
+    templateIds: input.templateIds ?? [],
+    sharedFacts: input.sharedFacts ?? [],
+    facetSchemaIds: input.facetSchemaIds ?? [],
+    phenotypeTypeSuggestions: input.phenotypeTypeSuggestions ?? [],
+    compilePolicy: input.compilePolicy,
+    reviewPolicy: input.reviewPolicy ?? {},
+    owner: input.owner,
+    status: input.status ?? "draft",
+    extensions: input.extensions ?? {},
+    createdAt: input.createdAt ?? timestamp,
+    updatedAt: input.updatedAt ?? timestamp
+  };
+}
+
+export function createDefaultSpeciesGroupMembership(
+  input: Partial<SpeciesGroupMembership> & Pick<SpeciesGroupMembership, "membershipId" | "graphId" | "groupId" | "nodeId">
+): SpeciesGroupMembership {
+  const timestamp = nowIso();
+  return {
+    membershipId: input.membershipId,
+    graphId: input.graphId,
+    groupId: input.groupId,
+    nodeId: input.nodeId,
+    role: input.role ?? "primary",
+    status: input.status ?? "active",
+    createdAt: input.createdAt ?? timestamp,
+    updatedAt: input.updatedAt ?? timestamp
+  };
+}
+
+export function createDefaultSpeciesGroupRelation(
+  input: Partial<SpeciesGroupRelation> &
+    Pick<SpeciesGroupRelation, "relationId" | "graphId" | "sourceGroupId" | "targetGroupId" | "relationType">
+): SpeciesGroupRelation {
+  const timestamp = nowIso();
+  return {
+    relationId: input.relationId,
+    graphId: input.graphId,
+    sourceGroupId: input.sourceGroupId,
+    targetGroupId: input.targetGroupId,
+    relationType: input.relationType,
+    description: input.description ?? "",
+    status: input.status ?? "draft",
+    extensions: input.extensions ?? {},
+    createdAt: input.createdAt ?? timestamp,
+    updatedAt: input.updatedAt ?? timestamp
+  };
+}
+
+export function createDefaultAtlas(input: Partial<Atlas> & Pick<Atlas, "atlasId" | "name" | "purpose">): Atlas {
+  const timestamp = nowIso();
+  return {
+    atlasId: input.atlasId,
+    name: input.name,
+    purpose: input.purpose,
+    graphIds: [...(input.graphIds ?? [])].sort(),
+    status: input.status ?? "draft",
+    metadata: input.metadata ?? {},
+    createdAt: input.createdAt ?? timestamp,
+    updatedAt: input.updatedAt ?? timestamp
+  };
+}
+
+export function createDefaultGraphBridge(
+  input: Partial<GraphBridge> & Pick<GraphBridge, "bridgeId" | "atlasId" | "sourceGraphId" | "targetGraphId" | "bridgeType">
+): GraphBridge {
+  const timestamp = nowIso();
+  return {
+    bridgeId: input.bridgeId,
+    atlasId: input.atlasId,
+    sourceGraphId: input.sourceGraphId,
+    targetGraphId: input.targetGraphId,
+    bridgeType: input.bridgeType,
+    description: input.description ?? "",
+    status: input.status ?? "draft",
+    extensions: input.extensions ?? {},
     createdAt: input.createdAt ?? timestamp,
     updatedAt: input.updatedAt ?? timestamp
   };

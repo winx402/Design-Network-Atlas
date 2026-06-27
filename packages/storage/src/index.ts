@@ -1,12 +1,17 @@
 import {
+  Atlas,
   AssetIndex,
   ChangeSet,
   EvolutionEdge,
   EdgeVersion,
   ExternalLibraryMapping,
+  FacetAssignment,
+  FacetDefinition,
+  FacetSchema,
   GeneTemplate,
   GenerationJob,
   Graph,
+  GraphBridge,
   ImpactRecord,
   LibraryRoutingPolicy,
   NodeVersion,
@@ -16,6 +21,9 @@ import {
   PhenotypeLibraryGraphBinding,
   PhenotypeVersion,
   ReviewRecord,
+  SpeciesGroup,
+  SpeciesGroupMembership,
+  SpeciesGroupRelation,
   SpeciesNode,
   StorageMount,
   TemplatePack
@@ -41,6 +49,66 @@ export interface TemplateRepository {
   getTemplate(templateId: string): GeneTemplate | undefined;
   listTemplates(): GeneTemplate[];
   listPacks(): TemplatePack[];
+}
+
+export interface FacetDefinitionRepository {
+  create(definition: FacetDefinition): void;
+  update(definition: FacetDefinition): void;
+  get(facetId: string): FacetDefinition | undefined;
+  list(): FacetDefinition[];
+}
+
+export interface FacetSchemaRepository {
+  create(schema: FacetSchema): void;
+  update(schema: FacetSchema): void;
+  get(facetSchemaId: string): FacetSchema | undefined;
+  list(): FacetSchema[];
+}
+
+export interface FacetAssignmentRepository {
+  create(assignment: FacetAssignment): void;
+  update(assignment: FacetAssignment): void;
+  get(assignmentId: string): FacetAssignment | undefined;
+  list(): FacetAssignment[];
+  listByTarget(targetType: string, targetId: string): FacetAssignment[];
+}
+
+export interface SpeciesGroupRepository {
+  create(group: SpeciesGroup): void;
+  update(group: SpeciesGroup): void;
+  get(groupId: string): SpeciesGroup | undefined;
+  listByGraph(graphId: string): SpeciesGroup[];
+}
+
+export interface SpeciesGroupMembershipRepository {
+  create(membership: SpeciesGroupMembership): void;
+  update(membership: SpeciesGroupMembership): void;
+  get(membershipId: string): SpeciesGroupMembership | undefined;
+  listByGraph(graphId: string): SpeciesGroupMembership[];
+  listByGroup(groupId: string): SpeciesGroupMembership[];
+  listByNode(nodeId: string): SpeciesGroupMembership[];
+}
+
+export interface SpeciesGroupRelationRepository {
+  create(relation: SpeciesGroupRelation): void;
+  update(relation: SpeciesGroupRelation): void;
+  get(relationId: string): SpeciesGroupRelation | undefined;
+  listByGraph(graphId: string): SpeciesGroupRelation[];
+}
+
+export interface AtlasRepository {
+  create(atlas: Atlas): void;
+  update(atlas: Atlas): void;
+  get(atlasId: string): Atlas | undefined;
+  list(): Atlas[];
+}
+
+export interface GraphBridgeRepository {
+  create(bridge: GraphBridge): void;
+  update(bridge: GraphBridge): void;
+  get(bridgeId: string): GraphBridge | undefined;
+  listByAtlas(atlasId: string): GraphBridge[];
+  listByGraph(graphId: string): GraphBridge[];
 }
 
 export interface LineageRepository {
@@ -153,7 +221,7 @@ export interface ReviewRepository {
 export interface ImpactRepository {
   create(record: ImpactRecord): void;
   listByGraph(graphId: string): ImpactRecord[];
-  listByChangedObject(objectType: "node" | "edge", objectId: string): ImpactRecord[];
+  listByChangedObject(objectType: ImpactRecord["changedObjectType"], objectId: string): ImpactRecord[];
 }
 
 export interface SearchRepository {
