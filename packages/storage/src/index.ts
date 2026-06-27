@@ -2,6 +2,14 @@ import {
   Atlas,
   AssetIndex,
   ChangeSet,
+  ContextAttachment,
+  ContextFact,
+  ContextMotif,
+  ContextPolicy,
+  ContextReference,
+  ContextReviewRubric,
+  DesignContext,
+  DesignPrinciple,
   EvolutionEdge,
   EdgeVersion,
   ExternalLibraryMapping,
@@ -109,6 +117,65 @@ export interface GraphBridgeRepository {
   get(bridgeId: string): GraphBridge | undefined;
   listByAtlas(atlasId: string): GraphBridge[];
   listByGraph(graphId: string): GraphBridge[];
+}
+
+export interface DesignContextRepository {
+  create(context: DesignContext): void;
+  update(context: DesignContext): void;
+  get(contextId: string): DesignContext | undefined;
+  list(): DesignContext[];
+}
+
+export interface ContextFactRepository {
+  create(fact: ContextFact): void;
+  update(fact: ContextFact): void;
+  get(factId: string): ContextFact | undefined;
+  list(): ContextFact[];
+}
+
+export interface DesignPrincipleRepository {
+  create(principle: DesignPrinciple): void;
+  update(principle: DesignPrinciple): void;
+  get(principleId: string): DesignPrinciple | undefined;
+  list(): DesignPrinciple[];
+}
+
+export interface ContextMotifRepository {
+  create(motif: ContextMotif): void;
+  update(motif: ContextMotif): void;
+  get(motifId: string): ContextMotif | undefined;
+  list(): ContextMotif[];
+}
+
+export interface ContextReferenceRepository {
+  create(reference: ContextReference): void;
+  update(reference: ContextReference): void;
+  get(referenceId: string): ContextReference | undefined;
+  list(): ContextReference[];
+}
+
+export interface ContextReviewRubricRepository {
+  create(rubric: ContextReviewRubric): void;
+  update(rubric: ContextReviewRubric): void;
+  get(rubricId: string): ContextReviewRubric | undefined;
+  list(): ContextReviewRubric[];
+}
+
+export interface ContextAttachmentRepository {
+  create(attachment: ContextAttachment): void;
+  update(attachment: ContextAttachment): void;
+  get(attachmentId: string): ContextAttachment | undefined;
+  list(): ContextAttachment[];
+  listByContext(contextId: string): ContextAttachment[];
+  listByTarget(targetType: string, targetId: string): ContextAttachment[];
+}
+
+export interface ContextPolicyRepository {
+  create(policy: ContextPolicy): void;
+  update(policy: ContextPolicy): void;
+  get(policyId: string): ContextPolicy | undefined;
+  list(): ContextPolicy[];
+  listByContext(contextId: string): ContextPolicy[];
 }
 
 export interface LineageRepository {

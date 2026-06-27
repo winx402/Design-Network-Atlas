@@ -65,6 +65,79 @@ export const ChangeOperationSchema = z.enum(["create", "update", "archive", "del
 export const WriteModeSchema = z.enum(["preview-confirm", "draft-write", "changeset-apply"]);
 export const ChangeSetStatusSchema = z.enum(["preview", "applied", "discarded"]);
 export const SharedObjectStatusSchema = z.enum(["draft", "active", "archived", "deprecated"]);
+export const DesignContextTypeSchema = z.enum([
+  "worldview",
+  "narrative",
+  "brand",
+  "art-direction",
+  "experience-intent",
+  "production-rationale",
+  "domain-knowledge",
+  "custom"
+]);
+export const ContextConfidenceSchema = z.enum(["confirmed", "inferred", "draft"]);
+export const ContextFactTypeSchema = z.enum([
+  "faction",
+  "era",
+  "region",
+  "technology",
+  "belief",
+  "material-culture",
+  "symbol-rule",
+  "taboo",
+  "custom"
+]);
+export const ContextStrengthSchema = z.enum(["hard", "soft", "reference"]);
+export const ContextBehaviorHintSchema = z.enum(["include", "weaken", "translate", "exclude", "reference-only"]);
+export const DesignPrinciplePrioritySchema = z.enum(["must", "should", "may"]);
+export const ContextMotifTypeSchema = z.enum(["narrative-motif", "cultural-motif", "symbolic-motif", "visual-motif-ref"]);
+export const ContextReferenceTypeSchema = z.enum([
+  "source-document",
+  "reference-image",
+  "moodboard",
+  "badcase",
+  "accepted-phenotype",
+  "rejected-phenotype"
+]);
+export const ContextReferenceRoleSchema = z.enum(["positive", "negative", "mood", "evidence", "decision"]);
+export const ContextReviewDimensionSchema = z.enum([
+  "context-consistency",
+  "motif-retention",
+  "divergence",
+  "readability",
+  "production-feasibility",
+  "risk-boundary",
+  "custom"
+]);
+export const ContextReviewSeveritySchema = z.enum(["info", "warning", "blocking"]);
+export const ContextAttachmentTargetTypeSchema = z.enum([
+  "atlas",
+  "graph",
+  "species-group",
+  "species-group-relation",
+  "graph-bridge",
+  "species-node",
+  "evolution-edge",
+  "gene-template",
+  "phenotype-type",
+  "phenotype",
+  "phenotype-version"
+]);
+export const ContextAttachmentRoleSchema = z.enum(["foundation", "reference", "constraint", "rationale", "review-source"]);
+export const ContextInheritanceSchema = z.enum(["none", "downstream", "children", "graph", "atlas"]);
+export const ContextCompileLayerSchema = z.enum([
+  "atlas-context",
+  "graph-context",
+  "group-context",
+  "bridge-context",
+  "node-context",
+  "phenotype-context"
+]);
+export const ContextCompileParticipationSchema = z.enum(["none", "fixed", "llm-context"]);
+export const ContextReviewParticipationSchema = z.enum(["none", "include"]);
+export const ContextImpactParticipationSchema = z.enum(["none", "outdated-check", "trace"]);
+export const ContextPrioritySchema = z.enum(["low", "normal", "high"]);
+export const ContextResolutionRuleSchema = z.enum(["preserve", "merge", "weaken", "translate", "exclude", "manual"]);
 export const SpeciesGroupTypeSchema = z.enum(["domain", "family", "collection", "layer", "system"]);
 export const SpeciesGroupMembershipRoleSchema = z.enum(["primary", "reference", "bridge", "source", "target"]);
 export const FacetValueTypeSchema = z.enum(["string", "number", "boolean", "enum", "json"]);
@@ -320,6 +393,122 @@ export const GraphBridgeSchema = z
       });
     }
   });
+
+export const DesignContextSchema = z.object({
+  contextId: z.string().min(1),
+  name: z.string().min(1),
+  contextType: DesignContextTypeSchema,
+  summary: z.string().default(""),
+  status: SharedObjectStatusSchema,
+  factIds: z.array(z.string()).default([]),
+  principleIds: z.array(z.string()).default([]),
+  motifIds: z.array(z.string()).default([]),
+  referenceIds: z.array(z.string()).default([]),
+  reviewRubricIds: z.array(z.string()).default([]),
+  negativeBoundaries: z.array(z.string()).default([]),
+  sourceRefs: z.array(z.string()).default([]),
+  confidence: ContextConfidenceSchema,
+  owner: z.string().optional(),
+  version: z.string().min(1),
+  extensions: JsonRecordSchema,
+  createdAt: IsoDateSchema,
+  updatedAt: IsoDateSchema
+});
+
+export const ContextFactSchema = z.object({
+  factId: z.string().min(1),
+  factType: ContextFactTypeSchema,
+  statement: z.string().min(1),
+  scopeHint: z.string().default(""),
+  defaultStrength: ContextStrengthSchema,
+  defaultBehaviorHint: ContextBehaviorHintSchema,
+  sourceTrace: z.array(z.string()).default([]),
+  status: SharedObjectStatusSchema,
+  createdAt: IsoDateSchema,
+  updatedAt: IsoDateSchema
+});
+
+export const DesignPrincipleSchema = z.object({
+  principleId: z.string().min(1),
+  statement: z.string().min(1),
+  priority: DesignPrinciplePrioritySchema,
+  scopeHint: z.string().default(""),
+  defaultBehaviorHint: ContextBehaviorHintSchema,
+  experienceIntent: z.string().default(""),
+  readabilityGoal: z.string().default(""),
+  platformContext: z.string().default(""),
+  reviewQuestions: z.array(z.string()).default([]),
+  badcases: z.array(z.string()).default([]),
+  status: SharedObjectStatusSchema,
+  createdAt: IsoDateSchema,
+  updatedAt: IsoDateSchema
+});
+
+export const ContextMotifSchema = z.object({
+  motifId: z.string().min(1),
+  motifType: ContextMotifTypeSchema,
+  statement: z.string().min(1),
+  sourceRef: z.string().optional(),
+  visualMotifRef: z.string().optional(),
+  note: z.string().default(""),
+  status: SharedObjectStatusSchema,
+  createdAt: IsoDateSchema,
+  updatedAt: IsoDateSchema
+});
+
+export const ContextReferenceSchema = z.object({
+  referenceId: z.string().min(1),
+  referenceType: ContextReferenceTypeSchema,
+  sourceRef: JsonRecordSchema,
+  referenceRole: ContextReferenceRoleSchema,
+  useFor: z.array(z.string()).default([]),
+  doNotUseFor: z.array(z.string()).default([]),
+  note: z.string().default(""),
+  risk: z.array(z.string()).default([]),
+  status: SharedObjectStatusSchema,
+  createdAt: IsoDateSchema,
+  updatedAt: IsoDateSchema
+});
+
+export const ContextReviewRubricSchema = z.object({
+  rubricId: z.string().min(1),
+  dimension: ContextReviewDimensionSchema,
+  question: z.string().min(1),
+  passSignal: z.string().default(""),
+  failSignal: z.string().default(""),
+  severity: ContextReviewSeveritySchema,
+  status: SharedObjectStatusSchema,
+  createdAt: IsoDateSchema,
+  updatedAt: IsoDateSchema
+});
+
+export const ContextAttachmentSchema = z.object({
+  attachmentId: z.string().min(1),
+  contextId: z.string().min(1),
+  targetType: ContextAttachmentTargetTypeSchema,
+  targetId: z.string().min(1),
+  role: ContextAttachmentRoleSchema,
+  strength: ContextStrengthSchema,
+  inheritance: ContextInheritanceSchema,
+  compileLayer: ContextCompileLayerSchema,
+  status: SharedObjectStatusSchema,
+  createdAt: IsoDateSchema,
+  updatedAt: IsoDateSchema
+});
+
+export const ContextPolicySchema = z.object({
+  policyId: z.string().min(1),
+  contextId: z.string().min(1),
+  attachmentId: z.string().min(1).optional(),
+  compileParticipation: ContextCompileParticipationSchema,
+  reviewParticipation: ContextReviewParticipationSchema,
+  impactParticipation: ContextImpactParticipationSchema,
+  priority: ContextPrioritySchema,
+  resolutionRule: ContextResolutionRuleSchema,
+  status: SharedObjectStatusSchema,
+  createdAt: IsoDateSchema,
+  updatedAt: IsoDateSchema
+});
 
 export const TemplatePackSchema = z.object({
   templatePackId: z.string().min(1),
@@ -661,7 +850,21 @@ export const GenerationJobSchema = z.object({
 export const ReviewRecordSchema = z.object({
   reviewRecordId: z.string().min(1),
   graphId: z.string().min(1),
-  objectType: z.enum(["node", "edge", "species-group", "species-group-relation", "atlas", "graph-bridge", "phenotype-version"]),
+  objectType: z.enum([
+    "node",
+    "edge",
+    "species-group",
+    "species-group-relation",
+    "atlas",
+    "graph-bridge",
+    "phenotype-version",
+    "design-context",
+    "context-fact",
+    "design-principle",
+    "context-motif",
+    "context-reference",
+    "context-review-rubric"
+  ]),
   objectId: z.string().min(1),
   status: ReviewStatusSchema,
   missingDimensions: z.array(z.string()).default([]),
@@ -677,7 +880,7 @@ export const ReviewRecordSchema = z.object({
 export const ImpactRecordSchema = z.object({
   impactRecordId: z.string().min(1),
   graphId: z.string().min(1),
-  changedObjectType: z.enum(["node", "edge", "species-group", "graph-bridge"]),
+  changedObjectType: z.enum(["node", "edge", "species-group", "graph-bridge", "design-context"]),
   changedObjectId: z.string().min(1),
   changedVersionId: z.string().min(1),
   objectType: z.enum(["graph", "node", "species-group", "phenotype-version"]),
@@ -713,6 +916,14 @@ export type SpeciesGroupMembership = z.infer<typeof SpeciesGroupMembershipSchema
 export type SpeciesGroupRelation = z.infer<typeof SpeciesGroupRelationSchema>;
 export type Atlas = z.infer<typeof AtlasSchema>;
 export type GraphBridge = z.infer<typeof GraphBridgeSchema>;
+export type DesignContext = z.infer<typeof DesignContextSchema>;
+export type ContextFact = z.infer<typeof ContextFactSchema>;
+export type DesignPrinciple = z.infer<typeof DesignPrincipleSchema>;
+export type ContextMotif = z.infer<typeof ContextMotifSchema>;
+export type ContextReference = z.infer<typeof ContextReferenceSchema>;
+export type ContextReviewRubric = z.infer<typeof ContextReviewRubricSchema>;
+export type ContextAttachment = z.infer<typeof ContextAttachmentSchema>;
+export type ContextPolicy = z.infer<typeof ContextPolicySchema>;
 export type TemplatePack = z.infer<typeof TemplatePackSchema>;
 export type GeneTemplate = z.infer<typeof GeneTemplateSchema>;
 export type SpeciesNode = z.infer<typeof SpeciesNodeSchema>;

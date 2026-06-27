@@ -5,7 +5,15 @@ import {
   Atlas,
   AssetIndex,
   ChangeSet,
+  ContextAttachment,
+  ContextFact,
+  ContextMotif,
+  ContextPolicy,
+  ContextReference,
+  ContextReviewRubric,
   createImpactRecord,
+  DesignContext,
+  DesignPrinciple,
   EdgeVersion,
   EvolutionEdge,
   ExternalLibraryMapping,
@@ -37,6 +45,14 @@ import {
   AtlasRepository,
   AssetRepository,
   ChangeSetRepository,
+  ContextAttachmentRepository,
+  ContextFactRepository,
+  ContextMotifRepository,
+  ContextPolicyRepository,
+  ContextReferenceRepository,
+  ContextReviewRubricRepository,
+  DesignContextRepository,
+  DesignPrincipleRepository,
   EdgeRepository,
   EdgeVersionRepository,
   ExternalLibraryMappingRepository,
@@ -131,6 +147,14 @@ export class SqliteDnaStore implements StorageEngine {
   readonly speciesGroupRelations: SpeciesGroupRelationRepository;
   readonly atlases: AtlasRepository;
   readonly graphBridges: GraphBridgeRepository;
+  readonly designContexts: DesignContextRepository;
+  readonly contextFacts: ContextFactRepository;
+  readonly designPrinciples: DesignPrincipleRepository;
+  readonly contextMotifs: ContextMotifRepository;
+  readonly contextReferences: ContextReferenceRepository;
+  readonly contextReviewRubrics: ContextReviewRubricRepository;
+  readonly contextAttachments: ContextAttachmentRepository;
+  readonly contextPolicies: ContextPolicyRepository;
   readonly nodes: LineageRepository;
   readonly nodeVersions: NodeVersionRepository;
   readonly edges: EdgeRepository;
@@ -164,6 +188,14 @@ export class SqliteDnaStore implements StorageEngine {
     this.speciesGroupRelations = new SqliteSpeciesGroupRelationRepository(this);
     this.atlases = new SqliteAtlasRepository(this);
     this.graphBridges = new SqliteGraphBridgeRepository(this);
+    this.designContexts = new SqliteDesignContextRepository(this);
+    this.contextFacts = new SqliteContextFactRepository(this);
+    this.designPrinciples = new SqliteDesignPrincipleRepository(this);
+    this.contextMotifs = new SqliteContextMotifRepository(this);
+    this.contextReferences = new SqliteContextReferenceRepository(this);
+    this.contextReviewRubrics = new SqliteContextReviewRubricRepository(this);
+    this.contextAttachments = new SqliteContextAttachmentRepository(this);
+    this.contextPolicies = new SqliteContextPolicyRepository(this);
     this.nodes = new SqliteNodeRepository(this);
     this.nodeVersions = new SqliteNodeVersionRepository(this);
     this.edges = new SqliteEdgeRepository(this);
@@ -283,6 +315,77 @@ export class SqliteDnaStore implements StorageEngine {
         source_graph_id TEXT NOT NULL,
         target_graph_id TEXT NOT NULL,
         bridge_type TEXT NOT NULL,
+        status TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS design_contexts (
+        context_id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        context_type TEXT NOT NULL,
+        status TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS context_facts (
+        fact_id TEXT PRIMARY KEY,
+        fact_type TEXT NOT NULL,
+        status TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS design_principles (
+        principle_id TEXT PRIMARY KEY,
+        priority TEXT NOT NULL,
+        status TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS context_motifs (
+        motif_id TEXT PRIMARY KEY,
+        motif_type TEXT NOT NULL,
+        status TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS context_references (
+        reference_id TEXT PRIMARY KEY,
+        reference_type TEXT NOT NULL,
+        reference_role TEXT NOT NULL,
+        status TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS context_review_rubrics (
+        rubric_id TEXT PRIMARY KEY,
+        dimension TEXT NOT NULL,
+        severity TEXT NOT NULL,
+        status TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS context_attachments (
+        attachment_id TEXT PRIMARY KEY,
+        context_id TEXT NOT NULL,
+        target_type TEXT NOT NULL,
+        target_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        status TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS context_policies (
+        policy_id TEXT PRIMARY KEY,
+        context_id TEXT NOT NULL,
+        attachment_id TEXT,
         status TEXT NOT NULL,
         payload TEXT NOT NULL,
         created_at TEXT NOT NULL,
@@ -813,6 +916,229 @@ class SqliteGraphBridgeRepository implements GraphBridgeRepository {
           "SELECT payload FROM graph_bridges WHERE source_graph_id = ? OR target_graph_id = ? ORDER BY created_at, rowid"
         )
         .all(graphId, graphId) as Row[]
+    );
+  }
+}
+
+class SqliteDesignContextRepository implements DesignContextRepository {
+  constructor(private readonly store: SqliteDnaStore) {}
+  create(context: DesignContext) {
+    this.store.db
+      .prepare("INSERT INTO design_contexts (context_id, name, context_type, status, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run(context.contextId, context.name, context.contextType, context.status, JSON.stringify(context), context.createdAt, context.updatedAt);
+  }
+  update(context: DesignContext) {
+    this.store.db
+      .prepare("UPDATE design_contexts SET name = ?, context_type = ?, status = ?, payload = ?, updated_at = ? WHERE context_id = ?")
+      .run(context.name, context.contextType, context.status, JSON.stringify(context), context.updatedAt, context.contextId);
+  }
+  get(contextId: string) {
+    return parsePayload<DesignContext>(this.store.db.prepare("SELECT payload FROM design_contexts WHERE context_id = ?").get(contextId) as Row | undefined);
+  }
+  list() {
+    return parseRows<DesignContext>(this.store.db.prepare("SELECT payload FROM design_contexts ORDER BY created_at, rowid").all() as Row[]);
+  }
+}
+
+class SqliteContextFactRepository implements ContextFactRepository {
+  constructor(private readonly store: SqliteDnaStore) {}
+  create(fact: ContextFact) {
+    this.store.db
+      .prepare("INSERT INTO context_facts (fact_id, fact_type, status, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
+      .run(fact.factId, fact.factType, fact.status, JSON.stringify(fact), fact.createdAt, fact.updatedAt);
+  }
+  update(fact: ContextFact) {
+    this.store.db
+      .prepare("UPDATE context_facts SET fact_type = ?, status = ?, payload = ?, updated_at = ? WHERE fact_id = ?")
+      .run(fact.factType, fact.status, JSON.stringify(fact), fact.updatedAt, fact.factId);
+  }
+  get(factId: string) {
+    return parsePayload<ContextFact>(this.store.db.prepare("SELECT payload FROM context_facts WHERE fact_id = ?").get(factId) as Row | undefined);
+  }
+  list() {
+    return parseRows<ContextFact>(this.store.db.prepare("SELECT payload FROM context_facts ORDER BY created_at, rowid").all() as Row[]);
+  }
+}
+
+class SqliteDesignPrincipleRepository implements DesignPrincipleRepository {
+  constructor(private readonly store: SqliteDnaStore) {}
+  create(principle: DesignPrinciple) {
+    this.store.db
+      .prepare("INSERT INTO design_principles (principle_id, priority, status, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
+      .run(principle.principleId, principle.priority, principle.status, JSON.stringify(principle), principle.createdAt, principle.updatedAt);
+  }
+  update(principle: DesignPrinciple) {
+    this.store.db
+      .prepare("UPDATE design_principles SET priority = ?, status = ?, payload = ?, updated_at = ? WHERE principle_id = ?")
+      .run(principle.priority, principle.status, JSON.stringify(principle), principle.updatedAt, principle.principleId);
+  }
+  get(principleId: string) {
+    return parsePayload<DesignPrinciple>(
+      this.store.db.prepare("SELECT payload FROM design_principles WHERE principle_id = ?").get(principleId) as Row | undefined
+    );
+  }
+  list() {
+    return parseRows<DesignPrinciple>(this.store.db.prepare("SELECT payload FROM design_principles ORDER BY created_at, rowid").all() as Row[]);
+  }
+}
+
+class SqliteContextMotifRepository implements ContextMotifRepository {
+  constructor(private readonly store: SqliteDnaStore) {}
+  create(motif: ContextMotif) {
+    this.store.db
+      .prepare("INSERT INTO context_motifs (motif_id, motif_type, status, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
+      .run(motif.motifId, motif.motifType, motif.status, JSON.stringify(motif), motif.createdAt, motif.updatedAt);
+  }
+  update(motif: ContextMotif) {
+    this.store.db
+      .prepare("UPDATE context_motifs SET motif_type = ?, status = ?, payload = ?, updated_at = ? WHERE motif_id = ?")
+      .run(motif.motifType, motif.status, JSON.stringify(motif), motif.updatedAt, motif.motifId);
+  }
+  get(motifId: string) {
+    return parsePayload<ContextMotif>(this.store.db.prepare("SELECT payload FROM context_motifs WHERE motif_id = ?").get(motifId) as Row | undefined);
+  }
+  list() {
+    return parseRows<ContextMotif>(this.store.db.prepare("SELECT payload FROM context_motifs ORDER BY created_at, rowid").all() as Row[]);
+  }
+}
+
+class SqliteContextReferenceRepository implements ContextReferenceRepository {
+  constructor(private readonly store: SqliteDnaStore) {}
+  create(reference: ContextReference) {
+    this.store.db
+      .prepare(
+        "INSERT INTO context_references (reference_id, reference_type, reference_role, status, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+      )
+      .run(
+        reference.referenceId,
+        reference.referenceType,
+        reference.referenceRole,
+        reference.status,
+        JSON.stringify(reference),
+        reference.createdAt,
+        reference.updatedAt
+      );
+  }
+  update(reference: ContextReference) {
+    this.store.db
+      .prepare("UPDATE context_references SET reference_type = ?, reference_role = ?, status = ?, payload = ?, updated_at = ? WHERE reference_id = ?")
+      .run(reference.referenceType, reference.referenceRole, reference.status, JSON.stringify(reference), reference.updatedAt, reference.referenceId);
+  }
+  get(referenceId: string) {
+    return parsePayload<ContextReference>(
+      this.store.db.prepare("SELECT payload FROM context_references WHERE reference_id = ?").get(referenceId) as Row | undefined
+    );
+  }
+  list() {
+    return parseRows<ContextReference>(
+      this.store.db.prepare("SELECT payload FROM context_references ORDER BY created_at, rowid").all() as Row[]
+    );
+  }
+}
+
+class SqliteContextReviewRubricRepository implements ContextReviewRubricRepository {
+  constructor(private readonly store: SqliteDnaStore) {}
+  create(rubric: ContextReviewRubric) {
+    this.store.db
+      .prepare(
+        "INSERT INTO context_review_rubrics (rubric_id, dimension, severity, status, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+      )
+      .run(rubric.rubricId, rubric.dimension, rubric.severity, rubric.status, JSON.stringify(rubric), rubric.createdAt, rubric.updatedAt);
+  }
+  update(rubric: ContextReviewRubric) {
+    this.store.db
+      .prepare("UPDATE context_review_rubrics SET dimension = ?, severity = ?, status = ?, payload = ?, updated_at = ? WHERE rubric_id = ?")
+      .run(rubric.dimension, rubric.severity, rubric.status, JSON.stringify(rubric), rubric.updatedAt, rubric.rubricId);
+  }
+  get(rubricId: string) {
+    return parsePayload<ContextReviewRubric>(
+      this.store.db.prepare("SELECT payload FROM context_review_rubrics WHERE rubric_id = ?").get(rubricId) as Row | undefined
+    );
+  }
+  list() {
+    return parseRows<ContextReviewRubric>(
+      this.store.db.prepare("SELECT payload FROM context_review_rubrics ORDER BY created_at, rowid").all() as Row[]
+    );
+  }
+}
+
+class SqliteContextAttachmentRepository implements ContextAttachmentRepository {
+  constructor(private readonly store: SqliteDnaStore) {}
+  create(attachment: ContextAttachment) {
+    this.store.db
+      .prepare(
+        "INSERT INTO context_attachments (attachment_id, context_id, target_type, target_id, role, status, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      )
+      .run(
+        attachment.attachmentId,
+        attachment.contextId,
+        attachment.targetType,
+        attachment.targetId,
+        attachment.role,
+        attachment.status,
+        JSON.stringify(attachment),
+        attachment.createdAt,
+        attachment.updatedAt
+      );
+  }
+  update(attachment: ContextAttachment) {
+    this.store.db
+      .prepare("UPDATE context_attachments SET target_type = ?, target_id = ?, role = ?, status = ?, payload = ?, updated_at = ? WHERE attachment_id = ?")
+      .run(
+        attachment.targetType,
+        attachment.targetId,
+        attachment.role,
+        attachment.status,
+        JSON.stringify(attachment),
+        attachment.updatedAt,
+        attachment.attachmentId
+      );
+  }
+  get(attachmentId: string) {
+    return parsePayload<ContextAttachment>(
+      this.store.db.prepare("SELECT payload FROM context_attachments WHERE attachment_id = ?").get(attachmentId) as Row | undefined
+    );
+  }
+  list() {
+    return parseRows<ContextAttachment>(
+      this.store.db.prepare("SELECT payload FROM context_attachments ORDER BY created_at, rowid").all() as Row[]
+    );
+  }
+  listByContext(contextId: string) {
+    return parseRows<ContextAttachment>(
+      this.store.db.prepare("SELECT payload FROM context_attachments WHERE context_id = ? ORDER BY created_at, rowid").all(contextId) as Row[]
+    );
+  }
+  listByTarget(targetType: string, targetId: string) {
+    return parseRows<ContextAttachment>(
+      this.store.db
+        .prepare("SELECT payload FROM context_attachments WHERE target_type = ? AND target_id = ? ORDER BY created_at, rowid")
+        .all(targetType, targetId) as Row[]
+    );
+  }
+}
+
+class SqliteContextPolicyRepository implements ContextPolicyRepository {
+  constructor(private readonly store: SqliteDnaStore) {}
+  create(policy: ContextPolicy) {
+    this.store.db
+      .prepare("INSERT INTO context_policies (policy_id, context_id, attachment_id, status, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run(policy.policyId, policy.contextId, policy.attachmentId ?? null, policy.status, JSON.stringify(policy), policy.createdAt, policy.updatedAt);
+  }
+  update(policy: ContextPolicy) {
+    this.store.db
+      .prepare("UPDATE context_policies SET attachment_id = ?, status = ?, payload = ?, updated_at = ? WHERE policy_id = ?")
+      .run(policy.attachmentId ?? null, policy.status, JSON.stringify(policy), policy.updatedAt, policy.policyId);
+  }
+  get(policyId: string) {
+    return parsePayload<ContextPolicy>(this.store.db.prepare("SELECT payload FROM context_policies WHERE policy_id = ?").get(policyId) as Row | undefined);
+  }
+  list() {
+    return parseRows<ContextPolicy>(this.store.db.prepare("SELECT payload FROM context_policies ORDER BY created_at, rowid").all() as Row[]);
+  }
+  listByContext(contextId: string) {
+    return parseRows<ContextPolicy>(
+      this.store.db.prepare("SELECT payload FROM context_policies WHERE context_id = ? ORDER BY created_at, rowid").all(contextId) as Row[]
     );
   }
 }
@@ -1348,6 +1674,22 @@ export function exportProject(store: SqliteDnaStore, outDir: string): void {
   for (const assignment of store.facetAssignments.list()) {
     writeJson(join(outDir, "facets", "assignments", `${assignment.assignmentId}.json`), assignment);
   }
+  for (const context of store.designContexts.list()) writeJson(join(outDir, "contexts", "contexts", `${context.contextId}.json`), context);
+  for (const fact of store.contextFacts.list()) writeJson(join(outDir, "contexts", "facts", `${fact.factId}.json`), fact);
+  for (const principle of store.designPrinciples.list()) {
+    writeJson(join(outDir, "contexts", "principles", `${principle.principleId}.json`), principle);
+  }
+  for (const motif of store.contextMotifs.list()) writeJson(join(outDir, "contexts", "motifs", `${motif.motifId}.json`), motif);
+  for (const reference of store.contextReferences.list()) {
+    writeJson(join(outDir, "contexts", "references", `${reference.referenceId}.json`), reference);
+  }
+  for (const rubric of store.contextReviewRubrics.list()) {
+    writeJson(join(outDir, "contexts", "review-rubrics", `${rubric.rubricId}.json`), rubric);
+  }
+  for (const attachment of store.contextAttachments.list()) {
+    writeJson(join(outDir, "contexts", "attachments", `${attachment.attachmentId}.json`), attachment);
+  }
+  for (const policy of store.contextPolicies.list()) writeJson(join(outDir, "contexts", "policies", `${policy.policyId}.json`), policy);
   for (const pack of store.templates.listPacks()) writeJson(join(outDir, "templates", `${pack.templatePackId}.pack.json`), pack);
   for (const template of store.templates.listTemplates()) writeJson(join(outDir, "templates", `${template.templateId}.template.json`), template);
   for (const library of store.phenotypeLibraries.list()) {
@@ -1416,6 +1758,22 @@ export function importProject(store: SqliteDnaStore, inDir: string): void {
   for (const file of listJsonFiles(join(inDir, "facets", "assignments"))) {
     store.facetAssignments.create(JSON.parse(readFileSync(file, "utf8")));
   }
+  for (const file of listJsonFiles(join(inDir, "contexts", "contexts"))) store.designContexts.create(JSON.parse(readFileSync(file, "utf8")));
+  for (const file of listJsonFiles(join(inDir, "contexts", "facts"))) store.contextFacts.create(JSON.parse(readFileSync(file, "utf8")));
+  for (const file of listJsonFiles(join(inDir, "contexts", "principles"))) {
+    store.designPrinciples.create(JSON.parse(readFileSync(file, "utf8")));
+  }
+  for (const file of listJsonFiles(join(inDir, "contexts", "motifs"))) store.contextMotifs.create(JSON.parse(readFileSync(file, "utf8")));
+  for (const file of listJsonFiles(join(inDir, "contexts", "references"))) {
+    store.contextReferences.create(JSON.parse(readFileSync(file, "utf8")));
+  }
+  for (const file of listJsonFiles(join(inDir, "contexts", "review-rubrics"))) {
+    store.contextReviewRubrics.create(JSON.parse(readFileSync(file, "utf8")));
+  }
+  for (const file of listJsonFiles(join(inDir, "contexts", "attachments"))) {
+    store.contextAttachments.create(JSON.parse(readFileSync(file, "utf8")));
+  }
+  for (const file of listJsonFiles(join(inDir, "contexts", "policies"))) store.contextPolicies.create(JSON.parse(readFileSync(file, "utf8")));
   for (const file of listJsonFiles(join(inDir, "templates"))) {
     const value = JSON.parse(readFileSync(file, "utf8"));
     if ("templateId" in value) store.templates.createTemplate(value);

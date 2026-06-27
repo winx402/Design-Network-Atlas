@@ -113,6 +113,85 @@ export const graphBridges = sqliteTable("graph_bridges", {
   updatedAt: text("updated_at").notNull()
 });
 
+export const designContexts = sqliteTable("design_contexts", {
+  contextId: text("context_id").primaryKey(),
+  name: text("name").notNull(),
+  contextType: text("context_type").notNull(),
+  status: text("status").notNull(),
+  payload: text("payload", { mode: "json" }).notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull()
+});
+
+export const contextFacts = sqliteTable("context_facts", {
+  factId: text("fact_id").primaryKey(),
+  factType: text("fact_type").notNull(),
+  status: text("status").notNull(),
+  payload: text("payload", { mode: "json" }).notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull()
+});
+
+export const designPrinciples = sqliteTable("design_principles", {
+  principleId: text("principle_id").primaryKey(),
+  priority: text("priority").notNull(),
+  status: text("status").notNull(),
+  payload: text("payload", { mode: "json" }).notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull()
+});
+
+export const contextMotifs = sqliteTable("context_motifs", {
+  motifId: text("motif_id").primaryKey(),
+  motifType: text("motif_type").notNull(),
+  status: text("status").notNull(),
+  payload: text("payload", { mode: "json" }).notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull()
+});
+
+export const contextReferences = sqliteTable("context_references", {
+  referenceId: text("reference_id").primaryKey(),
+  referenceType: text("reference_type").notNull(),
+  referenceRole: text("reference_role").notNull(),
+  status: text("status").notNull(),
+  payload: text("payload", { mode: "json" }).notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull()
+});
+
+export const contextReviewRubrics = sqliteTable("context_review_rubrics", {
+  rubricId: text("rubric_id").primaryKey(),
+  dimension: text("dimension").notNull(),
+  severity: text("severity").notNull(),
+  status: text("status").notNull(),
+  payload: text("payload", { mode: "json" }).notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull()
+});
+
+export const contextAttachments = sqliteTable("context_attachments", {
+  attachmentId: text("attachment_id").primaryKey(),
+  contextId: text("context_id").notNull(),
+  targetType: text("target_type").notNull(),
+  targetId: text("target_id").notNull(),
+  role: text("role").notNull(),
+  status: text("status").notNull(),
+  payload: text("payload", { mode: "json" }).notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull()
+});
+
+export const contextPolicies = sqliteTable("context_policies", {
+  policyId: text("policy_id").primaryKey(),
+  contextId: text("context_id").notNull(),
+  attachmentId: text("attachment_id"),
+  status: text("status").notNull(),
+  payload: text("payload", { mode: "json" }).notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull()
+});
+
 export const nodes = sqliteTable("nodes", {
   nodeId: text("node_id").primaryKey(),
   graphId: text("graph_id").notNull(),

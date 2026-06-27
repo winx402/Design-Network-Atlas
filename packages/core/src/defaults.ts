@@ -1,6 +1,14 @@
 import {
   Atlas,
   AssetIndex,
+  ContextAttachment,
+  ContextFact,
+  ContextMotif,
+  ContextPolicy,
+  ContextReference,
+  ContextReviewRubric,
+  DesignContext,
+  DesignPrinciple,
   EvolutionEdge,
   ExternalLibraryMapping,
   FacetAssignment,
@@ -180,6 +188,162 @@ export function createDefaultGraphBridge(
     description: input.description ?? "",
     status: input.status ?? "draft",
     extensions: input.extensions ?? {},
+    createdAt: input.createdAt ?? timestamp,
+    updatedAt: input.updatedAt ?? timestamp
+  };
+}
+
+export function createDefaultDesignContext(
+  input: Partial<DesignContext> & Pick<DesignContext, "contextId" | "name" | "contextType">
+): DesignContext {
+  const timestamp = nowIso();
+  return {
+    contextId: input.contextId,
+    name: input.name,
+    contextType: input.contextType,
+    summary: input.summary ?? "",
+    status: input.status ?? "draft",
+    factIds: input.factIds ?? [],
+    principleIds: input.principleIds ?? [],
+    motifIds: input.motifIds ?? [],
+    referenceIds: input.referenceIds ?? [],
+    reviewRubricIds: input.reviewRubricIds ?? [],
+    negativeBoundaries: input.negativeBoundaries ?? [],
+    sourceRefs: input.sourceRefs ?? [],
+    confidence: input.confidence ?? "draft",
+    owner: input.owner,
+    version: input.version ?? "1.0.0",
+    extensions: input.extensions ?? {},
+    createdAt: input.createdAt ?? timestamp,
+    updatedAt: input.updatedAt ?? timestamp
+  };
+}
+
+export function createDefaultContextFact(
+  input: Partial<ContextFact> & Pick<ContextFact, "factId" | "factType" | "statement">
+): ContextFact {
+  const timestamp = nowIso();
+  return {
+    factId: input.factId,
+    factType: input.factType,
+    statement: input.statement,
+    scopeHint: input.scopeHint ?? "",
+    defaultStrength: input.defaultStrength ?? "reference",
+    defaultBehaviorHint: input.defaultBehaviorHint ?? "reference-only",
+    sourceTrace: input.sourceTrace ?? [],
+    status: input.status ?? "draft",
+    createdAt: input.createdAt ?? timestamp,
+    updatedAt: input.updatedAt ?? timestamp
+  };
+}
+
+export function createDefaultDesignPrinciple(
+  input: Partial<DesignPrinciple> & Pick<DesignPrinciple, "principleId" | "statement">
+): DesignPrinciple {
+  const timestamp = nowIso();
+  return {
+    principleId: input.principleId,
+    statement: input.statement,
+    priority: input.priority ?? "should",
+    scopeHint: input.scopeHint ?? "",
+    defaultBehaviorHint: input.defaultBehaviorHint ?? "reference-only",
+    experienceIntent: input.experienceIntent ?? "",
+    readabilityGoal: input.readabilityGoal ?? "",
+    platformContext: input.platformContext ?? "",
+    reviewQuestions: input.reviewQuestions ?? [],
+    badcases: input.badcases ?? [],
+    status: input.status ?? "draft",
+    createdAt: input.createdAt ?? timestamp,
+    updatedAt: input.updatedAt ?? timestamp
+  };
+}
+
+export function createDefaultContextMotif(
+  input: Partial<ContextMotif> & Pick<ContextMotif, "motifId" | "motifType" | "statement">
+): ContextMotif {
+  const timestamp = nowIso();
+  return {
+    motifId: input.motifId,
+    motifType: input.motifType,
+    statement: input.statement,
+    sourceRef: input.sourceRef,
+    visualMotifRef: input.visualMotifRef,
+    note: input.note ?? "",
+    status: input.status ?? "draft",
+    createdAt: input.createdAt ?? timestamp,
+    updatedAt: input.updatedAt ?? timestamp
+  };
+}
+
+export function createDefaultContextReference(
+  input: Partial<ContextReference> & Pick<ContextReference, "referenceId" | "referenceType" | "sourceRef">
+): ContextReference {
+  const timestamp = nowIso();
+  return {
+    referenceId: input.referenceId,
+    referenceType: input.referenceType,
+    sourceRef: input.sourceRef,
+    referenceRole: input.referenceRole ?? "evidence",
+    useFor: input.useFor ?? [],
+    doNotUseFor: input.doNotUseFor ?? [],
+    note: input.note ?? "",
+    risk: input.risk ?? [],
+    status: input.status ?? "draft",
+    createdAt: input.createdAt ?? timestamp,
+    updatedAt: input.updatedAt ?? timestamp
+  };
+}
+
+export function createDefaultContextReviewRubric(
+  input: Partial<ContextReviewRubric> & Pick<ContextReviewRubric, "rubricId" | "dimension" | "question">
+): ContextReviewRubric {
+  const timestamp = nowIso();
+  return {
+    rubricId: input.rubricId,
+    dimension: input.dimension,
+    question: input.question,
+    passSignal: input.passSignal ?? "",
+    failSignal: input.failSignal ?? "",
+    severity: input.severity ?? "info",
+    status: input.status ?? "draft",
+    createdAt: input.createdAt ?? timestamp,
+    updatedAt: input.updatedAt ?? timestamp
+  };
+}
+
+export function createDefaultContextAttachment(
+  input: Partial<ContextAttachment> & Pick<ContextAttachment, "attachmentId" | "contextId" | "targetType" | "targetId">
+): ContextAttachment {
+  const timestamp = nowIso();
+  return {
+    attachmentId: input.attachmentId,
+    contextId: input.contextId,
+    targetType: input.targetType,
+    targetId: input.targetId,
+    role: input.role ?? "reference",
+    strength: input.strength ?? "reference",
+    inheritance: input.inheritance ?? "none",
+    compileLayer: input.compileLayer ?? "node-context",
+    status: input.status ?? "draft",
+    createdAt: input.createdAt ?? timestamp,
+    updatedAt: input.updatedAt ?? timestamp
+  };
+}
+
+export function createDefaultContextPolicy(
+  input: Partial<ContextPolicy> & Pick<ContextPolicy, "policyId" | "contextId">
+): ContextPolicy {
+  const timestamp = nowIso();
+  return {
+    policyId: input.policyId,
+    contextId: input.contextId,
+    attachmentId: input.attachmentId,
+    compileParticipation: input.compileParticipation ?? "none",
+    reviewParticipation: input.reviewParticipation ?? "none",
+    impactParticipation: input.impactParticipation ?? "none",
+    priority: input.priority ?? "normal",
+    resolutionRule: input.resolutionRule ?? "manual",
+    status: input.status ?? "draft",
     createdAt: input.createdAt ?? timestamp,
     updatedAt: input.updatedAt ?? timestamp
   };

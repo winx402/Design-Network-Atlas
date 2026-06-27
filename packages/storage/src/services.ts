@@ -3,6 +3,8 @@ import {
   ChangeSet,
   createChangeSet,
   createDefaultAtlas,
+  createDefaultContextAttachment,
+  createDefaultDesignContext,
   createDefaultGraph,
   createDefaultEvolutionEdge,
   createDefaultGraphBridge,
@@ -12,6 +14,8 @@ import {
   createDefaultSpeciesGroupRelation,
   createDefaultSpeciesNode,
   EdgeVersion,
+  ContextAttachment,
+  DesignContext,
   EvolutionEdge,
   Graph,
   GraphBridge,
@@ -154,6 +158,37 @@ export interface CreateGraphBridgeInput {
   status?: GraphBridge["status"];
   extensions?: Record<string, unknown>;
   allowParallel?: boolean;
+}
+
+export interface CreateDesignContextInput {
+  contextId: string;
+  name: string;
+  contextType: DesignContext["contextType"];
+  summary?: string;
+  status?: DesignContext["status"];
+  factIds?: string[];
+  principleIds?: string[];
+  motifIds?: string[];
+  referenceIds?: string[];
+  reviewRubricIds?: string[];
+  negativeBoundaries?: string[];
+  sourceRefs?: string[];
+  confidence?: DesignContext["confidence"];
+  owner?: string;
+  version?: string;
+  extensions?: Record<string, unknown>;
+}
+
+export interface CreateContextAttachmentInput {
+  attachmentId: string;
+  contextId: string;
+  targetType: ContextAttachment["targetType"];
+  targetId: string;
+  role?: ContextAttachment["role"];
+  strength?: ContextAttachment["strength"];
+  inheritance?: ContextAttachment["inheritance"];
+  compileLayer?: ContextAttachment["compileLayer"];
+  status?: ContextAttachment["status"];
 }
 
 export function createDnaServices(store: DnaServiceStore) {
@@ -412,6 +447,54 @@ export function createDnaServices(store: DnaServiceStore) {
         return { value: bridge, changeSet };
       }
     },
+    context: {
+      createContext(input: CreateDesignContextInput, options: WriteOptions): ServiceResult<DesignContext> {
+        if (options.mode === "changeset-apply") {
+          const existing = requireExistingChangeSet(store, options.changeSetId);
+          return applyDesignContextChangeSet(store, existing);
+        }
+        const context = createDefaultDesignContext(input);
+        const changeSet = createChangeSet({
+          mode: options.mode,
+          objectType: "design-context",
+          operation: "create",
+          summary: `create design context ${context.contextId}`,
+          diff: { contextId: context.contextId, contextType: context.contextType, status: context.status },
+          payload: { context }
+        });
+        store.changeSets.create(changeSet);
+        if (shouldApply(options)) {
+          return applyDesignContextChangeSet(store, changeSet);
+        }
+        return { value: context, changeSet };
+      },
+      attachContext(input: CreateContextAttachmentInput, options: WriteOptions): ServiceResult<ContextAttachment> {
+        if (options.mode === "changeset-apply") {
+          const existing = requireExistingChangeSet(store, options.changeSetId);
+          return applyContextAttachmentChangeSet(store, existing);
+        }
+        const attachment = createDefaultContextAttachment(input);
+        const changeSet = createChangeSet({
+          mode: options.mode,
+          objectType: "context-attachment",
+          operation: "create",
+          summary: `attach design context ${attachment.contextId} to ${attachment.targetType} ${attachment.targetId}`,
+          diff: {
+            attachmentId: attachment.attachmentId,
+            contextId: attachment.contextId,
+            targetType: attachment.targetType,
+            targetId: attachment.targetId,
+            role: attachment.role
+          },
+          payload: { attachment }
+        });
+        store.changeSets.create(changeSet);
+        if (shouldApply(options)) {
+          return applyContextAttachmentChangeSet(store, changeSet);
+        }
+        return { value: attachment, changeSet };
+      }
+    },
     changeSet: {
       list(filter: ChangeSetFilter = {}): ChangeSet[] {
         return store.changeSets.list().filter((changeSet) => {
@@ -467,6 +550,8 @@ function applyChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ServiceRe
   if (changeSet.objectType === "species-group-relation") return applySpeciesGroupRelationChangeSet(store, changeSet);
   if (changeSet.objectType === "atlas") return changeSet.operation === "update" ? applyAtlasUpdateChangeSet(store, changeSet) : applyAtlasChangeSet(store, changeSet);
   if (changeSet.objectType === "graph-bridge") return applyGraphBridgeChangeSet(store, changeSet);
+  if (changeSet.objectType === "design-context") return applyDesignContextChangeSet(store, changeSet);
+  if (changeSet.objectType === "context-attachment") return applyContextAttachmentChangeSet(store, changeSet);
   throw new Error(`unsupported change-set object type: ${changeSet.objectType}`);
 }
 
@@ -522,6 +607,14 @@ function reviewChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ChangeSe
     if (bridge && !store.atlases.get(bridge.atlasId)) constraintViolations.push(`atlas not found: ${bridge.atlasId}`);
     if (bridge && !store.graphs.get(bridge.sourceGraphId)) constraintViolations.push(`source graph not found: ${bridge.sourceGraphId}`);
     if (bridge && !store.graphs.get(bridge.targetGraphId)) constraintViolations.push(`target graph not found: ${bridge.targetGraphId}`);
+  } else if (changeSet.objectType === "design-context") {
+    const context = changeSet.payload.context as DesignContext | undefined;
+    if (!context) constraintViolations.push("change-set payload missing design context");
+    if (context && !context.summary) missingDimensions.push("context.summary");
+  } else if (changeSet.objectType === "context-attachment") {
+    const attachment = changeSet.payload.attachment as ContextAttachment | undefined;
+    if (!attachment) constraintViolations.push("change-set payload missing context attachment");
+    if (attachment && !store.designContexts.get(attachment.contextId)) constraintViolations.push(`design context not found: ${attachment.contextId}`);
   } else {
     suggestedActions.push(`manual review required for unsupported object type: ${changeSet.objectType}`);
   }
@@ -737,4 +830,29 @@ function applyGraphBridgeChangeSet(store: DnaServiceStore, changeSet: ChangeSet)
     return next;
   });
   return { value: bridge, changeSet: applied };
+}
+
+function applyDesignContextChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ServiceResult<DesignContext> {
+  const context = changeSet.payload.context as DesignContext | undefined;
+  if (!context) throw new Error("change-set payload missing design context");
+  const applied = store.transaction(() => {
+    store.designContexts.create(context);
+    const next = markChangeSetApplied(changeSet);
+    store.changeSets.update(next);
+    return next;
+  });
+  return { value: context, changeSet: applied };
+}
+
+function applyContextAttachmentChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ServiceResult<ContextAttachment> {
+  const attachment = changeSet.payload.attachment as ContextAttachment | undefined;
+  if (!attachment) throw new Error("change-set payload missing context attachment");
+  const applied = store.transaction(() => {
+    if (!store.designContexts.get(attachment.contextId)) throw new Error(`design context not found: ${attachment.contextId}`);
+    store.contextAttachments.create(attachment);
+    const next = markChangeSetApplied(changeSet);
+    store.changeSets.update(next);
+    return next;
+  });
+  return { value: attachment, changeSet: applied };
 }

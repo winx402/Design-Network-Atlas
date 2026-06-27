@@ -1,4 +1,13 @@
-import { Graph, GraphBridge, SpeciesGroup, SpeciesGroupRelation, SpeciesNode } from "./schemas.js";
+import {
+  ContextAttachment,
+  ContextPolicy,
+  DesignContext,
+  Graph,
+  GraphBridge,
+  SpeciesGroup,
+  SpeciesGroupRelation,
+  SpeciesNode
+} from "./schemas.js";
 import { isFixedRuleEligibleRelation } from "./populations.js";
 
 export interface GeneConflict {
@@ -17,15 +26,21 @@ export interface CompileSpeciesInput {
   speciesGroups?: SpeciesGroup[];
   groupRelations?: SpeciesGroupRelation[];
   graphBridges?: GraphBridge[];
+  designContexts?: DesignContext[];
+  contextAttachments?: ContextAttachment[];
+  contextPolicies?: ContextPolicy[];
   fixedSnapshot?: Record<string, unknown>;
   taskBrief: string;
   phenotypeType: string;
 }
 
 export interface CompileContextTraceItem {
-  sourceType: "species-group" | "species-group-relation" | "graph-bridge";
+  sourceType: "species-group" | "species-group-relation" | "graph-bridge" | "design-context";
   sourceId: string;
   relationType?: string;
+  compileLayer?: string;
+  role?: string;
+  strength?: string;
   summary: string;
   fixedRuleEligible: boolean;
 }
@@ -144,6 +159,35 @@ function buildCompileContextTrace(input: CompileSpeciesInput): CompileContextTra
       summary: `[${bridge.bridgeType}] ${bridge.sourceGraphId} -> ${bridge.targetGraphId}. ${bridge.description}`.trim(),
       fixedRuleEligible: isFixedRuleEligibleRelation(bridge.bridgeType)
     });
+  }
+  for (const context of input.designContexts ?? []) {
+    const attachments = (input.contextAttachments ?? []).filter((attachment) => attachment.contextId === context.contextId);
+    if (attachments.length === 0) {
+      traces.push({
+        sourceType: "design-context",
+        sourceId: context.contextId,
+        summary: `Design Context: ${context.name}; ${context.summary}`,
+        fixedRuleEligible: false
+      });
+      continue;
+    }
+    for (const attachment of attachments) {
+      const policy = (input.contextPolicies ?? []).find(
+        (candidate) =>
+          candidate.contextId === context.contextId &&
+          (!candidate.attachmentId || candidate.attachmentId === attachment.attachmentId)
+      );
+      if (policy?.compileParticipation === "none") continue;
+      traces.push({
+        sourceType: "design-context",
+        sourceId: context.contextId,
+        compileLayer: attachment.compileLayer,
+        role: attachment.role,
+        strength: attachment.strength,
+        summary: `Design Context: ${context.name}; ${context.summary}; target=${attachment.targetType}:${attachment.targetId}; role=${attachment.role}; participation=${policy?.compileParticipation ?? "llm-context"}`,
+        fixedRuleEligible: policy?.compileParticipation === "fixed"
+      });
+    }
   }
   return traces;
 }

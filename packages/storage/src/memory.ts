@@ -2,6 +2,14 @@ import {
   Atlas,
   AssetIndex,
   ChangeSet,
+  ContextAttachment,
+  ContextFact,
+  ContextMotif,
+  ContextPolicy,
+  ContextReference,
+  ContextReviewRubric,
+  DesignContext,
+  DesignPrinciple,
   EvolutionEdge,
   EdgeVersion,
   ExternalLibraryMapping,
@@ -31,6 +39,14 @@ import {
 import {
   AssetRepository,
   ChangeSetRepository,
+  ContextAttachmentRepository,
+  ContextFactRepository,
+  ContextMotifRepository,
+  ContextPolicyRepository,
+  ContextReferenceRepository,
+  ContextReviewRubricRepository,
+  DesignContextRepository,
+  DesignPrincipleRepository,
   EdgeRepository,
   EdgeVersionRepository,
   ExternalLibraryMappingRepository,
@@ -71,6 +87,14 @@ export interface DnaServiceStore extends StorageEngine {
   speciesGroupRelations: SpeciesGroupRelationRepository;
   atlases: AtlasRepository;
   graphBridges: GraphBridgeRepository;
+  designContexts: DesignContextRepository;
+  contextFacts: ContextFactRepository;
+  designPrinciples: DesignPrincipleRepository;
+  contextMotifs: ContextMotifRepository;
+  contextReferences: ContextReferenceRepository;
+  contextReviewRubrics: ContextReviewRubricRepository;
+  contextAttachments: ContextAttachmentRepository;
+  contextPolicies: ContextPolicyRepository;
   nodes: LineageRepository;
   nodeVersions: NodeVersionRepository;
   edges: EdgeRepository;
@@ -107,6 +131,14 @@ interface MemoryState {
   speciesGroupRelations: Map<string, SpeciesGroupRelation>;
   atlases: Map<string, Atlas>;
   graphBridges: Map<string, GraphBridge>;
+  designContexts: Map<string, DesignContext>;
+  contextFacts: Map<string, ContextFact>;
+  designPrinciples: Map<string, DesignPrinciple>;
+  contextMotifs: Map<string, ContextMotif>;
+  contextReferences: Map<string, ContextReference>;
+  contextReviewRubrics: Map<string, ContextReviewRubric>;
+  contextAttachments: Map<string, ContextAttachment>;
+  contextPolicies: Map<string, ContextPolicy>;
   nodes: Map<string, SpeciesNode>;
   nodeVersions: Map<string, NodeVersion>;
   edges: Map<string, EvolutionEdge>;
@@ -138,6 +170,14 @@ export class InMemoryDnaStore implements DnaServiceStore {
   readonly speciesGroupRelations: SpeciesGroupRelationRepository;
   readonly atlases: AtlasRepository;
   readonly graphBridges: GraphBridgeRepository;
+  readonly designContexts: DesignContextRepository;
+  readonly contextFacts: ContextFactRepository;
+  readonly designPrinciples: DesignPrincipleRepository;
+  readonly contextMotifs: ContextMotifRepository;
+  readonly contextReferences: ContextReferenceRepository;
+  readonly contextReviewRubrics: ContextReviewRubricRepository;
+  readonly contextAttachments: ContextAttachmentRepository;
+  readonly contextPolicies: ContextPolicyRepository;
   readonly nodes: LineageRepository;
   readonly nodeVersions: NodeVersionRepository;
   readonly edges: EdgeRepository;
@@ -230,6 +270,60 @@ export class InMemoryDnaStore implements DnaServiceStore {
       listByAtlas: (atlasId) => [...this.state.graphBridges.values()].filter((bridge) => bridge.atlasId === atlasId),
       listByGraph: (graphId) =>
         [...this.state.graphBridges.values()].filter((bridge) => bridge.sourceGraphId === graphId || bridge.targetGraphId === graphId)
+    };
+    this.designContexts = {
+      create: (context) => this.state.designContexts.set(context.contextId, context),
+      update: (context) => this.state.designContexts.set(context.contextId, context),
+      get: (contextId) => this.state.designContexts.get(contextId),
+      list: () => [...this.state.designContexts.values()]
+    };
+    this.contextFacts = {
+      create: (fact) => this.state.contextFacts.set(fact.factId, fact),
+      update: (fact) => this.state.contextFacts.set(fact.factId, fact),
+      get: (factId) => this.state.contextFacts.get(factId),
+      list: () => [...this.state.contextFacts.values()]
+    };
+    this.designPrinciples = {
+      create: (principle) => this.state.designPrinciples.set(principle.principleId, principle),
+      update: (principle) => this.state.designPrinciples.set(principle.principleId, principle),
+      get: (principleId) => this.state.designPrinciples.get(principleId),
+      list: () => [...this.state.designPrinciples.values()]
+    };
+    this.contextMotifs = {
+      create: (motif) => this.state.contextMotifs.set(motif.motifId, motif),
+      update: (motif) => this.state.contextMotifs.set(motif.motifId, motif),
+      get: (motifId) => this.state.contextMotifs.get(motifId),
+      list: () => [...this.state.contextMotifs.values()]
+    };
+    this.contextReferences = {
+      create: (reference) => this.state.contextReferences.set(reference.referenceId, reference),
+      update: (reference) => this.state.contextReferences.set(reference.referenceId, reference),
+      get: (referenceId) => this.state.contextReferences.get(referenceId),
+      list: () => [...this.state.contextReferences.values()]
+    };
+    this.contextReviewRubrics = {
+      create: (rubric) => this.state.contextReviewRubrics.set(rubric.rubricId, rubric),
+      update: (rubric) => this.state.contextReviewRubrics.set(rubric.rubricId, rubric),
+      get: (rubricId) => this.state.contextReviewRubrics.get(rubricId),
+      list: () => [...this.state.contextReviewRubrics.values()]
+    };
+    this.contextAttachments = {
+      create: (attachment) => this.state.contextAttachments.set(attachment.attachmentId, attachment),
+      update: (attachment) => this.state.contextAttachments.set(attachment.attachmentId, attachment),
+      get: (attachmentId) => this.state.contextAttachments.get(attachmentId),
+      list: () => [...this.state.contextAttachments.values()],
+      listByContext: (contextId) => [...this.state.contextAttachments.values()].filter((attachment) => attachment.contextId === contextId),
+      listByTarget: (targetType, targetId) =>
+        [...this.state.contextAttachments.values()].filter(
+          (attachment) => attachment.targetType === targetType && attachment.targetId === targetId
+        )
+    };
+    this.contextPolicies = {
+      create: (policy) => this.state.contextPolicies.set(policy.policyId, policy),
+      update: (policy) => this.state.contextPolicies.set(policy.policyId, policy),
+      get: (policyId) => this.state.contextPolicies.get(policyId),
+      list: () => [...this.state.contextPolicies.values()],
+      listByContext: (contextId) => [...this.state.contextPolicies.values()].filter((policy) => policy.contextId === contextId)
     };
     this.nodes = {
       create: (node) => this.state.nodes.set(node.nodeId, node),
@@ -410,6 +504,14 @@ function createState(): MemoryState {
     speciesGroupRelations: new Map(),
     atlases: new Map(),
     graphBridges: new Map(),
+    designContexts: new Map(),
+    contextFacts: new Map(),
+    designPrinciples: new Map(),
+    contextMotifs: new Map(),
+    contextReferences: new Map(),
+    contextReviewRubrics: new Map(),
+    contextAttachments: new Map(),
+    contextPolicies: new Map(),
     nodes: new Map(),
     nodeVersions: new Map(),
     edges: new Map(),
@@ -443,6 +545,14 @@ function cloneState(state: MemoryState): MemoryState {
     speciesGroupRelations: new Map(state.speciesGroupRelations),
     atlases: new Map(state.atlases),
     graphBridges: new Map(state.graphBridges),
+    designContexts: new Map(state.designContexts),
+    contextFacts: new Map(state.contextFacts),
+    designPrinciples: new Map(state.designPrinciples),
+    contextMotifs: new Map(state.contextMotifs),
+    contextReferences: new Map(state.contextReferences),
+    contextReviewRubrics: new Map(state.contextReviewRubrics),
+    contextAttachments: new Map(state.contextAttachments),
+    contextPolicies: new Map(state.contextPolicies),
     nodes: new Map(state.nodes),
     nodeVersions: new Map(state.nodeVersions),
     edges: new Map(state.edges),

@@ -5,6 +5,11 @@ import {
   compareStyleDistance,
   compileSpecies,
   createDefaultAsset,
+  createDefaultContextFact,
+  createDefaultContextMotif,
+  createDefaultContextReference,
+  createDefaultContextReviewRubric,
+  createDefaultDesignPrinciple,
   createDefaultLibraryRoutingPolicy,
   createDefaultOutputReference,
   createDefaultExternalLibraryMapping,
@@ -644,6 +649,270 @@ atlas
     store.close();
   });
 
+const context = program.command("context").description("Manage design context, facts, principles, motifs, references, and review rubrics");
+context
+  .command("create")
+  .option("--id <contextId>", "design context id")
+  .option("--name <name>", "design context name")
+  .option("--type <contextType>", "context type", "worldview")
+  .option("--summary <summary>", "context summary", "")
+  .option("--status <status>", "context status", "draft")
+  .option("--fact <factId>", "linked context fact id", collect, [])
+  .option("--principle <principleId>", "linked design principle id", collect, [])
+  .option("--motif <motifId>", "linked context motif id", collect, [])
+  .option("--reference <referenceId>", "linked context reference id", collect, [])
+  .option("--rubric <rubricId>", "linked review rubric id", collect, [])
+  .option("--negative-boundary <boundary>", "negative boundary", collect, [])
+  .option("--source-ref <sourceRef>", "source reference", collect, [])
+  .option("--confidence <confidence>", "confirmed, inferred, or draft", "draft")
+  .option("--owner <owner>", "owner role")
+  .option("--version <version>", "context version", "1.0.0")
+  .option("--extension <key=value>", "custom extension field", collect, [])
+  .action((options, command) => {
+    const store = openStore(command);
+    const services = createDnaServices(store);
+    const result = services.context.createContext(
+      {
+        contextId: requiredUnlessChangeSetApply(options.id, "--id", command),
+        name: requiredUnlessChangeSetApply(options.name, "--name", command),
+        contextType: options.type,
+        summary: options.summary,
+        status: options.status,
+        factIds: options.fact,
+        principleIds: options.principle,
+        motifIds: options.motif,
+        referenceIds: options.reference,
+        reviewRubricIds: options.rubric,
+        negativeBoundaries: options.negativeBoundary,
+        sourceRefs: options.sourceRef,
+        confidence: options.confidence,
+        owner: options.owner,
+        version: options.version,
+        extensions: parseKeyValue(options.extension)
+      },
+      writeOptions(command)
+    );
+    if (result.changeSet.status === "preview") {
+      printChangeSet(result.changeSet);
+    } else {
+      console.log(`created design context ${result.value.contextId}`);
+    }
+    store.close();
+  });
+
+context.command("list").action((_options, command) => {
+  const store = openStore(command);
+  console.log(JSON.stringify(store.designContexts.list(), null, 2));
+  store.close();
+});
+
+context.command("show").requiredOption("--id <contextId>", "design context id").action((options, command) => {
+  const store = openStore(command);
+  const value = store.designContexts.get(options.id);
+  if (!value) throw new Error(`design context not found: ${options.id}`);
+  console.log(JSON.stringify(value, null, 2));
+  store.close();
+});
+
+const contextFact = context.command("fact").description("Manage structured context facts");
+contextFact
+  .command("add")
+  .requiredOption("--id <factId>", "fact id")
+  .requiredOption("--type <factType>", "fact type")
+  .requiredOption("--statement <statement>", "fact statement")
+  .option("--scope <scopeHint>", "scope hint", "")
+  .option("--strength <strength>", "hard, soft, or reference", "reference")
+  .option("--behavior <behavior>", "include, weaken, translate, exclude, or reference-only", "reference-only")
+  .option("--source <sourceTrace>", "source trace", collect, [])
+  .action((options, command) => {
+    const store = openStore(command);
+    const value = createDefaultContextFact({
+      factId: options.id,
+      factType: options.type,
+      statement: options.statement,
+      scopeHint: options.scope,
+      defaultStrength: options.strength,
+      defaultBehaviorHint: options.behavior,
+      sourceTrace: options.source
+    });
+    store.contextFacts.create(value);
+    console.log(`created context fact ${value.factId}`);
+    store.close();
+  });
+
+const contextPrinciple = context.command("principle").description("Manage design principles");
+contextPrinciple
+  .command("add")
+  .requiredOption("--id <principleId>", "principle id")
+  .requiredOption("--statement <statement>", "principle statement")
+  .option("--priority <priority>", "must, should, or may", "should")
+  .option("--scope <scopeHint>", "scope hint", "")
+  .option("--behavior <behavior>", "default behavior hint", "reference-only")
+  .option("--experience-intent <intent>", "experience intent", "")
+  .option("--readability-goal <goal>", "readability goal", "")
+  .option("--platform-context <context>", "platform context", "")
+  .option("--review-question <question>", "review question", collect, [])
+  .option("--badcase <badcase>", "badcase", collect, [])
+  .action((options, command) => {
+    const store = openStore(command);
+    const value = createDefaultDesignPrinciple({
+      principleId: options.id,
+      statement: options.statement,
+      priority: options.priority,
+      scopeHint: options.scope,
+      defaultBehaviorHint: options.behavior,
+      experienceIntent: options.experienceIntent,
+      readabilityGoal: options.readabilityGoal,
+      platformContext: options.platformContext,
+      reviewQuestions: options.reviewQuestion,
+      badcases: options.badcase
+    });
+    store.designPrinciples.create(value);
+    console.log(`created design principle ${value.principleId}`);
+    store.close();
+  });
+
+const contextMotif = context.command("motif").description("Manage context motifs");
+contextMotif
+  .command("add")
+  .requiredOption("--id <motifId>", "motif id")
+  .requiredOption("--type <motifType>", "motif type")
+  .requiredOption("--statement <statement>", "motif statement")
+  .option("--source-ref <sourceRef>", "source reference")
+  .option("--visual-motif-ref <visualMotifRef>", "visual motif reference")
+  .option("--note <note>", "note", "")
+  .action((options, command) => {
+    const store = openStore(command);
+    const value = createDefaultContextMotif({
+      motifId: options.id,
+      motifType: options.type,
+      statement: options.statement,
+      sourceRef: options.sourceRef,
+      visualMotifRef: options.visualMotifRef,
+      note: options.note
+    });
+    store.contextMotifs.create(value);
+    console.log(`created context motif ${value.motifId}`);
+    store.close();
+  });
+
+const contextReference = context.command("reference").description("Manage context references");
+contextReference
+  .command("add")
+  .requiredOption("--id <referenceId>", "reference id")
+  .requiredOption("--type <referenceType>", "reference type")
+  .requiredOption("--source-type <sourceType>", "source reference type")
+  .requiredOption("--source-id <sourceId>", "source reference id")
+  .option("--role <referenceRole>", "positive, negative, mood, evidence, or decision", "evidence")
+  .option("--use-for <value>", "what this reference is safe to use for", collect, [])
+  .option("--do-not-use-for <value>", "what this reference must not be used for", collect, [])
+  .option("--note <note>", "note", "")
+  .option("--risk <risk>", "risk note", collect, [])
+  .action((options, command) => {
+    const store = openStore(command);
+    const value = createDefaultContextReference({
+      referenceId: options.id,
+      referenceType: options.type,
+      sourceRef: { type: options.sourceType, id: options.sourceId },
+      referenceRole: options.role,
+      useFor: options.useFor,
+      doNotUseFor: options.doNotUseFor,
+      note: options.note,
+      risk: options.risk
+    });
+    store.contextReferences.create(value);
+    console.log(`created context reference ${value.referenceId}`);
+    store.close();
+  });
+
+const contextRubric = context.command("rubric").description("Manage context review rubrics");
+contextRubric
+  .command("add")
+  .requiredOption("--id <rubricId>", "rubric id")
+  .requiredOption("--dimension <dimension>", "review dimension")
+  .requiredOption("--question <question>", "review question")
+  .option("--pass-signal <signal>", "pass signal", "")
+  .option("--fail-signal <signal>", "fail signal", "")
+  .option("--severity <severity>", "info, warning, or blocking", "info")
+  .action((options, command) => {
+    const store = openStore(command);
+    const value = createDefaultContextReviewRubric({
+      rubricId: options.id,
+      dimension: options.dimension,
+      question: options.question,
+      passSignal: options.passSignal,
+      failSignal: options.failSignal,
+      severity: options.severity
+    });
+    store.contextReviewRubrics.create(value);
+    console.log(`created context review rubric ${value.rubricId}`);
+    store.close();
+  });
+
+context
+  .command("attach")
+  .option("--id <attachmentId>", "attachment id")
+  .option("--context <contextId>", "design context id")
+  .option("--target-type <targetType>", "target type")
+  .option("--target <targetId>", "target id")
+  .option("--role <role>", "foundation, reference, constraint, rationale, or review-source", "reference")
+  .option("--strength <strength>", "hard, soft, or reference", "reference")
+  .option("--inheritance <inheritance>", "none, downstream, children, graph, or atlas", "none")
+  .option("--compile-layer <compileLayer>", "context compile layer", "node-context")
+  .option("--status <status>", "attachment status", "draft")
+  .action((options, command) => {
+    const store = openStore(command);
+    const services = createDnaServices(store);
+    const result = services.context.attachContext(
+      {
+        attachmentId: requiredUnlessChangeSetApply(options.id, "--id", command),
+        contextId: requiredUnlessChangeSetApply(options.context, "--context", command),
+        targetType: requiredUnlessChangeSetApply(options.targetType, "--target-type", command),
+        targetId: requiredUnlessChangeSetApply(options.target, "--target", command),
+        role: options.role,
+        strength: options.strength,
+        inheritance: options.inheritance,
+        compileLayer: options.compileLayer,
+        status: options.status
+      },
+      writeOptions(command)
+    );
+    if (result.changeSet.status === "preview") {
+      printChangeSet(result.changeSet);
+    } else {
+      console.log(`attached design context ${result.value.contextId} to ${result.value.targetType} ${result.value.targetId}`);
+    }
+    store.close();
+  });
+
+context
+  .command("map")
+  .requiredOption("--id <contextId>", "design context id")
+  .option("--format <format>", "output format: text or json", "text")
+  .action((options, command) => {
+    const store = openStore(command);
+    const contextValue = store.designContexts.get(options.id);
+    if (!contextValue) throw new Error(`design context not found: ${options.id}`);
+    const contextMap = {
+      context: contextValue,
+      facts: contextValue.factIds.map((id) => store.contextFacts.get(id)).filter(Boolean),
+      principles: contextValue.principleIds.map((id) => store.designPrinciples.get(id)).filter(Boolean),
+      motifs: contextValue.motifIds.map((id) => store.contextMotifs.get(id)).filter(Boolean),
+      references: contextValue.referenceIds.map((id) => store.contextReferences.get(id)).filter(Boolean),
+      rubrics: contextValue.reviewRubricIds.map((id) => store.contextReviewRubrics.get(id)).filter(Boolean),
+      attachments: store.contextAttachments.listByContext(options.id),
+      policies: store.contextPolicies.listByContext(options.id)
+    };
+    if (options.format === "json") {
+      console.log(JSON.stringify(contextMap, null, 2));
+    } else if (options.format === "text") {
+      process.stdout.write(formatContextMapText(contextMap));
+    } else {
+      throw new Error(`unknown context map format: ${options.format}`);
+    }
+    store.close();
+  });
+
 const phenotype = program.command("phenotype").description("Generate and manage phenotypes");
 phenotype
   .command("generate")
@@ -1125,13 +1394,14 @@ impact
   .option("--edge <edgeId>", "changed edge id")
   .option("--group <groupId>", "changed species group id")
   .option("--bridge <bridgeId>", "changed graph bridge id")
+  .option("--context <contextId>", "changed design context id")
   .option("--changed-version <versionId>", "changed version id", "latest")
   .action((options, command) => {
   const store = openStore(command);
-  const selected = [options.node, options.edge, options.group, options.bridge].filter(Boolean);
+  const selected = [options.node, options.edge, options.group, options.bridge, options.context].filter(Boolean);
   if (selected.length !== 1) {
     store.close();
-    throw new Error("Provide exactly one of --node, --edge, --group, or --bridge");
+    throw new Error("Provide exactly one of --node, --edge, --group, --bridge, or --context");
   }
   const nodes = store.nodes.listByGraph(options.graph).map((nodeValue) => ({
     nodeId: nodeValue.nodeId,
@@ -1149,16 +1419,23 @@ impact
       : undefined;
   const lineageImpacts = changed ? collectImpact({ changed, nodes, edges }) : undefined;
   const impacts: CliImpactSummary[] =
-    lineageImpacts ?? (options.group ? collectGroupImpactForCli(store, options.graph, options.group) : collectGraphBridgeImpactForCli(store, options.bridge));
+    lineageImpacts ??
+    (options.group
+      ? collectGroupImpactForCli(store, options.graph, options.group)
+      : options.bridge
+        ? collectGraphBridgeImpactForCli(store, options.bridge)
+        : collectContextImpactForCli(store, options.graph, options.context));
   if (shouldApply(command)) {
+    const changedObjectType = options.group ? "species-group" : options.bridge ? "graph-bridge" : "design-context";
+    const changedObjectId = options.group ?? options.bridge ?? options.context;
     const records = changed && lineageImpacts
       ? createImpactRecords({ graphId: options.graph, changed, impacts: lineageImpacts })
       : impacts.map((impactValue: { objectType: "graph" | "node" | "species-group" | "phenotype-version"; objectId: string; reason: string }, index: number) =>
           createImpactRecord({
-            impactRecordId: `impact-${options.group ?? options.bridge}-${impactValue.objectId}-${index}`.replace(/[^a-zA-Z0-9_-]/g, "-"),
+            impactRecordId: `impact-${changedObjectId}-${impactValue.objectId}-${index}`.replace(/[^a-zA-Z0-9_-]/g, "-"),
             graphId: options.graph,
-            changedObjectType: options.group ? "species-group" : "graph-bridge",
-            changedObjectId: options.group ?? options.bridge,
+            changedObjectType,
+            changedObjectId,
             changedVersionId: options.changedVersion,
             objectType: impactValue.objectType,
             objectId: impactValue.objectId,
@@ -1352,6 +1629,102 @@ program.command("import").requiredOption("--in <directory>", "input directory").
   store.close();
 });
 
+function formatContextMapText(input: {
+  context: {
+    contextId: string;
+    name: string;
+    contextType: string;
+    summary: string;
+    factIds: string[];
+    principleIds: string[];
+    motifIds: string[];
+    referenceIds: string[];
+    reviewRubricIds: string[];
+  };
+  facts: Array<{ factId: string; factType: string; statement: string } | undefined>;
+  principles: Array<{ principleId: string; priority: string; statement: string } | undefined>;
+  motifs: Array<{ motifId: string; motifType: string; statement: string } | undefined>;
+  references: Array<{ referenceId: string; referenceType: string; referenceRole: string } | undefined>;
+  rubrics: Array<{ rubricId: string; dimension: string; severity: string; question: string } | undefined>;
+  attachments: Array<{ attachmentId: string; targetType: string; targetId: string; role: string; compileLayer: string }>;
+  policies: Array<{ policyId: string; compileParticipation: string; reviewParticipation: string; impactParticipation: string }>;
+}) {
+  const contextValue = input.context;
+  const lines = [`Design Context: ${contextValue.name} (${contextValue.contextId}) [${contextValue.contextType}]`];
+  if (contextValue.summary) lines.push(`Summary: ${contextValue.summary}`);
+
+  lines.push("Facts:");
+  if (!input.facts.length) {
+    lines.push("- none");
+  } else {
+    for (const fact of input.facts) {
+      if (!fact) continue;
+      lines.push(`- ${fact.factId} [${fact.factType}] ${fact.statement}`);
+    }
+  }
+
+  lines.push("Principles:");
+  if (!input.principles.length) {
+    lines.push("- none");
+  } else {
+    for (const principle of input.principles) {
+      if (!principle) continue;
+      lines.push(`- ${principle.principleId} [${principle.priority}] ${principle.statement}`);
+    }
+  }
+
+  lines.push("Motifs:");
+  if (!input.motifs.length) {
+    lines.push("- none");
+  } else {
+    for (const motif of input.motifs) {
+      if (!motif) continue;
+      lines.push(`- ${motif.motifId} [${motif.motifType}] ${motif.statement}`);
+    }
+  }
+
+  lines.push("References:");
+  if (!input.references.length) {
+    lines.push("- none");
+  } else {
+    for (const reference of input.references) {
+      if (!reference) continue;
+      lines.push(`- ${reference.referenceId} [${reference.referenceType}/${reference.referenceRole}]`);
+    }
+  }
+
+  lines.push("Review Rubrics:");
+  if (!input.rubrics.length) {
+    lines.push("- none");
+  } else {
+    for (const rubric of input.rubrics) {
+      if (!rubric) continue;
+      lines.push(`- ${rubric.rubricId} [${rubric.dimension}/${rubric.severity}] ${rubric.question}`);
+    }
+  }
+
+  lines.push("Attachments:");
+  if (!input.attachments.length) {
+    lines.push("- none");
+  } else {
+    for (const attachment of input.attachments) {
+      lines.push(`- ${attachment.targetType}:${attachment.targetId} [${attachment.role}] via ${attachment.compileLayer}`);
+    }
+  }
+
+  lines.push("Policies:");
+  if (!input.policies.length) {
+    lines.push("- none");
+  } else {
+    for (const policy of input.policies) {
+      lines.push(
+        `- ${policy.policyId} [compile=${policy.compileParticipation}, review=${policy.reviewParticipation}, impact=${policy.impactParticipation}]`
+      );
+    }
+  }
+  return `${lines.join("\n")}\n`;
+}
+
 function formatGroupMapText(input: {
   graph: { graphId: string; name: string };
   groups: Array<{ groupId: string; name: string; groupType: string; sharedFacts: string[]; facetSchemaIds: string[] }>;
@@ -1467,6 +1840,79 @@ function collectGraphBridgeImpactForCli(store: SqliteDnaStore, bridgeId: string)
         objectType: "phenotype-version",
         objectId: version.phenotypeVersionId,
         reason: `${version.phenotypeVersionId} was generated from node ${nodeValue.nodeId} in target graph ${bridge.targetGraphId}`,
+        suggestedAction: "review-or-regenerate"
+      });
+    }
+  }
+  return impacts;
+}
+
+function collectContextImpactForCli(store: SqliteDnaStore, graphId: string, contextId: string) {
+  const contextValue = store.designContexts.get(contextId);
+  if (!contextValue) throw new Error(`design context not found: ${contextId}`);
+  const impacts: CliImpactSummary[] = [];
+  const seen = new Set<string>();
+  const pushImpact = (impactValue: CliImpactSummary) => {
+    const key = `${impactValue.objectType}:${impactValue.objectId}:${impactValue.reason}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    impacts.push(impactValue);
+  };
+  const pushNodeImpact = (nodeId: string, reason: string) => {
+    const nodeValue = store.nodes.get(nodeId);
+    if (!nodeValue || nodeValue.graphId !== graphId) return;
+    pushImpact({
+      objectType: "node",
+      objectId: nodeId,
+      reason,
+      suggestedAction: "review-or-regenerate"
+    });
+    for (const version of store.phenotypeVersions.listByNode(nodeId)) {
+      pushImpact({
+        objectType: "phenotype-version",
+        objectId: version.phenotypeVersionId,
+        reason: `${version.phenotypeVersionId} was generated from node ${nodeId} attached to changed design context ${contextId}`,
+        suggestedAction: "review-or-regenerate"
+      });
+    }
+  };
+
+  for (const attachment of store.contextAttachments.listByContext(contextId)) {
+    if (attachment.targetType === "graph") {
+      if (attachment.targetId !== graphId) continue;
+      pushImpact({
+        objectType: "graph",
+        objectId: graphId,
+        reason: `${graphId} is attached to changed design context ${contextId}`,
+        suggestedAction: "review-or-regenerate"
+      });
+      for (const nodeValue of store.nodes.listByGraph(graphId)) {
+        pushNodeImpact(nodeValue.nodeId, `${nodeValue.nodeId} belongs to graph ${graphId} attached to changed design context ${contextId}`);
+      }
+    } else if (attachment.targetType === "species-node") {
+      pushNodeImpact(attachment.targetId, `${attachment.targetId} is attached to changed design context ${contextId}`);
+    } else if (attachment.targetType === "species-group") {
+      const groupValue = store.speciesGroups.get(attachment.targetId);
+      if (!groupValue || groupValue.graphId !== graphId) continue;
+      pushImpact({
+        objectType: "species-group",
+        objectId: attachment.targetId,
+        reason: `${attachment.targetId} is attached to changed design context ${contextId}`,
+        suggestedAction: "review-or-regenerate"
+      });
+      for (const membership of store.speciesGroupMemberships.listByGroup(attachment.targetId)) {
+        pushNodeImpact(
+          membership.nodeId,
+          `${membership.nodeId} belongs to species group ${attachment.targetId} attached to changed design context ${contextId}`
+        );
+      }
+    } else if (attachment.targetType === "phenotype-version") {
+      const version = store.phenotypeVersions.get(attachment.targetId);
+      if (!version || version.graphId !== graphId) continue;
+      pushImpact({
+        objectType: "phenotype-version",
+        objectId: attachment.targetId,
+        reason: `${attachment.targetId} is attached to changed design context ${contextId}`,
         suggestedAction: "review-or-regenerate"
       });
     }
