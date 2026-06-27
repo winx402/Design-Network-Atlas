@@ -29,6 +29,9 @@ importers:
 
   apps/cli:
     dependencies:
+      '@dna/application':
+        specifier: workspace:*
+        version: link:../../packages/application
       '@dna/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -72,6 +75,15 @@ importers:
       '@types/react-dom':
         specifier: ^19.0.2
         version: 19.2.3(@types/react@19.2.17)
+
+  packages/application:
+    dependencies:
+      '@dna/core':
+        specifier: workspace:*
+        version: link:../core
+      '@dna/storage':
+        specifier: workspace:*
+        version: link:../storage
 
   packages/core:
     dependencies:

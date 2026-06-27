@@ -9,6 +9,7 @@
     "build": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@dna/application": "workspace:*",
     "@dna/core": "workspace:*",
     "@dna/server": "workspace:*",
     "@dna/sqlite": "workspace:*",

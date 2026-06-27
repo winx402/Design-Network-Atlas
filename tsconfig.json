@@ -11,6 +11,7 @@
     "baseUrl": ".",
     "paths": {
       "@dna/core": ["./packages/core/src/index.ts"],
+      "@dna/application": ["./packages/application/src/index.ts"],
       "@dna/storage": ["./packages/storage/src/index.ts"],
       "@dna/sqlite": ["./packages/sqlite/src/index.ts"],
       "@dna/template-packs": ["./packages/template-packs/src/index.ts"],

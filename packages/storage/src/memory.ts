@@ -1,6 +1,7 @@
 import {
   Atlas,
   AssetIndex,
+  assertCanTransitionStatus,
   ChangeSet,
   ContextAttachment,
   ContextFact,
@@ -368,7 +369,12 @@ export class InMemoryDnaStore implements DnaServiceStore {
     };
     this.phenotypeVersions = {
       create: (version) => this.state.phenotypeVersions.set(version.phenotypeVersionId, version),
-      update: (version) => this.state.phenotypeVersions.set(version.phenotypeVersionId, version),
+      updateStatus: (phenotypeVersionId, status) => {
+        const current = this.state.phenotypeVersions.get(phenotypeVersionId);
+        if (!current) throw new Error(`phenotype version not found: ${phenotypeVersionId}`);
+        assertCanTransitionStatus("phenotype-version", current.status, status);
+        this.state.phenotypeVersions.set(phenotypeVersionId, { ...current, status });
+      },
       get: (phenotypeVersionId) => this.state.phenotypeVersions.get(phenotypeVersionId),
       listByPhenotype: (phenotypeId) => [...this.state.phenotypeVersions.values()].filter((version) => version.phenotypeId === phenotypeId),
       listByNode: (nodeId) => [...this.state.phenotypeVersions.values()].filter((version) => version.nodeId === nodeId)

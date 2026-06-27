@@ -1,0 +1,570 @@
+import {
+  collectImpact,
+  compilePhenotypeGeneration,
+  compileSpeciesSnapshot,
+  createDefaultPhenotype,
+  createDefaultPhenotypeVersion,
+  createGenerationJob,
+  makeId,
+  type ContextAttachment,
+  type DesignContext,
+  type GenerationJob,
+  type Graph,
+  type Phenotype,
+  type PhenotypeCompileArtifact,
+  type SpeciesNode,
+  type PhenotypeVersion,
+  type SpeciesCompileArtifact,
+  type TraceEntry
+} from "@dna/core";
+import type {
+  ContextAttachmentRepository,
+  ContextFactRepository,
+  ContextMotifRepository,
+  ContextPolicyRepository,
+  ContextReferenceRepository,
+  ContextReviewRubricRepository,
+  DesignContextRepository,
+  DesignPrincipleRepository,
+  EdgeRepository,
+  EdgeVersionRepository,
+  GraphBridgeRepository,
+  GraphRepository,
+  LineageRepository,
+  NodeVersionRepository,
+  PhenotypeCompileArtifactRepository,
+  PhenotypeRepository,
+  PhenotypeVersionRepository,
+  SpeciesCompileArtifactRepository,
+  SpeciesGroupMembershipRepository,
+  SpeciesGroupRelationRepository,
+  SpeciesGroupRepository
+} from "@dna/storage";
+
+export type ApplicationImpactSummary = {
+  objectType: "graph" | "node" | "species-group" | "phenotype-version";
+  objectId: string;
+  reason: string;
+  suggestedAction: "review-or-regenerate";
+};
+
+export interface SpeciesCompileInputRepositories {
+  graphs: Pick<GraphRepository, "get">;
+  nodes: Pick<LineageRepository, "get">;
+  nodeVersions: Pick<NodeVersionRepository, "listByNode">;
+  edges: Pick<EdgeRepository, "get">;
+  edgeVersions: Pick<EdgeVersionRepository, "listByEdge">;
+  speciesGroups: Pick<SpeciesGroupRepository, "get">;
+  speciesGroupMemberships: Pick<SpeciesGroupMembershipRepository, "listByNode">;
+  speciesGroupRelations: Pick<SpeciesGroupRelationRepository, "listByGraph">;
+  graphBridges: Pick<GraphBridgeRepository, "listByGraph">;
+  designContexts: Pick<DesignContextRepository, "get">;
+  contextFacts: Pick<ContextFactRepository, "get">;
+  designPrinciples: Pick<DesignPrincipleRepository, "get">;
+  contextMotifs: Pick<ContextMotifRepository, "get">;
+  contextReferences: Pick<ContextReferenceRepository, "get">;
+  contextReviewRubrics: Pick<ContextReviewRubricRepository, "get">;
+  contextAttachments: Pick<ContextAttachmentRepository, "listByTarget">;
+  contextPolicies: Pick<ContextPolicyRepository, "listByContext">;
+}
+
+export interface PhenotypeGenerationRepositories extends SpeciesCompileInputRepositories {
+  phenotypes: Pick<PhenotypeRepository, "get">;
+  speciesCompileArtifacts: Pick<SpeciesCompileArtifactRepository, "get">;
+  phenotypeCompileArtifacts: Pick<PhenotypeCompileArtifactRepository, "get">;
+}
+
+export interface ImpactRepositories {
+  nodes: Pick<LineageRepository, "get" | "listByGraph">;
+  edges: Pick<EdgeRepository, "listByGraph">;
+  phenotypeVersions: Pick<PhenotypeVersionRepository, "get" | "listByNode" | "updateStatus">;
+  speciesGroups: Pick<SpeciesGroupRepository, "get">;
+  speciesGroupMemberships: Pick<SpeciesGroupMembershipRepository, "listByGroup">;
+  speciesGroupRelations: Pick<SpeciesGroupRelationRepository, "listByGraph">;
+  graphBridges: Pick<GraphBridgeRepository, "get">;
+  designContexts: Pick<DesignContextRepository, "get">;
+  contextAttachments: Pick<ContextAttachmentRepository, "listByContext">;
+}
+
+export interface BuildSpeciesCompileInputOptions {
+  graphId: string;
+  nodeId: string;
+}
+
+export interface PreparePhenotypeGenerationOptions {
+  graphId: string;
+  nodeId: string;
+  phenotypeType: string;
+  name: string;
+  taskBrief: string;
+  phenotypeId?: string;
+  speciesArtifactId?: string;
+  phenotypeArtifactId?: string;
+  tool?: string;
+  ids?: {
+    speciesArtifactId?: string;
+    phenotypeArtifactId?: string;
+    phenotypeId?: string;
+    phenotypeVersionId?: string;
+    generationJobId?: string;
+  };
+}
+
+export interface PreparedPhenotypeGeneration {
+  artifacts: {
+    species: SpeciesCompileArtifact;
+    phenotype: PhenotypeCompileArtifact;
+  };
+  speciesArtifact: SpeciesCompileArtifact;
+  phenotypeArtifact: PhenotypeCompileArtifact;
+  phenotype: Phenotype;
+  phenotypeVersion: PhenotypeVersion;
+  job: GenerationJob;
+  prompt: string;
+  createdSpeciesArtifact: boolean;
+  createdPhenotypeArtifact: boolean;
+  createdPhenotype: boolean;
+}
+
+export function buildSpeciesCompileInput(store: SpeciesCompileInputRepositories, options: BuildSpeciesCompileInputOptions) {
+  const graph = store.graphs.get(options.graphId);
+  const node = store.nodes.get(options.nodeId);
+  if (!graph || !node) throw new Error("graph or node not found");
+  const nodeVersionId = store.nodeVersions.listByNode(options.nodeId).at(-1)?.nodeVersionId ?? `${node.nodeId}@${node.currentVersion}`;
+  const parentSnapshots = node.parentNodes
+    .map((parentNodeId) => {
+      const version = store.nodeVersions.listByNode(parentNodeId).at(-1);
+      if (!version) return undefined;
+      return { parentNodeId, nodeVersionId: version.nodeVersionId, snapshot: version.resolvedGeneSnapshot };
+    })
+    .filter((value): value is { parentNodeId: string; nodeVersionId: string; snapshot: Record<string, unknown> } => Boolean(value));
+  const edgeDeltas = node.incomingEdges
+    .map((edgeId) => store.edgeVersions.listByEdge(edgeId).at(-1))
+    .filter((version): version is NonNullable<typeof version> => Boolean(version))
+    .map((version) => ({ edgeVersionId: version.edgeVersionId, delta: version.deltaGenes }));
+  const speciesGroups = store.speciesGroupMemberships
+    .listByNode(options.nodeId)
+    .map((membership) => store.speciesGroups.get(membership.groupId))
+    .filter((group): group is NonNullable<typeof group> => Boolean(group));
+  const contextAttachments = [
+    ...store.contextAttachments.listByTarget("species-node", options.nodeId),
+    ...store.contextAttachments.listByTarget("graph", options.graphId),
+    ...speciesGroups.flatMap((group) => store.contextAttachments.listByTarget("species-group", group.groupId))
+  ];
+  const contextIds = unique(contextAttachments.map((attachment) => attachment.contextId));
+  const designContexts = contextIds
+    .map((contextId) => store.designContexts.get(contextId))
+    .filter((context): context is NonNullable<typeof context> => Boolean(context));
+
+  return {
+    graph,
+    node,
+    nodeVersionId,
+    parentSnapshots,
+    edgeDeltas,
+    speciesGroups,
+    groupRelations: store.speciesGroupRelations.listByGraph(options.graphId),
+    graphBridges: store.graphBridges.listByGraph(options.graphId),
+    designContexts,
+    contextAttachments,
+    contextPolicies: contextIds.flatMap((contextId) => store.contextPolicies.listByContext(contextId)),
+    contextFacts: collectContextChildren(designContexts, "factIds", (id) => store.contextFacts.get(id)),
+    designPrinciples: collectContextChildren(designContexts, "principleIds", (id) => store.designPrinciples.get(id)),
+    contextMotifs: collectContextChildren(designContexts, "motifIds", (id) => store.contextMotifs.get(id)),
+    contextReferences: collectContextChildren(designContexts, "referenceIds", (id) => store.contextReferences.get(id)),
+    contextReviewRubrics: collectContextChildren(designContexts, "reviewRubricIds", (id) => store.contextReviewRubrics.get(id))
+  };
+}
+
+export function preparePhenotypeGeneration(
+  store: PhenotypeGenerationRepositories,
+  options: PreparePhenotypeGenerationOptions
+): PreparedPhenotypeGeneration {
+  const compileInput = buildSpeciesCompileInput(store, { graphId: options.graphId, nodeId: options.nodeId });
+  let speciesArtifact: SpeciesCompileArtifact | undefined;
+  let phenotypeArtifact: PhenotypeCompileArtifact | undefined;
+  let createdSpeciesArtifact = false;
+  let createdPhenotypeArtifact = false;
+
+  if (options.phenotypeArtifactId) {
+    phenotypeArtifact = store.phenotypeCompileArtifacts.get(options.phenotypeArtifactId);
+    if (!phenotypeArtifact) throw new Error(`phenotype compile artifact not found: ${options.phenotypeArtifactId}`);
+    validatePhenotypeArtifact(phenotypeArtifact, options);
+    if (!phenotypeArtifact.speciesCompileArtifactId) {
+      throw new Error(`phenotype compile artifact ${phenotypeArtifact.artifactId} is missing speciesCompileArtifactId`);
+    }
+    if (options.speciesArtifactId && options.speciesArtifactId !== phenotypeArtifact.speciesCompileArtifactId) {
+      throw new Error(
+        `phenotype compile artifact ${phenotypeArtifact.artifactId} uses species artifact ${phenotypeArtifact.speciesCompileArtifactId}, not ${options.speciesArtifactId}`
+      );
+    }
+    speciesArtifact = store.speciesCompileArtifacts.get(phenotypeArtifact.speciesCompileArtifactId);
+    if (!speciesArtifact) throw new Error(`species compile artifact not found: ${phenotypeArtifact.speciesCompileArtifactId}`);
+    validateSpeciesArtifact(speciesArtifact, options);
+  } else {
+    if (options.speciesArtifactId) {
+      speciesArtifact = store.speciesCompileArtifacts.get(options.speciesArtifactId);
+      if (!speciesArtifact) throw new Error(`species compile artifact not found: ${options.speciesArtifactId}`);
+      validateSpeciesArtifact(speciesArtifact, options);
+    } else {
+      speciesArtifact = compileSpeciesSnapshot({
+        artifactId: options.ids?.speciesArtifactId ?? makeId("sca"),
+        ...compileInput
+      });
+      createdSpeciesArtifact = true;
+    }
+    phenotypeArtifact = compilePhenotypeGeneration({
+      artifactId: options.ids?.phenotypeArtifactId ?? makeId("pca"),
+      graph: compileInput.graph,
+      node: compileInput.node,
+      nodeVersionId: compileInput.nodeVersionId,
+      phenotypeType: options.phenotypeType,
+      taskBrief: options.taskBrief,
+      speciesArtifact,
+      contextReferences: compileInput.contextReferences,
+      contextReviewRubrics: compileInput.contextReviewRubrics
+    });
+    createdPhenotypeArtifact = true;
+  }
+
+  const phenotypeId = options.phenotypeId ?? options.ids?.phenotypeId ?? makeId("ph");
+  const existingPhenotype = store.phenotypes.get(phenotypeId);
+  if (
+    existingPhenotype &&
+    (existingPhenotype.graphId !== options.graphId ||
+      existingPhenotype.nodeId !== options.nodeId ||
+      existingPhenotype.phenotypeType !== options.phenotypeType)
+  ) {
+    throw new Error(`phenotype ${phenotypeId} belongs to a different graph, node, or type`);
+  }
+  const phenotype =
+    existingPhenotype ??
+    createDefaultPhenotype({
+      graphId: options.graphId,
+      nodeId: options.nodeId,
+      phenotypeId,
+      name: options.name,
+      phenotypeType: options.phenotypeType,
+      objectBrief: options.taskBrief
+    });
+  const phenotypeVersionId = options.ids?.phenotypeVersionId ?? makeId("pv");
+  const generationJobId = options.ids?.generationJobId ?? makeId("job");
+  const phenotypeVersion = createDefaultPhenotypeVersion({
+    graphId: options.graphId,
+    nodeId: options.nodeId,
+    phenotypeId,
+    phenotypeVersionId,
+    nodeVersionId: phenotypeArtifact.nodeVersionId,
+    edgeVersionTrace: edgeVersionTraceFromArtifact(phenotypeArtifact),
+    resolvedGeneSnapshot: phenotypeArtifact.resolvedGeneSnapshot,
+    generationRecipe: {
+      compilePolicy: phenotypeArtifact.compilePolicy,
+      conflictReport: phenotypeArtifact.conflictReport,
+      speciesCompileArtifactId: speciesArtifact.artifactId,
+      phenotypeCompileArtifactId: phenotypeArtifact.artifactId,
+      jobId: generationJobId
+    },
+    generationBrief: options.taskBrief,
+    promptSnapshot: phenotypeArtifact.prompt,
+    tool: options.tool ?? "manual",
+    speciesCompileArtifactId: speciesArtifact.artifactId,
+    phenotypeCompileArtifactId: phenotypeArtifact.artifactId,
+    compileArtifactSnapshot: createCompileArtifactSnapshot(speciesArtifact, phenotypeArtifact)
+  });
+  const job = createGenerationJob({
+    generationJobId,
+    graphId: options.graphId,
+    nodeId: options.nodeId,
+    phenotypeId,
+    phenotypeVersionId,
+    phenotypeType: options.phenotypeType,
+    taskBrief: options.taskBrief,
+    compilePolicy: phenotypeArtifact.compilePolicy,
+    inputSnapshot: {
+      graphId: options.graphId,
+      nodeId: options.nodeId,
+      nodeVersionId: phenotypeArtifact.nodeVersionId,
+      taskBrief: options.taskBrief,
+      phenotypeType: options.phenotypeType,
+      speciesCompileArtifactId: speciesArtifact.artifactId,
+      phenotypeCompileArtifactId: phenotypeArtifact.artifactId
+    },
+    outputSnapshot: {
+      prompt: phenotypeArtifact.prompt,
+      negativePrompt: phenotypeArtifact.negativePrompt,
+      artBrief: phenotypeArtifact.artBrief,
+      reviewChecklist: phenotypeArtifact.reviewChecklist
+    },
+    tool: options.tool ?? "manual",
+    status: "generated"
+  });
+
+  return {
+    artifacts: { species: speciesArtifact, phenotype: phenotypeArtifact },
+    speciesArtifact,
+    phenotypeArtifact,
+    phenotype,
+    phenotypeVersion,
+    job,
+    prompt: phenotypeArtifact.prompt,
+    createdSpeciesArtifact,
+    createdPhenotypeArtifact,
+    createdPhenotype: !existingPhenotype
+  };
+}
+
+export function collectLineageImpact(store: ImpactRepositories, options: { graphId: string; nodeId?: string; edgeId?: string; changedVersionId: string }) {
+  const nodes = store.nodes.listByGraph(options.graphId).map((nodeValue) => ({
+    nodeId: nodeValue.nodeId,
+    phenotypeVersionIds: store.phenotypeVersions.listByNode(nodeValue.nodeId).map((version) => version.phenotypeVersionId)
+  }));
+  const edges = store.edges.listByGraph(options.graphId).map((edgeValue) => ({
+    edgeId: edgeValue.edgeId,
+    fromNodeId: edgeValue.fromNodeId,
+    toNodeId: edgeValue.toNodeId
+  }));
+  const changed = options.edgeId
+    ? ({ type: "edge", id: options.edgeId, versionId: options.changedVersionId } as const)
+    : options.nodeId
+      ? ({ type: "node", id: options.nodeId, versionId: options.changedVersionId } as const)
+      : undefined;
+  return changed ? collectImpact({ changed, nodes, edges }) : undefined;
+}
+
+export function collectGroupImpact(store: ImpactRepositories, options: { graphId: string; groupId: string }): ApplicationImpactSummary[] {
+  const impacts: ApplicationImpactSummary[] = [];
+  for (const membership of store.speciesGroupMemberships.listByGroup(options.groupId)) {
+    impacts.push({
+      objectType: "node",
+      objectId: membership.nodeId,
+      reason: `${membership.nodeId} belongs to changed species group ${options.groupId}`,
+      suggestedAction: "review-or-regenerate"
+    });
+    for (const version of store.phenotypeVersions.listByNode(membership.nodeId)) {
+      impacts.push({
+        objectType: "phenotype-version",
+        objectId: version.phenotypeVersionId,
+        reason: `${version.phenotypeVersionId} was generated from node ${membership.nodeId} in changed species group ${options.groupId}`,
+        suggestedAction: "review-or-regenerate"
+      });
+    }
+  }
+  for (const relation of store.speciesGroupRelations.listByGraph(options.graphId)) {
+    if (relation.sourceGroupId !== options.groupId && relation.targetGroupId !== options.groupId) continue;
+    const otherGroupId = relation.sourceGroupId === options.groupId ? relation.targetGroupId : relation.sourceGroupId;
+    impacts.push({
+      objectType: "species-group",
+      objectId: otherGroupId,
+      reason: `${otherGroupId} is connected to changed species group ${options.groupId} by ${relation.relationType}`,
+      suggestedAction: "review-or-regenerate"
+    });
+  }
+  return impacts;
+}
+
+export function collectGraphBridgeImpact(store: ImpactRepositories, options: { bridgeId: string }): ApplicationImpactSummary[] {
+  const bridge = store.graphBridges.get(options.bridgeId);
+  if (!bridge) throw new Error(`graph bridge not found: ${options.bridgeId}`);
+  const impacts: ApplicationImpactSummary[] = [
+    {
+      objectType: "graph",
+      objectId: bridge.targetGraphId,
+      reason: `${bridge.targetGraphId} is the target graph of changed bridge ${options.bridgeId}`,
+      suggestedAction: "review-or-regenerate"
+    }
+  ];
+  for (const node of store.nodes.listByGraph(bridge.targetGraphId)) {
+    impacts.push({
+      objectType: "node",
+      objectId: node.nodeId,
+      reason: `${node.nodeId} belongs to target graph ${bridge.targetGraphId} of changed bridge ${options.bridgeId}`,
+      suggestedAction: "review-or-regenerate"
+    });
+    for (const version of store.phenotypeVersions.listByNode(node.nodeId)) {
+      impacts.push({
+        objectType: "phenotype-version",
+        objectId: version.phenotypeVersionId,
+        reason: `${version.phenotypeVersionId} was generated from node ${node.nodeId} in target graph ${bridge.targetGraphId}`,
+        suggestedAction: "review-or-regenerate"
+      });
+    }
+  }
+  return impacts;
+}
+
+export function collectContextImpact(store: ImpactRepositories, options: { graphId: string; contextId: string }): ApplicationImpactSummary[] {
+  const context = store.designContexts.get(options.contextId);
+  if (!context) throw new Error(`design context not found: ${options.contextId}`);
+  const impacts: ApplicationImpactSummary[] = [];
+  const seen = new Set<string>();
+  const pushImpact = (impact: ApplicationImpactSummary) => {
+    const key = `${impact.objectType}:${impact.objectId}:${impact.reason}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    impacts.push(impact);
+  };
+  const pushNodeImpact = (nodeId: string, reason: string) => {
+    const node = store.nodes.get(nodeId);
+    if (!node || node.graphId !== options.graphId) return;
+    pushImpact({ objectType: "node", objectId: nodeId, reason, suggestedAction: "review-or-regenerate" });
+    for (const version of store.phenotypeVersions.listByNode(nodeId)) {
+      pushImpact({
+        objectType: "phenotype-version",
+        objectId: version.phenotypeVersionId,
+        reason: `${version.phenotypeVersionId} was generated from node ${nodeId} attached to changed design context ${options.contextId}`,
+        suggestedAction: "review-or-regenerate"
+      });
+    }
+  };
+
+  for (const attachment of store.contextAttachments.listByContext(options.contextId)) {
+    collectContextAttachmentImpact(store, options, attachment, pushImpact, pushNodeImpact);
+  }
+  return impacts;
+}
+
+export function updatePhenotypeVersionStatus(
+  store: Pick<ImpactRepositories, "phenotypeVersions">,
+  options: { phenotypeVersionId: string; status: PhenotypeVersion["status"] }
+) {
+  store.phenotypeVersions.updateStatus(options.phenotypeVersionId, options.status);
+}
+
+function validateSpeciesArtifact(artifact: SpeciesCompileArtifact, options: Pick<PreparePhenotypeGenerationOptions, "graphId" | "nodeId">) {
+  if (artifact.graphId !== options.graphId) {
+    throw new Error(`species compile artifact ${artifact.artifactId} does not match graph ${options.graphId}`);
+  }
+  if (artifact.speciesNodeId !== options.nodeId) {
+    throw new Error(`species compile artifact ${artifact.artifactId} does not match node ${options.nodeId}`);
+  }
+}
+
+function validatePhenotypeArtifact(
+  artifact: PhenotypeCompileArtifact,
+  options: Pick<PreparePhenotypeGenerationOptions, "graphId" | "nodeId" | "phenotypeType" | "taskBrief">
+) {
+  if (artifact.graphId !== options.graphId) {
+    throw new Error(`phenotype compile artifact ${artifact.artifactId} does not match graph ${options.graphId}`);
+  }
+  if (artifact.speciesNodeId !== options.nodeId) {
+    throw new Error(`phenotype compile artifact ${artifact.artifactId} does not match node ${options.nodeId}`);
+  }
+  if (artifact.phenotypeType !== options.phenotypeType) {
+    throw new Error(`phenotype compile artifact ${artifact.artifactId} does not match phenotype type ${options.phenotypeType}`);
+  }
+  if (artifact.taskBrief !== options.taskBrief) {
+    throw new Error(`phenotype compile artifact ${artifact.artifactId} does not match task brief ${options.taskBrief}`);
+  }
+}
+
+function edgeVersionTraceFromArtifact(artifact: PhenotypeCompileArtifact) {
+  return unique(
+    artifact.sourceTrace
+      .filter((entry) => entry.objectType === "edge-version")
+      .map((entry) => entry.versionId ?? entry.objectId)
+  );
+}
+
+function countTraceEntries(traceEntries: TraceEntry[]) {
+  return traceEntries.length;
+}
+
+function createCompileArtifactSnapshot(speciesArtifact: SpeciesCompileArtifact, phenotypeArtifact: PhenotypeCompileArtifact) {
+  return {
+    speciesCompileArtifactId: speciesArtifact.artifactId,
+    phenotypeCompileArtifactId: phenotypeArtifact.artifactId,
+    species: {
+      artifactId: speciesArtifact.artifactId,
+      nodeVersionId: speciesArtifact.nodeVersionId,
+      compileMode: speciesArtifact.compileMode,
+      compilePolicy: speciesArtifact.compilePolicy,
+      conflictCount: speciesArtifact.conflictReport.length,
+      sourceTraceCount: countTraceEntries(speciesArtifact.sourceTrace),
+      contextTraceCount: countTraceEntries(speciesArtifact.contextTrace),
+      referenceTraceCount: countTraceEntries(speciesArtifact.referenceTrace),
+      decisionTraceCount: countTraceEntries(speciesArtifact.decisionTrace),
+      openQuestions: speciesArtifact.openQuestions
+    },
+    phenotype: {
+      artifactId: phenotypeArtifact.artifactId,
+      nodeVersionId: phenotypeArtifact.nodeVersionId,
+      phenotypeType: phenotypeArtifact.phenotypeType,
+      taskBrief: phenotypeArtifact.taskBrief,
+      compileMode: phenotypeArtifact.compileMode,
+      promptDigest: phenotypeArtifact.prompt,
+      negativePrompt: phenotypeArtifact.negativePrompt,
+      artBrief: phenotypeArtifact.artBrief,
+      reviewChecklist: phenotypeArtifact.reviewChecklist,
+      generationConstraints: phenotypeArtifact.generationConstraints,
+      conflictCount: phenotypeArtifact.conflictReport.length,
+      sourceTraceCount: countTraceEntries(phenotypeArtifact.sourceTrace),
+      contextTraceCount: countTraceEntries(phenotypeArtifact.contextTrace),
+      referenceTraceCount: countTraceEntries(phenotypeArtifact.referenceTrace),
+      rubricTraceCount: countTraceEntries(phenotypeArtifact.rubricTrace),
+      decisionTraceCount: countTraceEntries(phenotypeArtifact.decisionTrace),
+      openQuestions: phenotypeArtifact.openQuestions
+    }
+  };
+}
+
+function collectContextAttachmentImpact(
+  store: ImpactRepositories,
+  options: { graphId: string; contextId: string },
+  attachment: ContextAttachment,
+  pushImpact: (impact: ApplicationImpactSummary) => void,
+  pushNodeImpact: (nodeId: string, reason: string) => void
+) {
+  if (attachment.targetType === "graph") {
+    if (attachment.targetId !== options.graphId) return;
+    pushImpact({
+      objectType: "graph",
+      objectId: options.graphId,
+      reason: `${options.graphId} is attached to changed design context ${options.contextId}`,
+      suggestedAction: "review-or-regenerate"
+    });
+    for (const node of store.nodes.listByGraph(options.graphId)) {
+      pushNodeImpact(node.nodeId, `${node.nodeId} belongs to graph ${options.graphId} attached to changed design context ${options.contextId}`);
+    }
+  } else if (attachment.targetType === "species-node") {
+    pushNodeImpact(attachment.targetId, `${attachment.targetId} is attached to changed design context ${options.contextId}`);
+  } else if (attachment.targetType === "species-group") {
+    const group = store.speciesGroups.get(attachment.targetId);
+    if (!group || group.graphId !== options.graphId) return;
+    pushImpact({
+      objectType: "species-group",
+      objectId: attachment.targetId,
+      reason: `${attachment.targetId} is attached to changed design context ${options.contextId}`,
+      suggestedAction: "review-or-regenerate"
+    });
+    for (const membership of store.speciesGroupMemberships.listByGroup(attachment.targetId)) {
+      pushNodeImpact(
+        membership.nodeId,
+        `${membership.nodeId} belongs to species group ${attachment.targetId} attached to changed design context ${options.contextId}`
+      );
+    }
+  } else if (attachment.targetType === "phenotype-version") {
+    const version = store.phenotypeVersions.get(attachment.targetId);
+    if (!version || version.graphId !== options.graphId) return;
+    pushImpact({
+      objectType: "phenotype-version",
+      objectId: attachment.targetId,
+      reason: `${attachment.targetId} is attached to changed design context ${options.contextId}`,
+      suggestedAction: "review-or-regenerate"
+    });
+  }
+}
+
+function collectContextChildren<T extends keyof Pick<DesignContext, "factIds" | "principleIds" | "motifIds" | "referenceIds" | "reviewRubricIds">, R>(
+  contexts: DesignContext[],
+  key: T,
+  get: (id: string) => R | undefined
+) {
+  return contexts
+    .flatMap((context) => context[key])
+    .map((id) => get(id))
+    .filter((value): value is NonNullable<typeof value> => Boolean(value));
+}
+
+function unique(values: string[]) {
+  return [...new Set(values)];
+}

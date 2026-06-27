@@ -21,7 +21,7 @@ describe("dna CLI", () => {
     const output = runDna(["--help"], projectRoot);
     expect(output).toContain("Design Network Atlas");
     expect(output).toContain("Use `dna <command> --help`");
-    expect(output).toContain("Write modes");
+    expect(output).toContain("Write boundaries");
   }, CLI_TIMEOUT);
 
   test("runs a local graph-to-phenotype loop with explicit confirmation", () => {

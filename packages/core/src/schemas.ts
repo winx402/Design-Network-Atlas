@@ -548,6 +548,7 @@ export const TemplatePackSchema = z.object({
   domain: z.string().min(1),
   status: z.enum(["draft", "active", "deprecated", "archived"]),
   description: z.string().default(""),
+  compatibility: JsonRecordSchema.default({}),
   facets: FacetsSchema,
   createdAt: IsoDateSchema,
   updatedAt: IsoDateSchema

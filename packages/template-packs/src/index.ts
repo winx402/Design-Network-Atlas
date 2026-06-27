@@ -1,6 +1,16 @@
-import { GeneTemplate, TemplatePack, nowIso } from "@dna/core";
+import {
+  CURRENT_DNA_SCHEMA_COMPATIBILITY,
+  GeneTemplate,
+  TemplatePack,
+  nowIso,
+  validateTemplateCompatibility
+} from "@dna/core";
 
 const createdAt = "2026-06-26T00:00:00.000Z";
+const templateCompatibility = {
+  dnaSchema: CURRENT_DNA_SCHEMA_COMPATIBILITY,
+  capabilities: ["facets", "compile-artifacts", "phenotype-generation"]
+};
 
 export const gameArtTemplatePack: TemplatePack = {
   templatePackId: "game-art-assets",
@@ -9,6 +19,7 @@ export const gameArtTemplatePack: TemplatePack = {
   domain: "game-art",
   status: "active",
   description: "Initial DNA template pack for game art visual assets.",
+  compatibility: templateCompatibility,
   facets: { domain: "game-art" },
   createdAt,
   updatedAt: createdAt
@@ -21,6 +32,7 @@ export const uiIconTemplatePack: TemplatePack = {
   domain: "ui-icon",
   status: "active",
   description: "Initial DNA template pack for UI and icon assets.",
+  compatibility: templateCompatibility,
   facets: { domain: "ui-icon" },
   createdAt,
   updatedAt: createdAt
@@ -50,7 +62,7 @@ export const builtInTemplates: GeneTemplate[] = [
       "Does the generated phenotype stay inside the faction or rarity identity?"
     ],
     phenotypeTypeSuggestions: ["image-prompt", "art-brief", "review-checklist", "engine-config"],
-    compatibility: { dna: "0.1.x" },
+    compatibility: templateCompatibility,
     status: "active",
     facets: { gameArt: { assetKinds: ["character", "environment", "prop", "icon"] } },
     createdAt,
@@ -79,7 +91,7 @@ export const builtInTemplates: GeneTemplate[] = [
       "Does it avoid the listed badcases?"
     ],
     phenotypeTypeSuggestions: ["image-prompt", "svg-spec", "design-token", "figma-variable", "review-checklist"],
-    compatibility: { dna: "0.1.x" },
+    compatibility: templateCompatibility,
     status: "active",
     facets: { uiIcon: { defaultGrid: "24px", platforms: ["web", "ios", "android"] } },
     createdAt,
@@ -93,9 +105,26 @@ export function installBuiltInTemplatePacks(store: {
     createTemplate(template: GeneTemplate): void;
   };
 }) {
+  const warnings: string[] = [];
+  const installedPacks = [gameArtTemplatePack.templatePackId, uiIconTemplatePack.templatePackId];
+  const installedTemplates = builtInTemplates.map((template) => template.templateId);
+  for (const template of [...builtInTemplates, gameArtTemplatePack, uiIconTemplatePack]) {
+    const result = validateTemplateCompatibility(template);
+    warnings.push(...result.warnings.map((warning) => `${"templateId" in template ? template.templateId : template.templatePackId}: ${warning}`));
+    if (!result.compatible) {
+      const details = [
+        result.unsupportedDnaSchema ? `unsupported dnaSchema ${result.unsupportedDnaSchema}` : "",
+        result.missingCapabilities.length ? `missing capabilities ${result.missingCapabilities.join(", ")}` : ""
+      ]
+        .filter(Boolean)
+        .join("; ");
+      throw new Error(`incompatible template ${"templateId" in template ? template.templateId : template.templatePackId}: ${details}`);
+    }
+  }
   store.templates.createPack({ ...gameArtTemplatePack, updatedAt: nowIso() });
   store.templates.createPack({ ...uiIconTemplatePack, updatedAt: nowIso() });
   for (const template of builtInTemplates) {
     store.templates.createTemplate({ ...template, updatedAt: nowIso() });
   }
+  return { installedPacks, installedTemplates, warnings };
 }

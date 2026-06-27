@@ -215,7 +215,7 @@ export interface PhenotypeRepository {
 
 export interface PhenotypeVersionRepository {
   create(version: PhenotypeVersion): void;
-  update(version: PhenotypeVersion): void;
+  updateStatus(phenotypeVersionId: string, status: PhenotypeVersion["status"]): void;
   get(phenotypeVersionId: string): PhenotypeVersion | undefined;
   listByPhenotype(phenotypeId: string): PhenotypeVersion[];
   listByNode(nodeId: string): PhenotypeVersion[];

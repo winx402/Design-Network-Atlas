@@ -1,10 +1,17 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import {
-  collectImpact,
+  buildSpeciesCompileInput,
+  collectContextImpact,
+  collectGraphBridgeImpact,
+  collectGroupImpact,
+  collectLineageImpact,
+  preparePhenotypeGeneration,
+  type ApplicationImpactSummary
+} from "@dna/application";
+import {
   compareStyleDistance,
   compilePhenotypeGeneration,
-  compileSpecies,
   compileSpeciesSnapshot,
   createDefaultAsset,
   createDefaultContextFact,
@@ -18,9 +25,6 @@ import {
   createDefaultPhenotypeLibrary,
   createDefaultPhenotypeLibraryGraphBinding,
   createDefaultStorageMount,
-  createDefaultPhenotype,
-  createDefaultPhenotypeVersion,
-  createGenerationJob,
   createImpactRecord,
   createImpactRecords,
   createReviewRecord,
@@ -46,13 +50,6 @@ type CommandOptions = {
   yes?: boolean;
   mode?: "preview-confirm" | "draft-write" | "changeset-apply";
   changeSet?: string;
-};
-
-type CliImpactSummary = {
-  objectType: "graph" | "node" | "species-group" | "phenotype-version";
-  objectId: string;
-  reason: string;
-  suggestedAction: "review-or-regenerate";
 };
 
 function openStore(command: Command) {
@@ -188,9 +185,10 @@ const program = new Command()
     `
 Use \`dna <command> --help\` to inspect command-specific options.
 
-Write modes:
-  preview-confirm    create a preview change-set before durable writes
-  draft-write        write draft objects directly
+Write boundaries:
+  preview-confirm    formal graph/context/facet facts create a preview change-set before durable writes
+  draft-write        write explicitly draft objects or generated trace/output/audit records directly
+  direct audit write generated trace/output/audit records and external pointers persisted through CLI/application services
   changeset-apply    apply an existing preview change-set with --change-set
 `
   );
@@ -947,7 +945,7 @@ compileSpeciesCommand
     if (!options.graph || !options.node) throw new Error("--graph and --node are required");
     const artifact = compileSpeciesSnapshot({
       artifactId: options.id ?? makeId("sca"),
-      ...buildSpeciesCompileInputForCli(store, options.graph, options.node)
+      ...buildSpeciesCompileInput(store, { graphId: options.graph, nodeId: options.node })
     });
     if (!shouldApply(command)) {
       store.close();
@@ -989,11 +987,10 @@ compilePhenotypeCommand
     if (!options.graph || !options.node || !options.type || !options.brief) {
       throw new Error("--graph, --node, --type, and --brief are required");
     }
-    const { graph, node, nodeVersionId, contextReferences, contextReviewRubrics } = buildSpeciesCompileInputForCli(
-      store,
-      options.graph,
-      options.node
-    );
+    const { graph, node, nodeVersionId, contextReferences, contextReviewRubrics } = buildSpeciesCompileInput(store, {
+      graphId: options.graph,
+      nodeId: options.node
+    });
     const speciesArtifact =
       (options.speciesArtifact ? store.speciesCompileArtifacts.get(options.speciesArtifact) : undefined) ??
       store.speciesCompileArtifacts.listByNode(options.node).at(-1);
@@ -1044,87 +1041,42 @@ phenotype
   .requiredOption("--name <name>", "phenotype name")
   .requiredOption("--brief <brief>", "task brief")
   .option("--phenotype-id <phenotypeId>", "existing or explicit phenotype id")
+  .option("--species-artifact <artifactId>", "existing species compile artifact id")
+  .option("--phenotype-artifact <artifactId>", "existing phenotype compile artifact id")
   .option("--tool <tool>", "tool", "manual")
+  .option("--apply", "persist generated artifacts, phenotype version, and generation job")
   .action((options, command) => {
     const store = openStore(command);
-    const graphValue = store.graphs.get(options.graph);
-    const nodeValue = store.nodes.get(options.node);
-    if (!graphValue || !nodeValue) throw new Error("graph or node not found");
-    const parentSnapshots = nodeValue.parentNodes
-      .map((parentId) => store.nodeVersions.listByNode(parentId).at(-1))
-      .filter((version): version is NonNullable<typeof version> => Boolean(version))
-      .map((version) => ({ nodeVersionId: version.nodeVersionId, snapshot: version.resolvedGeneSnapshot }));
-    const edgeDeltas = nodeValue.incomingEdges
-      .map((edgeId) => store.edges.get(edgeId))
-      .filter((edgeValue): edgeValue is NonNullable<typeof edgeValue> => Boolean(edgeValue))
-      .map((edgeValue) => ({ edgeVersionId: `${edgeValue.edgeId}@${edgeValue.currentVersion}`, delta: edgeValue.deltaGenes }));
-    const compiled = compileSpecies({
-      graph: graphValue,
-      node: nodeValue,
-      parentSnapshots,
-      edgeDeltas,
+    const prepared = preparePhenotypeGeneration(store, {
+      graphId: options.graph,
+      nodeId: options.node,
+      phenotypeType: options.type,
+      name: options.name,
       taskBrief: options.brief,
-      phenotypeType: options.type
-    });
-    const phenotypeId = options.phenotypeId ?? makeId("ph");
-    const existingPhenotype = options.phenotypeId ? store.phenotypes.get(options.phenotypeId) : undefined;
-    if (existingPhenotype && (existingPhenotype.nodeId !== nodeValue.nodeId || existingPhenotype.phenotypeType !== options.type)) {
-      store.close();
-      throw new Error(`phenotype ${options.phenotypeId} belongs to a different node or type`);
-    }
-    const phenotypeVersionId = makeId("pv");
-    const jobId = makeId("job");
-    const phenotypeValue =
-      existingPhenotype ??
-      createDefaultPhenotype({
-        graphId: graphValue.graphId,
-        nodeId: nodeValue.nodeId,
-        phenotypeId,
-        name: options.name,
-        phenotypeType: options.type,
-        objectBrief: options.brief
-      });
-    const phenotypeVersion = createDefaultPhenotypeVersion({
-      graphId: graphValue.graphId,
-      nodeId: nodeValue.nodeId,
-      phenotypeId,
-      phenotypeVersionId,
-      nodeVersionId: `${nodeValue.nodeId}@${nodeValue.currentVersion}`,
-      edgeVersionTrace: compiled.edgeVersionTrace,
-      resolvedGeneSnapshot: compiled.resolvedGeneSnapshot,
-      generationRecipe: {
-        compilePolicy: compiled.compilePolicy,
-        conflicts: compiled.conflicts,
-        jobId
-      },
-      generationBrief: options.brief,
-      promptSnapshot: compiled.prompt,
+      phenotypeId: options.phenotypeId,
+      speciesArtifactId: options.speciesArtifact,
+      phenotypeArtifactId: options.phenotypeArtifact,
       tool: options.tool
     });
-    const job = createGenerationJob({
-      generationJobId: jobId,
-      graphId: graphValue.graphId,
-      nodeId: nodeValue.nodeId,
-      phenotypeId,
-      phenotypeVersionId,
-      phenotypeType: options.type,
-      taskBrief: options.brief,
-      compilePolicy: graphValue.compilePolicy,
-      inputSnapshot: { graph: graphValue.graphId, node: nodeValue.nodeId, brief: options.brief },
-      outputSnapshot: { prompt: compiled.prompt, brief: compiled.brief },
-      tool: options.tool,
-      status: "generated"
-    });
-    if (!shouldApply(command)) {
+    const response = {
+      artifacts: prepared.artifacts,
+      phenotype: prepared.phenotype,
+      phenotypeVersion: prepared.phenotypeVersion,
+      job: prepared.job,
+      prompt: prepared.prompt
+    };
+    if (!options.apply && !shouldApply(command)) {
       store.close();
-      return preview(command, `generate phenotype ${phenotypeId}`, { phenotype: phenotypeValue, phenotypeVersion, job, prompt: compiled.prompt });
+      return preview(command, `generate phenotype ${prepared.phenotype.phenotypeId}`, response);
     }
     store.transaction(() => {
-      if (!existingPhenotype) store.phenotypes.create(phenotypeValue);
-      store.phenotypeVersions.create(phenotypeVersion);
-      store.generationJobs.create(job);
+      if (prepared.createdSpeciesArtifact) store.speciesCompileArtifacts.create(prepared.speciesArtifact);
+      if (prepared.createdPhenotypeArtifact) store.phenotypeCompileArtifacts.create(prepared.phenotypeArtifact);
+      if (prepared.createdPhenotype) store.phenotypes.create(prepared.phenotype);
+      store.phenotypeVersions.create(prepared.phenotypeVersion);
+      store.generationJobs.create(prepared.job);
     });
-    console.log(JSON.stringify({ phenotype: phenotypeValue, phenotypeVersion, prompt: compiled.prompt }, null, 2));
+    console.log(JSON.stringify(response, null, 2));
     store.close();
   });
 
@@ -1525,28 +1477,24 @@ impact
     store.close();
     throw new Error("Provide exactly one of --node, --edge, --group, --bridge, or --context");
   }
-  const nodes = store.nodes.listByGraph(options.graph).map((nodeValue) => ({
-    nodeId: nodeValue.nodeId,
-    phenotypeVersionIds: store.phenotypeVersions.listByNode(nodeValue.nodeId).map((version) => version.phenotypeVersionId)
-  }));
-  const edges = store.edges.listByGraph(options.graph).map((edgeValue) => ({
-    edgeId: edgeValue.edgeId,
-    fromNodeId: edgeValue.fromNodeId,
-    toNodeId: edgeValue.toNodeId
-  }));
   const changed = options.edge
     ? ({ type: "edge", id: options.edge, versionId: options.changedVersion } as const)
     : options.node
       ? ({ type: "node", id: options.node, versionId: options.changedVersion } as const)
       : undefined;
-  const lineageImpacts = changed ? collectImpact({ changed, nodes, edges }) : undefined;
-  const impacts: CliImpactSummary[] =
+  const lineageImpacts = collectLineageImpact(store, {
+    graphId: options.graph,
+    nodeId: options.node,
+    edgeId: options.edge,
+    changedVersionId: options.changedVersion
+  });
+  const impacts: ApplicationImpactSummary[] =
     lineageImpacts ??
     (options.group
-      ? collectGroupImpactForCli(store, options.graph, options.group)
+      ? collectGroupImpact(store, { graphId: options.graph, groupId: options.group })
       : options.bridge
-        ? collectGraphBridgeImpactForCli(store, options.bridge)
-        : collectContextImpactForCli(store, options.graph, options.context));
+        ? collectGraphBridgeImpact(store, { bridgeId: options.bridge })
+        : collectContextImpact(store, { graphId: options.graph, contextId: options.context }));
   if (shouldApply(command)) {
     const changedObjectType = options.group ? "species-group" : options.bridge ? "graph-bridge" : "design-context";
     const changedObjectId = options.group ?? options.bridge ?? options.context;
@@ -1751,84 +1699,6 @@ program.command("import").requiredOption("--in <directory>", "input directory").
   store.close();
 });
 
-function buildSpeciesCompileInputForCli(store: SqliteDnaStore, graphId: string, nodeId: string) {
-  const graph = store.graphs.get(graphId);
-  const node = store.nodes.get(nodeId);
-  if (!graph || !node) throw new Error("graph or node not found");
-  const nodeVersionId = store.nodeVersions.listByNode(nodeId).at(-1)?.nodeVersionId ?? `${node.nodeId}@${node.currentVersion}`;
-  const parentSnapshots = node.parentNodes
-    .map((parentNodeId) => {
-      const version = store.nodeVersions.listByNode(parentNodeId).at(-1);
-      if (!version) return undefined;
-      return {
-        parentNodeId,
-        nodeVersionId: version.nodeVersionId,
-        snapshot: version.resolvedGeneSnapshot
-      };
-    })
-    .filter((value): value is { parentNodeId: string; nodeVersionId: string; snapshot: Record<string, unknown> } => Boolean(value));
-  const edgeDeltas = node.incomingEdges
-    .map((edgeId) => store.edgeVersions.listByEdge(edgeId).at(-1))
-    .filter((version): version is NonNullable<typeof version> => Boolean(version))
-    .map((version) => ({
-      edgeVersionId: version.edgeVersionId,
-      delta: version.deltaGenes
-    }));
-  const speciesGroups = store.speciesGroupMemberships
-    .listByNode(nodeId)
-    .map((membership) => store.speciesGroups.get(membership.groupId))
-    .filter((group): group is NonNullable<typeof group> => Boolean(group));
-  const contextAttachments = [
-    ...store.contextAttachments.listByTarget("species-node", nodeId),
-    ...store.contextAttachments.listByTarget("graph", graphId),
-    ...speciesGroups.flatMap((group) => store.contextAttachments.listByTarget("species-group", group.groupId))
-  ];
-  const contextIds = [...new Set(contextAttachments.map((attachment) => attachment.contextId))];
-  const designContexts = contextIds
-    .map((contextId) => store.designContexts.get(contextId))
-    .filter((context): context is NonNullable<typeof context> => Boolean(context));
-  const contextPolicies = contextIds.flatMap((contextId) => store.contextPolicies.listByContext(contextId));
-  const contextFacts = designContexts
-    .flatMap((context) => context.factIds)
-    .map((factId) => store.contextFacts.get(factId))
-    .filter((fact): fact is NonNullable<typeof fact> => Boolean(fact));
-  const designPrinciples = designContexts
-    .flatMap((context) => context.principleIds)
-    .map((principleId) => store.designPrinciples.get(principleId))
-    .filter((principle): principle is NonNullable<typeof principle> => Boolean(principle));
-  const contextMotifs = designContexts
-    .flatMap((context) => context.motifIds)
-    .map((motifId) => store.contextMotifs.get(motifId))
-    .filter((motif): motif is NonNullable<typeof motif> => Boolean(motif));
-  const contextReferences = designContexts
-    .flatMap((context) => context.referenceIds)
-    .map((referenceId) => store.contextReferences.get(referenceId))
-    .filter((reference): reference is NonNullable<typeof reference> => Boolean(reference));
-  const contextReviewRubrics = designContexts
-    .flatMap((context) => context.reviewRubricIds)
-    .map((rubricId) => store.contextReviewRubrics.get(rubricId))
-    .filter((rubric): rubric is NonNullable<typeof rubric> => Boolean(rubric));
-
-  return {
-    graph,
-    node,
-    nodeVersionId,
-    parentSnapshots,
-    edgeDeltas,
-    speciesGroups,
-    groupRelations: store.speciesGroupRelations.listByGraph(graphId),
-    graphBridges: store.graphBridges.listByGraph(graphId),
-    designContexts,
-    contextAttachments,
-    contextPolicies,
-    contextFacts,
-    designPrinciples,
-    contextMotifs,
-    contextReferences,
-    contextReviewRubrics
-  };
-}
-
 function formatContextMapText(input: {
   context: {
     contextId: string;
@@ -1974,150 +1844,6 @@ function formatAtlasMapText(input: {
     }
   }
   return `${lines.join("\n")}\n`;
-}
-
-function collectGroupImpactForCli(store: SqliteDnaStore, graphId: string, groupId: string) {
-  const impacts: Array<{
-    objectType: "node" | "species-group" | "phenotype-version";
-    objectId: string;
-    reason: string;
-    suggestedAction: "review-or-regenerate";
-  }> = [];
-  for (const membership of store.speciesGroupMemberships.listByGroup(groupId)) {
-    impacts.push({
-      objectType: "node",
-      objectId: membership.nodeId,
-      reason: `${membership.nodeId} belongs to changed species group ${groupId}`,
-      suggestedAction: "review-or-regenerate"
-    });
-    for (const version of store.phenotypeVersions.listByNode(membership.nodeId)) {
-      impacts.push({
-        objectType: "phenotype-version",
-        objectId: version.phenotypeVersionId,
-        reason: `${version.phenotypeVersionId} was generated from node ${membership.nodeId} in changed species group ${groupId}`,
-        suggestedAction: "review-or-regenerate"
-      });
-    }
-  }
-  for (const relation of store.speciesGroupRelations.listByGraph(graphId)) {
-    if (relation.sourceGroupId !== groupId && relation.targetGroupId !== groupId) continue;
-    const otherGroupId = relation.sourceGroupId === groupId ? relation.targetGroupId : relation.sourceGroupId;
-    impacts.push({
-      objectType: "species-group",
-      objectId: otherGroupId,
-      reason: `${otherGroupId} is connected to changed species group ${groupId} by ${relation.relationType}`,
-      suggestedAction: "review-or-regenerate"
-    });
-  }
-  return impacts;
-}
-
-function collectGraphBridgeImpactForCli(store: SqliteDnaStore, bridgeId: string) {
-  const bridge = store.graphBridges.get(bridgeId);
-  if (!bridge) throw new Error(`graph bridge not found: ${bridgeId}`);
-  const impacts: Array<{
-    objectType: "graph" | "node" | "phenotype-version";
-    objectId: string;
-    reason: string;
-    suggestedAction: "review-or-regenerate";
-  }> = [
-    {
-      objectType: "graph",
-      objectId: bridge.targetGraphId,
-      reason: `${bridge.targetGraphId} is the target graph of changed bridge ${bridgeId}`,
-      suggestedAction: "review-or-regenerate"
-    }
-  ];
-  for (const nodeValue of store.nodes.listByGraph(bridge.targetGraphId)) {
-    impacts.push({
-      objectType: "node",
-      objectId: nodeValue.nodeId,
-      reason: `${nodeValue.nodeId} belongs to target graph ${bridge.targetGraphId} of changed bridge ${bridgeId}`,
-      suggestedAction: "review-or-regenerate"
-    });
-    for (const version of store.phenotypeVersions.listByNode(nodeValue.nodeId)) {
-      impacts.push({
-        objectType: "phenotype-version",
-        objectId: version.phenotypeVersionId,
-        reason: `${version.phenotypeVersionId} was generated from node ${nodeValue.nodeId} in target graph ${bridge.targetGraphId}`,
-        suggestedAction: "review-or-regenerate"
-      });
-    }
-  }
-  return impacts;
-}
-
-function collectContextImpactForCli(store: SqliteDnaStore, graphId: string, contextId: string) {
-  const contextValue = store.designContexts.get(contextId);
-  if (!contextValue) throw new Error(`design context not found: ${contextId}`);
-  const impacts: CliImpactSummary[] = [];
-  const seen = new Set<string>();
-  const pushImpact = (impactValue: CliImpactSummary) => {
-    const key = `${impactValue.objectType}:${impactValue.objectId}:${impactValue.reason}`;
-    if (seen.has(key)) return;
-    seen.add(key);
-    impacts.push(impactValue);
-  };
-  const pushNodeImpact = (nodeId: string, reason: string) => {
-    const nodeValue = store.nodes.get(nodeId);
-    if (!nodeValue || nodeValue.graphId !== graphId) return;
-    pushImpact({
-      objectType: "node",
-      objectId: nodeId,
-      reason,
-      suggestedAction: "review-or-regenerate"
-    });
-    for (const version of store.phenotypeVersions.listByNode(nodeId)) {
-      pushImpact({
-        objectType: "phenotype-version",
-        objectId: version.phenotypeVersionId,
-        reason: `${version.phenotypeVersionId} was generated from node ${nodeId} attached to changed design context ${contextId}`,
-        suggestedAction: "review-or-regenerate"
-      });
-    }
-  };
-
-  for (const attachment of store.contextAttachments.listByContext(contextId)) {
-    if (attachment.targetType === "graph") {
-      if (attachment.targetId !== graphId) continue;
-      pushImpact({
-        objectType: "graph",
-        objectId: graphId,
-        reason: `${graphId} is attached to changed design context ${contextId}`,
-        suggestedAction: "review-or-regenerate"
-      });
-      for (const nodeValue of store.nodes.listByGraph(graphId)) {
-        pushNodeImpact(nodeValue.nodeId, `${nodeValue.nodeId} belongs to graph ${graphId} attached to changed design context ${contextId}`);
-      }
-    } else if (attachment.targetType === "species-node") {
-      pushNodeImpact(attachment.targetId, `${attachment.targetId} is attached to changed design context ${contextId}`);
-    } else if (attachment.targetType === "species-group") {
-      const groupValue = store.speciesGroups.get(attachment.targetId);
-      if (!groupValue || groupValue.graphId !== graphId) continue;
-      pushImpact({
-        objectType: "species-group",
-        objectId: attachment.targetId,
-        reason: `${attachment.targetId} is attached to changed design context ${contextId}`,
-        suggestedAction: "review-or-regenerate"
-      });
-      for (const membership of store.speciesGroupMemberships.listByGroup(attachment.targetId)) {
-        pushNodeImpact(
-          membership.nodeId,
-          `${membership.nodeId} belongs to species group ${attachment.targetId} attached to changed design context ${contextId}`
-        );
-      }
-    } else if (attachment.targetType === "phenotype-version") {
-      const version = store.phenotypeVersions.get(attachment.targetId);
-      if (!version || version.graphId !== graphId) continue;
-      pushImpact({
-        objectType: "phenotype-version",
-        objectId: attachment.targetId,
-        reason: `${attachment.targetId} is attached to changed design context ${contextId}`,
-        suggestedAction: "review-or-regenerate"
-      });
-    }
-  }
-  return impacts;
 }
 
 function collect(value: string, previous: string[]) {

@@ -7,6 +7,9 @@ description: Build a new Design Network Atlas graph from a design scenario. Use 
 
 Use this skill when the user has a design domain but not yet a reliable DNA graph. The skill's job is scenario mapping and graph modeling, not CLI documentation. Use `dna --help` only when command syntax is explicitly needed.
 
+Use `docs/design/concept-registry.md` as the canonical terminology boundary when a user concept could map to several DNA objects.
+Use `docs/design/write-boundary-matrix.md` for write strategy vocabulary: formal graph/context/facet facts use preview-confirm or change-set review; generated trace/output/audit records use direct audit write or draft-write only through CLI/application service boundaries.
+
 ## Core Principle
 
 Model stable design meaning first, then decide how it should be written. A good result separates design identity, inheritance, reusable dimensions, background context, generated outputs, and storage routing.
@@ -55,7 +58,7 @@ Run these gates in order. If a gate cannot be answered, mark it as a blocking or
 7. facet gate: define facets only for reusable dimensions with a value strategy, not one-off notes.
 8. compile gate: decide whether species should compile through system rules, fixed snapshots, Agent-assisted conflict review, or a hybrid policy.
 9. clarity gate: separate assumptions, blockingQuestions, nonBlockingQuestions, draftFields, and confidence.
-10. execution gate: choose direct apply, preview-confirm, change-set review, proposal, or draft-write.
+10. execution gate: choose preview-confirm, change-set review, proposal, draft-write, or direct audit write for generated trace/output/audit records.
 
 ## Modeling Workflow
 
@@ -91,7 +94,8 @@ Run these gates in order. If a gate cannot be answered, mark it as a blocking or
    - Use preview-confirm for normal single-object writes.
    - Use change-set review for several related node/edge/template edits.
    - Use proposal for initial multi-node trees, group systems, bridges, or high-uncertainty modeling.
-   - Use draft-write only when the user wants visible but non-final graph objects.
+   - Use draft-write only when the user wants visible but non-final graph objects or explicitly draft generated trace/output records.
+   - Use direct audit write only for generated trace/output/audit records and external pointers through CLI/application service boundaries.
 
 ## Output Contract
 
@@ -107,7 +111,7 @@ Return a structured modeling proposal with these fields:
 - facetTemplatePlan: required, recommended, and optional facets with value strategy.
 - phenotypePlan: generated result types, expected variants, review needs, and output/library routing.
 - compilePlan: suggested CompilePolicy, compileMode, conflict strategy, expected SpeciesCompileArtifact and PhenotypeCompileArtifact contents.
-- writeStrategy: direct, preview-confirm, change-set review, proposal, or draft-write with reason.
+- writeStrategy: preview-confirm, change-set review, proposal, draft-write, or direct audit write with reason.
 - assumptions: facts treated as assumptions.
 - blockingQuestions: questions that materially change graph structure or write safety.
 - nonBlockingQuestions: questions that can remain unresolved for a draft or preview.
@@ -121,7 +125,7 @@ Return a structured modeling proposal with these fields:
 - Facets are reusable dimensions with a value strategy.
 - Context facts and motifs stay separate from reusable facets.
 - Phenotype and phenotype library decisions stay decoupled from graph identity.
-- The write strategy explains why it is `直接生效`, preview-confirm, change-set review, proposal, or draft-write.
+- The write strategy explains why it is preview-confirm, change-set review, proposal, draft-write, or direct audit write.
 - `待确认问题` contains only questions that materially change the graph model or write safety.
 
 ## Guardrails

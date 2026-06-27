@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import {
   Atlas,
+  assertCanTransitionStatus,
   AssetIndex,
   ChangeSet,
   ContextAttachment,
@@ -88,6 +89,54 @@ import {
 type Row = Record<string, unknown>;
 
 export const DNA_EXCHANGE_VERSION = "1.0.0";
+
+export const SQLITE_COMPATIBILITY_TABLES = ["node_relations", "phenotype_types"] as const;
+
+export const RUNTIME_SQLITE_TABLES = [
+  "graphs",
+  "facet_definitions",
+  "facet_schemas",
+  "facet_assignments",
+  "template_packs",
+  "gene_templates",
+  "species_groups",
+  "species_group_memberships",
+  "species_group_relations",
+  "atlases",
+  "graph_bridges",
+  "design_contexts",
+  "context_facts",
+  "design_principles",
+  "context_motifs",
+  "context_references",
+  "context_review_rubrics",
+  "context_attachments",
+  "context_policies",
+  "nodes",
+  "node_versions",
+  "edges",
+  "edge_versions",
+  "node_relations",
+  "phenotype_types",
+  "phenotypes",
+  "phenotype_versions",
+  "phenotype_version_assets",
+  "species_compile_artifacts",
+  "phenotype_compile_artifacts",
+  "assets",
+  "output_references",
+  "phenotype_libraries",
+  "storage_mounts",
+  "phenotype_library_graph_bindings",
+  "external_library_mappings",
+  "library_routing_policies",
+  "generation_jobs",
+  "review_records",
+  "impact_records",
+  "tags",
+  "object_tags",
+  "change_sets"
+] as const;
 
 const EXCHANGE_CAPABILITIES = [
   "change-sets",
@@ -1307,10 +1356,14 @@ class SqlitePhenotypeVersionRepository implements PhenotypeVersionRepository {
         .run(version.phenotypeVersionId, assetId, null, JSON.stringify({ phenotypeVersionId: version.phenotypeVersionId, assetId }));
     }
   }
-  update(version: PhenotypeVersion) {
+  updateStatus(phenotypeVersionId: string, status: PhenotypeVersion["status"]) {
+    const current = this.get(phenotypeVersionId);
+    if (!current) throw new Error(`phenotype version not found: ${phenotypeVersionId}`);
+    assertCanTransitionStatus("phenotype-version", current.status, status);
+    const next = { ...current, status };
     this.store.db
       .prepare("UPDATE phenotype_versions SET status = ?, payload = ? WHERE phenotype_version_id = ?")
-      .run(version.status, JSON.stringify(version), version.phenotypeVersionId);
+      .run(status, JSON.stringify(next), phenotypeVersionId);
   }
   get(phenotypeVersionId: string) {
     return parsePayload<PhenotypeVersion>(this.store.db.prepare("SELECT payload FROM phenotype_versions WHERE phenotype_version_id = ?").get(phenotypeVersionId) as Row | undefined);

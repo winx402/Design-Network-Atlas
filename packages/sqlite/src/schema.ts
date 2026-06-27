@@ -1,3 +1,5 @@
+// SQLite reference/type mapping only.
+// SqliteDnaStore.migrate() in store.ts is the runtime schema authority; this file is not the runtime migration authority.
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 export const graphs = sqliteTable("graphs", {

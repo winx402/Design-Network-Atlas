@@ -16,6 +16,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@dna/core": resolve(root, "packages/core/src/index.ts"),
+      "@dna/application": resolve(root, "packages/application/src/index.ts"),
       "@dna/storage": resolve(root, "packages/storage/src/index.ts"),
       "@dna/sqlite": resolve(root, "packages/sqlite/src/index.ts"),
       "@dna/template-packs": resolve(root, "packages/template-packs/src/index.ts"),

@@ -7,6 +7,9 @@ description: Safely edit an existing Design Network Atlas graph. Use when a user
 
 Use this skill when a DNA graph already exists and the user wants to change it. The skill's job is to protect graph meaning and downstream generation quality while still proposing a practical edit. Use `dna --help` only when command syntax is explicitly needed.
 
+Use `docs/design/concept-registry.md` as the canonical terminology boundary when deciding whether an edit belongs to graph identity, context, facets, compile artifacts, generated outputs, external pointers, or governance records.
+Use `docs/design/write-boundary-matrix.md` for write strategy vocabulary: formal graph/context/facet edits stay reviewable, while generated trace/output/audit records use direct audit write or draft-write through CLI/application service boundaries.
+
 For Chinese responses, keep these review anchors when useful: `当前图谱`, `合理性`, `影响分析`, `风险等级`, and `替代方案`.
 
 ## Required Context
@@ -51,7 +54,7 @@ Classify the edit before designing the patch:
 3. history gate: preserve understandable history; prefer archive, supersede, alias, or add over destructive rewrite when versions exist.
 4. impact gate: identify downstream nodes, edges, PhenotypeVersion outdated risk, review records, compile artifact staleness, and storage-routing effects.
 5. risk gate: assign low, medium, high, or structural risk using the scope levels above.
-6. execution gate: choose no-write diagnosis, preview-confirm, change-set review, proposal, or draft-write.
+6. execution gate: choose no-write diagnosis, preview-confirm, change-set review, proposal, draft-write, or direct audit write for generated trace/output/audit records.
 
 ## Impact Rules
 
@@ -91,7 +94,7 @@ Return an edit proposal with these fields:
 - riskLevel: low, medium, high, or structural with concrete reason.
 - alternatives: safer or more expressive options when risk is not low.
 - compilePlan: whether SpeciesCompileArtifact or PhenotypeCompileArtifact should be refreshed, fixed, reviewed, or left unchanged.
-- writeStrategy: no-write diagnosis, preview-confirm, change-set review, proposal, or draft-write.
+- writeStrategy: no-write diagnosis, preview-confirm, change-set review, proposal, draft-write, or direct audit write.
 - reviewChecklist: what the user should confirm before apply.
 - assumptions: assumptions used.
 - blockingQuestions: questions that block a safe edit.
@@ -105,7 +108,7 @@ Return an edit proposal with these fields:
 - 影响分析 names downstream graph, context, compile artifact, result, review, and storage-routing consequences.
 - 风险等级 is tied to scope and downstream impact, not a generic label.
 - 替代方案 is provided for medium, high, or structural changes.
-- The write strategy stays reviewable through preview-confirm, change-set review, proposal, or draft-write.
+- The write strategy stays reviewable through preview-confirm, change-set review, proposal, draft-write, or uses direct audit write only for generated trace/output/audit records.
 
 ## Guardrails
 
