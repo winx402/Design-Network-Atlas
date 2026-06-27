@@ -25,11 +25,13 @@ import {
   NodeVersion,
   OutputReference,
   Phenotype,
+  PhenotypeCompileArtifact,
   PhenotypeLibrary,
   PhenotypeLibraryGraphBinding,
   PhenotypeVersion,
   ReviewRecord,
   SpeciesGroup,
+  SpeciesCompileArtifact,
   SpeciesGroupMembership,
   SpeciesGroupRelation,
   SpeciesNode,
@@ -65,12 +67,14 @@ import {
   PhenotypeRepository,
   PhenotypeLibraryGraphBindingRepository,
   PhenotypeLibraryRepository,
+  PhenotypeCompileArtifactRepository,
   PhenotypeVersionRepository,
   ReviewRepository,
   SearchRepository,
   SpeciesGroupMembershipRepository,
   SpeciesGroupRelationRepository,
   SpeciesGroupRepository,
+  SpeciesCompileArtifactRepository,
   StorageMountRepository,
   StorageEngine,
   TemplateRepository
@@ -101,6 +105,8 @@ export interface DnaServiceStore extends StorageEngine {
   edgeVersions: EdgeVersionRepository;
   phenotypes: PhenotypeRepository;
   phenotypeVersions: PhenotypeVersionRepository;
+  speciesCompileArtifacts: SpeciesCompileArtifactRepository;
+  phenotypeCompileArtifacts: PhenotypeCompileArtifactRepository;
   assets: AssetRepository;
   outputReferences: OutputReferenceRepository;
   phenotypeLibraries: PhenotypeLibraryRepository;
@@ -145,6 +151,8 @@ interface MemoryState {
   edgeVersions: Map<string, EdgeVersion>;
   phenotypes: Map<string, Phenotype>;
   phenotypeVersions: Map<string, PhenotypeVersion>;
+  speciesCompileArtifacts: Map<string, SpeciesCompileArtifact>;
+  phenotypeCompileArtifacts: Map<string, PhenotypeCompileArtifact>;
   assets: Map<string, AssetIndex>;
   outputReferences: Map<string, OutputReference>;
   phenotypeLibraries: Map<string, PhenotypeLibrary>;
@@ -184,6 +192,8 @@ export class InMemoryDnaStore implements DnaServiceStore {
   readonly edgeVersions: EdgeVersionRepository;
   readonly phenotypes: PhenotypeRepository;
   readonly phenotypeVersions: PhenotypeVersionRepository;
+  readonly speciesCompileArtifacts: SpeciesCompileArtifactRepository;
+  readonly phenotypeCompileArtifacts: PhenotypeCompileArtifactRepository;
   readonly assets: AssetRepository;
   readonly outputReferences: OutputReferenceRepository;
   readonly phenotypeLibraries: PhenotypeLibraryRepository;
@@ -363,6 +373,22 @@ export class InMemoryDnaStore implements DnaServiceStore {
       listByPhenotype: (phenotypeId) => [...this.state.phenotypeVersions.values()].filter((version) => version.phenotypeId === phenotypeId),
       listByNode: (nodeId) => [...this.state.phenotypeVersions.values()].filter((version) => version.nodeId === nodeId)
     };
+    this.speciesCompileArtifacts = {
+      create: (artifact) => this.state.speciesCompileArtifacts.set(artifact.artifactId, artifact),
+      get: (artifactId) => this.state.speciesCompileArtifacts.get(artifactId),
+      listByGraph: (graphId) => [...this.state.speciesCompileArtifacts.values()].filter((artifact) => artifact.graphId === graphId),
+      listByNode: (nodeId) => [...this.state.speciesCompileArtifacts.values()].filter((artifact) => artifact.speciesNodeId === nodeId)
+    };
+    this.phenotypeCompileArtifacts = {
+      create: (artifact) => this.state.phenotypeCompileArtifacts.set(artifact.artifactId, artifact),
+      get: (artifactId) => this.state.phenotypeCompileArtifacts.get(artifactId),
+      listByGraph: (graphId) => [...this.state.phenotypeCompileArtifacts.values()].filter((artifact) => artifact.graphId === graphId),
+      listByNode: (nodeId) => [...this.state.phenotypeCompileArtifacts.values()].filter((artifact) => artifact.speciesNodeId === nodeId),
+      listBySpeciesArtifact: (speciesCompileArtifactId) =>
+        [...this.state.phenotypeCompileArtifacts.values()].filter(
+          (artifact) => artifact.speciesCompileArtifactId === speciesCompileArtifactId
+        )
+    };
     this.assets = {
       create: (asset) => this.state.assets.set(asset.assetId, asset),
       update: (asset) => this.state.assets.set(asset.assetId, asset),
@@ -518,6 +544,8 @@ function createState(): MemoryState {
     edgeVersions: new Map(),
     phenotypes: new Map(),
     phenotypeVersions: new Map(),
+    speciesCompileArtifacts: new Map(),
+    phenotypeCompileArtifacts: new Map(),
     assets: new Map(),
     outputReferences: new Map(),
     phenotypeLibraries: new Map(),
@@ -559,6 +587,8 @@ function cloneState(state: MemoryState): MemoryState {
     edgeVersions: new Map(state.edgeVersions),
     phenotypes: new Map(state.phenotypes),
     phenotypeVersions: new Map(state.phenotypeVersions),
+    speciesCompileArtifacts: new Map(state.speciesCompileArtifacts),
+    phenotypeCompileArtifacts: new Map(state.phenotypeCompileArtifacts),
     assets: new Map(state.assets),
     outputReferences: new Map(state.outputReferences),
     phenotypeLibraries: new Map(state.phenotypeLibraries),

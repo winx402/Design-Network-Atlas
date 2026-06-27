@@ -29,12 +29,14 @@ import {
   NodeVersion,
   OutputReference,
   Phenotype,
+  PhenotypeCompileArtifact,
   PhenotypeLibrary,
   PhenotypeLibraryGraphBinding,
   PROJECT_VERSION,
   PhenotypeVersion,
   ReviewRecord,
   SpeciesGroup,
+  SpeciesCompileArtifact,
   SpeciesGroupMembership,
   SpeciesGroupRelation,
   SpeciesNode,
@@ -68,6 +70,7 @@ import {
   NodeVersionRepository,
   OutputReferenceRepository,
   PhenotypeRepository,
+  PhenotypeCompileArtifactRepository,
   PhenotypeLibraryGraphBindingRepository,
   PhenotypeLibraryRepository,
   PhenotypeVersionRepository,
@@ -76,6 +79,7 @@ import {
   SpeciesGroupMembershipRepository,
   SpeciesGroupRelationRepository,
   SpeciesGroupRepository,
+  SpeciesCompileArtifactRepository,
   StorageMountRepository,
   StorageEngine,
   TemplateRepository
@@ -161,6 +165,8 @@ export class SqliteDnaStore implements StorageEngine {
   readonly edgeVersions: EdgeVersionRepository;
   readonly phenotypes: PhenotypeRepository;
   readonly phenotypeVersions: PhenotypeVersionRepository;
+  readonly speciesCompileArtifacts: SpeciesCompileArtifactRepository;
+  readonly phenotypeCompileArtifacts: PhenotypeCompileArtifactRepository;
   readonly assets: AssetRepository;
   readonly outputReferences: OutputReferenceRepository;
   readonly phenotypeLibraries: PhenotypeLibraryRepository;
@@ -202,6 +208,8 @@ export class SqliteDnaStore implements StorageEngine {
     this.edgeVersions = new SqliteEdgeVersionRepository(this);
     this.phenotypes = new SqlitePhenotypeRepository(this);
     this.phenotypeVersions = new SqlitePhenotypeVersionRepository(this);
+    this.speciesCompileArtifacts = new SqliteSpeciesCompileArtifactRepository(this);
+    this.phenotypeCompileArtifacts = new SqlitePhenotypeCompileArtifactRepository(this);
     this.assets = new SqliteAssetRepository(this);
     this.outputReferences = new SqliteOutputReferenceRepository(this);
     this.phenotypeLibraries = new SqlitePhenotypeLibraryRepository(this);
@@ -469,6 +477,24 @@ export class SqliteDnaStore implements StorageEngine {
         variant_role TEXT,
         payload TEXT NOT NULL,
         PRIMARY KEY (phenotype_version_id, asset_id)
+      );
+      CREATE TABLE IF NOT EXISTS species_compile_artifacts (
+        artifact_id TEXT PRIMARY KEY,
+        graph_id TEXT NOT NULL,
+        species_node_id TEXT NOT NULL,
+        node_version_id TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS phenotype_compile_artifacts (
+        artifact_id TEXT PRIMARY KEY,
+        graph_id TEXT NOT NULL,
+        species_node_id TEXT NOT NULL,
+        node_version_id TEXT NOT NULL,
+        phenotype_type TEXT NOT NULL,
+        species_compile_artifact_id TEXT,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS assets (
         asset_id TEXT PRIMARY KEY,
@@ -1261,6 +1287,87 @@ class SqlitePhenotypeVersionRepository implements PhenotypeVersionRepository {
   }
 }
 
+class SqliteSpeciesCompileArtifactRepository implements SpeciesCompileArtifactRepository {
+  constructor(private readonly store: SqliteDnaStore) {}
+  create(artifact: SpeciesCompileArtifact) {
+    this.store.db
+      .prepare(
+        "INSERT INTO species_compile_artifacts (artifact_id, graph_id, species_node_id, node_version_id, payload, created_at) VALUES (?, ?, ?, ?, ?, ?)"
+      )
+      .run(
+        artifact.artifactId,
+        artifact.graphId,
+        artifact.speciesNodeId,
+        artifact.nodeVersionId,
+        JSON.stringify(artifact),
+        artifact.createdAt
+      );
+  }
+  get(artifactId: string) {
+    return parsePayload<SpeciesCompileArtifact>(
+      this.store.db.prepare("SELECT payload FROM species_compile_artifacts WHERE artifact_id = ?").get(artifactId) as Row | undefined
+    );
+  }
+  listByGraph(graphId: string) {
+    return parseRows<SpeciesCompileArtifact>(
+      this.store.db.prepare("SELECT payload FROM species_compile_artifacts WHERE graph_id = ? ORDER BY created_at, artifact_id").all(graphId) as Row[]
+    );
+  }
+  listByNode(nodeId: string) {
+    return parseRows<SpeciesCompileArtifact>(
+      this.store.db
+        .prepare("SELECT payload FROM species_compile_artifacts WHERE species_node_id = ? ORDER BY created_at, artifact_id")
+        .all(nodeId) as Row[]
+    );
+  }
+}
+
+class SqlitePhenotypeCompileArtifactRepository implements PhenotypeCompileArtifactRepository {
+  constructor(private readonly store: SqliteDnaStore) {}
+  create(artifact: PhenotypeCompileArtifact) {
+    this.store.db
+      .prepare(
+        "INSERT INTO phenotype_compile_artifacts (artifact_id, graph_id, species_node_id, node_version_id, phenotype_type, species_compile_artifact_id, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+      )
+      .run(
+        artifact.artifactId,
+        artifact.graphId,
+        artifact.speciesNodeId,
+        artifact.nodeVersionId,
+        artifact.phenotypeType,
+        artifact.speciesCompileArtifactId ?? null,
+        JSON.stringify(artifact),
+        artifact.createdAt
+      );
+  }
+  get(artifactId: string) {
+    return parsePayload<PhenotypeCompileArtifact>(
+      this.store.db.prepare("SELECT payload FROM phenotype_compile_artifacts WHERE artifact_id = ?").get(artifactId) as Row | undefined
+    );
+  }
+  listByGraph(graphId: string) {
+    return parseRows<PhenotypeCompileArtifact>(
+      this.store.db.prepare("SELECT payload FROM phenotype_compile_artifacts WHERE graph_id = ? ORDER BY created_at, artifact_id").all(graphId) as Row[]
+    );
+  }
+  listByNode(nodeId: string) {
+    return parseRows<PhenotypeCompileArtifact>(
+      this.store.db
+        .prepare("SELECT payload FROM phenotype_compile_artifacts WHERE species_node_id = ? ORDER BY created_at, artifact_id")
+        .all(nodeId) as Row[]
+    );
+  }
+  listBySpeciesArtifact(speciesCompileArtifactId: string) {
+    return parseRows<PhenotypeCompileArtifact>(
+      this.store.db
+        .prepare(
+          "SELECT payload FROM phenotype_compile_artifacts WHERE species_compile_artifact_id = ? ORDER BY created_at, artifact_id"
+        )
+        .all(speciesCompileArtifactId) as Row[]
+    );
+  }
+}
+
 class SqliteAssetRepository implements AssetRepository {
   constructor(private readonly store: SqliteDnaStore) {}
   create(asset: AssetIndex) {
@@ -1735,6 +1842,12 @@ export function exportProject(store: SqliteDnaStore, outDir: string): void {
         writeJson(join(graphDir, "phenotypes", `${version.phenotypeVersionId}.version.json`), version);
       }
     }
+    for (const artifact of store.speciesCompileArtifacts.listByGraph(graph.graphId)) {
+      writeJson(join(graphDir, "compile", "species", `${artifact.artifactId}.json`), artifact);
+    }
+    for (const artifact of store.phenotypeCompileArtifacts.listByGraph(graph.graphId)) {
+      writeJson(join(graphDir, "compile", "phenotypes", `${artifact.artifactId}.json`), artifact);
+    }
     for (const asset of store.assets.search({ graphId: graph.graphId })) writeJson(join(graphDir, "assets", `${asset.assetId}.json`), asset);
     for (const job of store.generationJobs.listByGraph(graph.graphId)) {
       writeJson(join(graphDir, "generation-jobs", `${job.generationJobId}.json`), job);
@@ -1810,6 +1923,12 @@ export function importProject(store: SqliteDnaStore, inDir: string): void {
       const value = JSON.parse(readFileSync(file, "utf8"));
       if ("phenotypeVersionId" in value) store.phenotypeVersions.create(value);
       else store.phenotypes.create(value);
+    }
+    for (const file of listJsonFiles(join(graphDir, "compile", "species"))) {
+      store.speciesCompileArtifacts.create(JSON.parse(readFileSync(file, "utf8")));
+    }
+    for (const file of listJsonFiles(join(graphDir, "compile", "phenotypes"))) {
+      store.phenotypeCompileArtifacts.create(JSON.parse(readFileSync(file, "utf8")));
     }
     for (const file of listJsonFiles(join(graphDir, "assets"))) store.assets.create(JSON.parse(readFileSync(file, "utf8")));
     for (const file of listJsonFiles(join(graphDir, "generation-jobs"))) store.generationJobs.create(JSON.parse(readFileSync(file, "utf8")));

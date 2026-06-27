@@ -3,7 +3,9 @@ import { Command } from "commander";
 import {
   collectImpact,
   compareStyleDistance,
+  compilePhenotypeGeneration,
   compileSpecies,
+  compileSpeciesSnapshot,
   createDefaultAsset,
   createDefaultContextFact,
   createDefaultContextMotif,
@@ -82,6 +84,11 @@ function isChangeSetApply(command: Command) {
 function requiredUnlessChangeSetApply<T>(value: T | undefined, optionName: string, command: Command): T | "" {
   if (value !== undefined) return value;
   if (isChangeSetApply(command)) return "";
+  throw new Error(`missing required option: ${optionName}`);
+}
+
+function requiredOption<T>(value: T | undefined, optionName: string): T {
+  if (value !== undefined) return value;
   throw new Error(`missing required option: ${optionName}`);
 }
 
@@ -913,6 +920,121 @@ context
     store.close();
   });
 
+const compile = program.command("compile").description("Create and inspect compile artifacts");
+const compileSpeciesCommand = compile.command("species").description("Compile or inspect a stable species gene snapshot artifact");
+compileSpeciesCommand
+  .argument("[action]", "optional action: show")
+  .option("--graph <graphId>", "graph id")
+  .option("--node <nodeId>", "species node id")
+  .option("--id <artifactId>", "species compile artifact id")
+  .action((action, options, command) => {
+    const store = openStore(command);
+    if (action === "show") {
+      const artifactId = requiredOption(options.id, "--id");
+      const artifact = store.speciesCompileArtifacts.get(artifactId);
+      if (!artifact) {
+        store.close();
+        throw new Error(`species compile artifact not found: ${artifactId}`);
+      }
+      console.log(JSON.stringify(artifact, null, 2));
+      store.close();
+      return;
+    }
+    if (action) {
+      store.close();
+      throw new Error(`unknown compile species action: ${action}`);
+    }
+    if (!options.graph || !options.node) throw new Error("--graph and --node are required");
+    const artifact = compileSpeciesSnapshot({
+      artifactId: options.id ?? makeId("sca"),
+      ...buildSpeciesCompileInputForCli(store, options.graph, options.node)
+    });
+    if (!shouldApply(command)) {
+      store.close();
+      return preview(command, `compile species ${artifact.speciesNodeId}`, artifact);
+    }
+    store.speciesCompileArtifacts.create(artifact);
+    console.log(JSON.stringify(artifact, null, 2));
+    store.close();
+  });
+
+const compilePhenotypeCommand = compile.command("phenotype").description("Compile or inspect a phenotype generation artifact");
+compilePhenotypeCommand
+  .argument("[action]", "optional action: show")
+  .option("--graph <graphId>", "graph id")
+  .option("--node <nodeId>", "species node id")
+  .option("--type <phenotypeType>", "phenotype type")
+  .option("--brief <taskBrief>", "task brief")
+  .option("--id <artifactId>", "phenotype compile artifact id")
+  .option("--species-artifact <artifactId>", "species compile artifact id")
+  .option("--reference <referenceId>", "context reference id", collect, [])
+  .option("--rubric <rubricId>", "context review rubric id", collect, [])
+  .action((action, options, command) => {
+    const store = openStore(command);
+    if (action === "show") {
+      const artifactId = requiredOption(options.id, "--id");
+      const artifact = store.phenotypeCompileArtifacts.get(artifactId);
+      if (!artifact) {
+        store.close();
+        throw new Error(`phenotype compile artifact not found: ${artifactId}`);
+      }
+      console.log(JSON.stringify(artifact, null, 2));
+      store.close();
+      return;
+    }
+    if (action) {
+      store.close();
+      throw new Error(`unknown compile phenotype action: ${action}`);
+    }
+    if (!options.graph || !options.node || !options.type || !options.brief) {
+      throw new Error("--graph, --node, --type, and --brief are required");
+    }
+    const { graph, node, nodeVersionId, contextReferences, contextReviewRubrics } = buildSpeciesCompileInputForCli(
+      store,
+      options.graph,
+      options.node
+    );
+    const speciesArtifact =
+      (options.speciesArtifact ? store.speciesCompileArtifacts.get(options.speciesArtifact) : undefined) ??
+      store.speciesCompileArtifacts.listByNode(options.node).at(-1);
+    if (options.speciesArtifact && !speciesArtifact) {
+      store.close();
+      throw new Error(`species compile artifact not found: ${options.speciesArtifact}`);
+    }
+    const selectedReferences = options.reference.length
+      ? options.reference.map((referenceId: string) => {
+          const reference = store.contextReferences.get(referenceId);
+          if (!reference) throw new Error(`context reference not found: ${referenceId}`);
+          return reference;
+        })
+      : contextReferences;
+    const selectedRubrics = options.rubric.length
+      ? options.rubric.map((rubricId: string) => {
+          const rubric = store.contextReviewRubrics.get(rubricId);
+          if (!rubric) throw new Error(`context review rubric not found: ${rubricId}`);
+          return rubric;
+        })
+      : contextReviewRubrics;
+    const artifact = compilePhenotypeGeneration({
+      artifactId: options.id ?? makeId("pca"),
+      graph,
+      node,
+      nodeVersionId,
+      phenotypeType: options.type,
+      taskBrief: options.brief,
+      speciesArtifact,
+      contextReferences: selectedReferences,
+      contextReviewRubrics: selectedRubrics
+    });
+    if (!shouldApply(command)) {
+      store.close();
+      return preview(command, `compile phenotype ${artifact.speciesNodeId} ${artifact.phenotypeType}`, artifact);
+    }
+    store.phenotypeCompileArtifacts.create(artifact);
+    console.log(JSON.stringify(artifact, null, 2));
+    store.close();
+  });
+
 const phenotype = program.command("phenotype").description("Generate and manage phenotypes");
 phenotype
   .command("generate")
@@ -1628,6 +1750,84 @@ program.command("import").requiredOption("--in <directory>", "input directory").
   console.log(`imported DNA project from ${options.in}`);
   store.close();
 });
+
+function buildSpeciesCompileInputForCli(store: SqliteDnaStore, graphId: string, nodeId: string) {
+  const graph = store.graphs.get(graphId);
+  const node = store.nodes.get(nodeId);
+  if (!graph || !node) throw new Error("graph or node not found");
+  const nodeVersionId = store.nodeVersions.listByNode(nodeId).at(-1)?.nodeVersionId ?? `${node.nodeId}@${node.currentVersion}`;
+  const parentSnapshots = node.parentNodes
+    .map((parentNodeId) => {
+      const version = store.nodeVersions.listByNode(parentNodeId).at(-1);
+      if (!version) return undefined;
+      return {
+        parentNodeId,
+        nodeVersionId: version.nodeVersionId,
+        snapshot: version.resolvedGeneSnapshot
+      };
+    })
+    .filter((value): value is { parentNodeId: string; nodeVersionId: string; snapshot: Record<string, unknown> } => Boolean(value));
+  const edgeDeltas = node.incomingEdges
+    .map((edgeId) => store.edgeVersions.listByEdge(edgeId).at(-1))
+    .filter((version): version is NonNullable<typeof version> => Boolean(version))
+    .map((version) => ({
+      edgeVersionId: version.edgeVersionId,
+      delta: version.deltaGenes
+    }));
+  const speciesGroups = store.speciesGroupMemberships
+    .listByNode(nodeId)
+    .map((membership) => store.speciesGroups.get(membership.groupId))
+    .filter((group): group is NonNullable<typeof group> => Boolean(group));
+  const contextAttachments = [
+    ...store.contextAttachments.listByTarget("species-node", nodeId),
+    ...store.contextAttachments.listByTarget("graph", graphId),
+    ...speciesGroups.flatMap((group) => store.contextAttachments.listByTarget("species-group", group.groupId))
+  ];
+  const contextIds = [...new Set(contextAttachments.map((attachment) => attachment.contextId))];
+  const designContexts = contextIds
+    .map((contextId) => store.designContexts.get(contextId))
+    .filter((context): context is NonNullable<typeof context> => Boolean(context));
+  const contextPolicies = contextIds.flatMap((contextId) => store.contextPolicies.listByContext(contextId));
+  const contextFacts = designContexts
+    .flatMap((context) => context.factIds)
+    .map((factId) => store.contextFacts.get(factId))
+    .filter((fact): fact is NonNullable<typeof fact> => Boolean(fact));
+  const designPrinciples = designContexts
+    .flatMap((context) => context.principleIds)
+    .map((principleId) => store.designPrinciples.get(principleId))
+    .filter((principle): principle is NonNullable<typeof principle> => Boolean(principle));
+  const contextMotifs = designContexts
+    .flatMap((context) => context.motifIds)
+    .map((motifId) => store.contextMotifs.get(motifId))
+    .filter((motif): motif is NonNullable<typeof motif> => Boolean(motif));
+  const contextReferences = designContexts
+    .flatMap((context) => context.referenceIds)
+    .map((referenceId) => store.contextReferences.get(referenceId))
+    .filter((reference): reference is NonNullable<typeof reference> => Boolean(reference));
+  const contextReviewRubrics = designContexts
+    .flatMap((context) => context.reviewRubricIds)
+    .map((rubricId) => store.contextReviewRubrics.get(rubricId))
+    .filter((rubric): rubric is NonNullable<typeof rubric> => Boolean(rubric));
+
+  return {
+    graph,
+    node,
+    nodeVersionId,
+    parentSnapshots,
+    edgeDeltas,
+    speciesGroups,
+    groupRelations: store.speciesGroupRelations.listByGraph(graphId),
+    graphBridges: store.graphBridges.listByGraph(graphId),
+    designContexts,
+    contextAttachments,
+    contextPolicies,
+    contextFacts,
+    designPrinciples,
+    contextMotifs,
+    contextReferences,
+    contextReviewRubrics
+  };
+}
 
 function formatContextMapText(input: {
   context: {

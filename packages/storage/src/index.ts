@@ -25,11 +25,13 @@ import {
   NodeVersion,
   OutputReference,
   Phenotype,
+  PhenotypeCompileArtifact,
   PhenotypeLibrary,
   PhenotypeLibraryGraphBinding,
   PhenotypeVersion,
   ReviewRecord,
   SpeciesGroup,
+  SpeciesCompileArtifact,
   SpeciesGroupMembership,
   SpeciesGroupRelation,
   SpeciesNode,
@@ -217,6 +219,21 @@ export interface PhenotypeVersionRepository {
   get(phenotypeVersionId: string): PhenotypeVersion | undefined;
   listByPhenotype(phenotypeId: string): PhenotypeVersion[];
   listByNode(nodeId: string): PhenotypeVersion[];
+}
+
+export interface SpeciesCompileArtifactRepository {
+  create(artifact: SpeciesCompileArtifact): void;
+  get(artifactId: string): SpeciesCompileArtifact | undefined;
+  listByGraph(graphId: string): SpeciesCompileArtifact[];
+  listByNode(nodeId: string): SpeciesCompileArtifact[];
+}
+
+export interface PhenotypeCompileArtifactRepository {
+  create(artifact: PhenotypeCompileArtifact): void;
+  get(artifactId: string): PhenotypeCompileArtifact | undefined;
+  listByGraph(graphId: string): PhenotypeCompileArtifact[];
+  listByNode(nodeId: string): PhenotypeCompileArtifact[];
+  listBySpeciesArtifact(speciesCompileArtifactId: string): PhenotypeCompileArtifact[];
 }
 
 export interface AssetRepository {

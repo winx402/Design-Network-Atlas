@@ -1,11 +1,25 @@
 import {
+  CompileConflict,
+  CompileScope,
   ContextAttachment,
+  ContextFact,
   ContextPolicy,
+  ContextReference,
+  ContextReviewRubric,
   DesignContext,
+  DesignPrinciple,
+  ContextMotif,
   Graph,
   GraphBridge,
+  GeneTemplate,
+  FacetAssignment,
+  FacetDefinition,
+  FacetSchema,
+  PhenotypeCompileArtifact,
   SpeciesGroup,
   SpeciesGroupRelation,
+  SpeciesCompileArtifact,
+  TraceEntry,
   SpeciesNode
 } from "./schemas.js";
 import { isFixedRuleEligibleRelation } from "./populations.js";
@@ -21,7 +35,7 @@ export interface GeneConflict {
 export interface CompileSpeciesInput {
   graph: Graph;
   node: SpeciesNode;
-  parentSnapshots?: Array<{ nodeVersionId: string; snapshot: Record<string, unknown> }>;
+  parentSnapshots?: Array<{ nodeVersionId: string; parentNodeId?: string; role?: string; snapshot: Record<string, unknown> }>;
   edgeDeltas?: Array<{ edgeVersionId: string; delta: Record<string, unknown> }>;
   speciesGroups?: SpeciesGroup[];
   groupRelations?: SpeciesGroupRelation[];
@@ -56,6 +70,59 @@ export interface CompileSpeciesResult {
   edgeVersionTrace: string[];
 }
 
+export interface CompileSpeciesSnapshotInput {
+  artifactId: string;
+  graph: Graph;
+  node: SpeciesNode;
+  nodeVersionId: string;
+  compileScope?: Partial<CompileScope>;
+  parentSnapshots?: Array<{ nodeVersionId: string; parentNodeId?: string; role?: string; snapshot: Record<string, unknown> }>;
+  edgeDeltas?: Array<{ edgeVersionId: string; delta: Record<string, unknown> }>;
+  speciesGroups?: SpeciesGroup[];
+  groupRelations?: SpeciesGroupRelation[];
+  graphBridges?: GraphBridge[];
+  designContexts?: DesignContext[];
+  contextAttachments?: ContextAttachment[];
+  contextPolicies?: ContextPolicy[];
+  contextFacts?: ContextFact[];
+  designPrinciples?: DesignPrinciple[];
+  contextMotifs?: ContextMotif[];
+  contextReferences?: ContextReference[];
+  contextReviewRubrics?: ContextReviewRubric[];
+  geneTemplates?: GeneTemplate[];
+  facetDefinitions?: FacetDefinition[];
+  facetSchemas?: FacetSchema[];
+  facetAssignments?: FacetAssignment[];
+  llmSuggestions?: Array<{ fieldPath: string; valueSummary: string }>;
+}
+
+export interface CompilePhenotypeGenerationInput {
+  artifactId: string;
+  graph: Graph;
+  node: SpeciesNode;
+  nodeVersionId: string;
+  phenotypeType: string;
+  taskBrief: string;
+  compileScope?: Partial<CompileScope>;
+  speciesArtifact?: SpeciesCompileArtifact;
+  resolvedGeneSnapshot?: Record<string, unknown>;
+  contextReferences?: ContextReference[];
+  contextReviewRubrics?: ContextReviewRubric[];
+  generationConstraints?: Record<string, unknown>;
+}
+
+export interface CompileOutdatedCheckInput {
+  objectType: string;
+  objectId: string;
+  versionId?: string;
+}
+
+export interface CompileOutdatedCheckResult {
+  outdated: boolean;
+  reasons: string[];
+  matchedTrace: TraceEntry[];
+}
+
 function mergeWithConflicts(
   target: Record<string, unknown>,
   next: Record<string, unknown>,
@@ -74,6 +141,473 @@ function mergeWithConflicts(
     }
     target[key] = value;
   }
+}
+
+function defaultCompileScope(input?: Partial<CompileScope>): CompileScope {
+  return {
+    includeDirectAttachments: input?.includeDirectAttachments ?? true,
+    includeInheritedContext: input?.includeInheritedContext ?? true,
+    includeGroupRelations: input?.includeGroupRelations ?? true,
+    includeGraphBridges: input?.includeGraphBridges ?? true,
+    includeReferencedPhenotypes: input?.includeReferencedPhenotypes ?? false,
+    atlasScope: input?.atlasScope ?? "none",
+    maxReferenceDepth: input?.maxReferenceDepth ?? 1,
+    reasons: input?.reasons ?? ["default scoped compile"]
+  };
+}
+
+function summarizeValue(value: unknown): string {
+  if (typeof value === "string") return value;
+  const json = JSON.stringify(value);
+  return json.length > 160 ? `${json.slice(0, 157)}...` : json;
+}
+
+function trace(input: Omit<TraceEntry, "metadata"> & { metadata?: Record<string, unknown> }): TraceEntry {
+  return {
+    ...input,
+    metadata: input.metadata ?? {}
+  };
+}
+
+function compileLayerFromContextAttachment(attachment?: ContextAttachment): TraceEntry["layer"] {
+  if (!attachment) return "graph-context";
+  if (attachment.compileLayer === "atlas-context") return "atlas-context";
+  if (attachment.compileLayer === "graph-context") return "graph-context";
+  if (attachment.compileLayer === "group-context") return "group-context";
+  if (attachment.compileLayer === "bridge-context") return "graph-bridge-facts";
+  return "phenotype-context";
+}
+
+function mergeArtifactGenes(input: {
+  target: Record<string, unknown>;
+  next: Record<string, unknown>;
+  source: string;
+  layer: TraceEntry["layer"];
+  conflicts: CompileConflict[];
+  sourceTrace: TraceEntry[];
+  objectType: string;
+  objectId: string;
+  versionId?: string;
+  parentRole?: SpeciesNode["parentRoles"][string] | string;
+}) {
+  for (const [key, value] of Object.entries(input.next)) {
+    if (key in input.target && JSON.stringify(input.target[key]) !== JSON.stringify(value)) {
+      input.conflicts.push({
+        key,
+        previousValue: input.target[key],
+        nextValue: value,
+        source: input.source,
+        layer: input.layer,
+        resolutionRule: "override",
+        parentRole: input.parentRole as CompileConflict["parentRole"],
+        decision: "included"
+      });
+    }
+    input.target[key] = value;
+    input.sourceTrace.push(
+      trace({
+        objectType: input.objectType,
+        objectId: input.objectId,
+        versionId: input.versionId,
+        layer: input.layer,
+        fieldPath: key,
+        valueSummary: summarizeValue(value),
+        decision: "merged",
+        metadata: input.parentRole ? { parentRole: input.parentRole } : {}
+      })
+    );
+  }
+}
+
+export function compileSpeciesSnapshot(input: CompileSpeciesSnapshotInput): SpeciesCompileArtifact {
+  const compileScope = defaultCompileScope(input.compileScope);
+  const resolvedGeneSnapshot: Record<string, unknown> = {};
+  const candidateGenes: Record<string, unknown> = {};
+  const conflictReport: CompileConflict[] = [];
+  const sourceTrace: TraceEntry[] = [];
+  const contextTrace: TraceEntry[] = [];
+  const referenceTrace: TraceEntry[] = [];
+  const decisionTrace: TraceEntry[] = [];
+  const openQuestions: string[] = [];
+  const compilePolicy = input.node.compilePolicy ?? input.graph.compilePolicy;
+
+  for (const group of input.speciesGroups ?? []) {
+    if (group.sharedFacts.length) {
+      const existing = Array.isArray(candidateGenes.sharedFacts) ? candidateGenes.sharedFacts : [];
+      candidateGenes.sharedFacts = [...existing, ...group.sharedFacts];
+      sourceTrace.push(
+        trace({
+          objectType: "species-group",
+          objectId: group.groupId,
+          layer: "species-group-rules",
+          fieldPath: "sharedFacts",
+          valueSummary: group.sharedFacts.join(", "),
+          decision: "included",
+          metadata: { groupType: group.groupType }
+        })
+      );
+    }
+    if (group.phenotypeTypeSuggestions.length) {
+      sourceTrace.push(
+        trace({
+          objectType: "species-group",
+          objectId: group.groupId,
+          layer: "species-group-rules",
+          fieldPath: "phenotypeTypeSuggestions",
+          valueSummary: group.phenotypeTypeSuggestions.join(", "),
+          decision: "included"
+        })
+      );
+    }
+  }
+
+  if (compileScope.includeGroupRelations) {
+    for (const relation of input.groupRelations ?? []) {
+      sourceTrace.push(
+        trace({
+          objectType: "species-group-relation",
+          objectId: relation.relationId,
+          layer: "group-context",
+          fieldPath: "description",
+          valueSummary: `[${relation.relationType}] ${relation.description}`,
+          decision: isFixedRuleEligibleRelation(relation.relationType) ? "included" : "llm-suggested",
+          metadata: { relationType: relation.relationType, fixedRuleEligible: isFixedRuleEligibleRelation(relation.relationType) }
+        })
+      );
+    }
+  }
+
+  if (compileScope.includeGraphBridges) {
+    for (const bridge of input.graphBridges ?? []) {
+      sourceTrace.push(
+        trace({
+          objectType: "graph-bridge",
+          objectId: bridge.bridgeId,
+          layer: "graph-bridge-facts",
+          fieldPath: "description",
+          valueSummary: `[${bridge.bridgeType}] ${bridge.description}`,
+          decision: "included",
+          metadata: { bridgeType: bridge.bridgeType, sourceGraphId: bridge.sourceGraphId, targetGraphId: bridge.targetGraphId }
+        })
+      );
+    }
+  }
+
+  for (const parent of input.parentSnapshots ?? []) {
+    const parentNodeId = parent.parentNodeId ?? parent.nodeVersionId.split("@")[0] ?? parent.nodeVersionId;
+    const parentRole = parent.role ?? input.node.parentRoles[parentNodeId] ?? (parentNodeId === input.node.primaryParent ? "primary" : "reference");
+    mergeArtifactGenes({
+      target: resolvedGeneSnapshot,
+      next: parent.snapshot,
+      source: `parent:${parent.nodeVersionId}`,
+      layer: "parent-snapshots",
+      conflicts: conflictReport,
+      sourceTrace,
+      objectType: "node-version",
+      objectId: parent.nodeVersionId,
+      versionId: parent.nodeVersionId,
+      parentRole
+    });
+  }
+
+  for (const edge of input.edgeDeltas ?? []) {
+    mergeArtifactGenes({
+      target: resolvedGeneSnapshot,
+      next: edge.delta,
+      source: `edge:${edge.edgeVersionId}`,
+      layer: "evolution-edge-deltas",
+      conflicts: conflictReport,
+      sourceTrace,
+      objectType: "edge-version",
+      objectId: edge.edgeVersionId,
+      versionId: edge.edgeVersionId
+    });
+  }
+
+  mergeArtifactGenes({
+    target: resolvedGeneSnapshot,
+    next: input.node.constraints,
+    source: `node:${input.node.nodeId}`,
+    layer: "node-own-genes",
+    conflicts: conflictReport,
+    sourceTrace,
+    objectType: "species-node",
+    objectId: input.node.nodeId,
+    versionId: input.nodeVersionId
+  });
+  if (input.node.motifs.length) {
+    resolvedGeneSnapshot.motifs = input.node.motifs;
+    sourceTrace.push(
+      trace({
+        objectType: "species-node",
+        objectId: input.node.nodeId,
+        versionId: input.nodeVersionId,
+        layer: "node-own-genes",
+        fieldPath: "motifs",
+        valueSummary: input.node.motifs.join(", "),
+        decision: "included"
+      })
+    );
+  }
+  if (input.node.badcases.length) {
+    resolvedGeneSnapshot.badcases = input.node.badcases;
+    sourceTrace.push(
+      trace({
+        objectType: "species-node",
+        objectId: input.node.nodeId,
+        versionId: input.nodeVersionId,
+        layer: "node-own-genes",
+        fieldPath: "badcases",
+        valueSummary: input.node.badcases.join(", "),
+        decision: "included"
+      })
+    );
+  }
+  Object.assign(candidateGenes, resolvedGeneSnapshot);
+
+  for (const context of input.designContexts ?? []) {
+    const attachment = (input.contextAttachments ?? []).find((candidate) => candidate.contextId === context.contextId);
+    contextTrace.push(
+      trace({
+        objectType: "design-context",
+        objectId: context.contextId,
+        versionId: context.version,
+        layer: compileLayerFromContextAttachment(attachment),
+        fieldPath: "summary",
+        valueSummary: context.summary,
+        decision: "included",
+        metadata: { contextType: context.contextType, role: attachment?.role, strength: attachment?.strength }
+      })
+    );
+  }
+  for (const fact of input.contextFacts ?? []) {
+    contextTrace.push(
+      trace({
+        objectType: "context-fact",
+        objectId: fact.factId,
+        layer: "graph-context",
+        fieldPath: "statement",
+        valueSummary: fact.statement,
+        decision: fact.defaultBehaviorHint === "exclude" ? "excluded" : "included",
+        metadata: { factType: fact.factType, strength: fact.defaultStrength }
+      })
+    );
+  }
+  for (const principle of input.designPrinciples ?? []) {
+    contextTrace.push(
+      trace({
+        objectType: "design-principle",
+        objectId: principle.principleId,
+        layer: "graph-context",
+        fieldPath: "statement",
+        valueSummary: principle.statement,
+        decision: "included",
+        metadata: { priority: principle.priority }
+      })
+    );
+  }
+  for (const motif of input.contextMotifs ?? []) {
+    contextTrace.push(
+      trace({
+        objectType: "context-motif",
+        objectId: motif.motifId,
+        layer: "graph-context",
+        fieldPath: "statement",
+        valueSummary: motif.statement,
+        decision: "included",
+        metadata: { motifType: motif.motifType }
+      })
+    );
+  }
+  for (const reference of input.contextReferences ?? []) {
+    referenceTrace.push(
+      trace({
+        objectType: "context-reference",
+        objectId: reference.referenceId,
+        layer: "context-references",
+        fieldPath: "sourceRef",
+        valueSummary: `${reference.referenceType}:${reference.sourceRef.type}:${reference.sourceRef.id}`,
+        decision: reference.referenceRole === "negative" ? "excluded" : "included",
+        metadata: { referenceRole: reference.referenceRole, useFor: reference.useFor, doNotUseFor: reference.doNotUseFor }
+      })
+    );
+  }
+  for (const rubric of input.contextReviewRubrics ?? []) {
+    contextTrace.push(
+      trace({
+        objectType: "context-review-rubric",
+        objectId: rubric.rubricId,
+        layer: "phenotype-context",
+        fieldPath: "question",
+        valueSummary: rubric.question,
+        decision: "included",
+        metadata: { dimension: rubric.dimension, severity: rubric.severity }
+      })
+    );
+  }
+  for (const suggestion of input.llmSuggestions ?? []) {
+    decisionTrace.push(
+      trace({
+        objectType: "llm-suggestion",
+        objectId: `${input.artifactId}:${suggestion.fieldPath}`,
+        layer: "graph-context",
+        fieldPath: suggestion.fieldPath,
+        valueSummary: suggestion.valueSummary,
+        decision: "llm-suggested"
+      })
+    );
+    openQuestions.push(`Review LLM suggestion before writing ${suggestion.fieldPath}.`);
+  }
+
+  return {
+    artifactId: input.artifactId,
+    compileTarget: "species-snapshot",
+    graphId: input.graph.graphId,
+    speciesNodeId: input.node.nodeId,
+    nodeVersionId: input.nodeVersionId,
+    compilePolicy,
+    compileScope,
+    resolvedGeneSnapshot,
+    candidateGenes,
+    conflictReport,
+    sourceTrace,
+    contextTrace,
+    referenceTrace,
+    decisionTrace,
+    openQuestions,
+    createdAt: new Date().toISOString()
+  };
+}
+
+function phenotypeTypeGuidance(phenotypeType: string): string {
+  if (phenotypeType === "ui-icon") return "Prioritize small-size readability, clear silhouette, state clarity, and background adaptability.";
+  if (phenotypeType === "concept-art") return "Prioritize composition and mood exploration, material culture, and visual direction.";
+  if (phenotypeType === "model-brief") return "Prioritize structure, proportions, modular parts, and modeling feasibility.";
+  if (phenotypeType === "animation-brief") return "Prioritize motion rhythm, key poses, timing, and readable transitions.";
+  if (phenotypeType === "runtime-asset") return "Prioritize export specifications, engine constraints, size, format, and runtime naming.";
+  return `Adapt output for phenotype type ${phenotypeType}.`;
+}
+
+export function compilePhenotypeGeneration(input: CompilePhenotypeGenerationInput): PhenotypeCompileArtifact {
+  const compileScope = defaultCompileScope(input.compileScope);
+  const resolvedGeneSnapshot = input.speciesArtifact?.resolvedGeneSnapshot ?? input.resolvedGeneSnapshot ?? {};
+  const sourceTrace = [
+    ...(input.speciesArtifact?.sourceTrace ?? []),
+    trace({
+      objectType: "task-brief",
+      objectId: input.artifactId,
+      layer: "task-brief",
+      fieldPath: "taskBrief",
+      valueSummary: input.taskBrief,
+      decision: "included"
+    })
+  ];
+  const contextTrace = [...(input.speciesArtifact?.contextTrace ?? [])];
+  const referenceTrace = [...(input.speciesArtifact?.referenceTrace ?? [])];
+  const rubricTrace: TraceEntry[] = [];
+  const decisionTrace = [...(input.speciesArtifact?.decisionTrace ?? [])];
+  const negativeParts: string[] = [];
+  const reviewChecklist = (input.contextReviewRubrics ?? []).map((rubric) => {
+    rubricTrace.push(
+      trace({
+        objectType: "context-review-rubric",
+        objectId: rubric.rubricId,
+        layer: "phenotype-context",
+        fieldPath: "question",
+        valueSummary: rubric.question,
+        decision: "included",
+        metadata: { dimension: rubric.dimension, severity: rubric.severity }
+      })
+    );
+    return {
+      rubricId: rubric.rubricId,
+      dimension: rubric.dimension,
+      question: rubric.question,
+      severity: rubric.severity
+    };
+  });
+
+  for (const reference of input.contextReferences ?? []) {
+    const isNegative = reference.referenceRole === "negative" || reference.referenceType === "badcase";
+    if (isNegative) negativeParts.push(...reference.doNotUseFor);
+    referenceTrace.push(
+      trace({
+        objectType: "context-reference",
+        objectId: reference.referenceId,
+        layer: "context-references",
+        fieldPath: "sourceRef",
+        valueSummary: `${reference.referenceType}:${reference.sourceRef.type}:${reference.sourceRef.id}`,
+        decision: isNegative ? "excluded" : "included",
+        metadata: { referenceRole: reference.referenceRole, useFor: reference.useFor, doNotUseFor: reference.doNotUseFor }
+      })
+    );
+  }
+
+  const geneSummary = Object.entries(resolvedGeneSnapshot)
+    .map(([key, value]) => `${key}=${summarizeValue(value)}`)
+    .join("; ");
+  const typeGuidance = phenotypeTypeGuidance(input.phenotypeType);
+  const prompt = [
+    "Design Network Atlas phenotype generation.",
+    `Phenotype type: ${input.phenotypeType}.`,
+    `Species: ${input.node.name}.`,
+    `Task: ${input.taskBrief}.`,
+    typeGuidance,
+    geneSummary ? `Resolved genes: ${geneSummary}.` : "Resolved genes: none.",
+    contextTrace.length ? `Context trace: ${contextTrace.map((entry) => `${entry.objectType}:${entry.objectId}`).join(", ")}.` : ""
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  return {
+    artifactId: input.artifactId,
+    compileTarget: "phenotype-generation",
+    graphId: input.graph.graphId,
+    speciesNodeId: input.node.nodeId,
+    nodeVersionId: input.nodeVersionId,
+    phenotypeType: input.phenotypeType,
+    taskBrief: input.taskBrief,
+    speciesCompileArtifactId: input.speciesArtifact?.artifactId,
+    compilePolicy: input.node.compilePolicy ?? input.graph.compilePolicy,
+    compileScope,
+    resolvedGeneSnapshot,
+    conflictReport: input.speciesArtifact?.conflictReport ?? [],
+    sourceTrace,
+    contextTrace,
+    referenceTrace,
+    rubricTrace,
+    decisionTrace,
+    prompt,
+    negativePrompt: [...new Set(negativeParts)].join(", "),
+    artBrief: `Produce ${input.phenotypeType} for ${input.node.name}. ${typeGuidance} ${input.taskBrief}`.trim(),
+    reviewChecklist,
+    generationConstraints: input.generationConstraints ?? {},
+    openQuestions: input.speciesArtifact?.openQuestions ?? [],
+    createdAt: new Date().toISOString()
+  };
+}
+
+export function checkCompileArtifactOutdated(
+  artifact: SpeciesCompileArtifact | PhenotypeCompileArtifact,
+  changed: CompileOutdatedCheckInput
+): CompileOutdatedCheckResult {
+  const traces = [
+    ...artifact.sourceTrace,
+    ...artifact.contextTrace,
+    ...artifact.referenceTrace,
+    ...("rubricTrace" in artifact ? artifact.rubricTrace : []),
+    ...artifact.decisionTrace
+  ];
+  const matchedTrace = traces.filter((entry) => {
+    if (entry.objectType !== changed.objectType || entry.objectId !== changed.objectId) return false;
+    if (!changed.versionId) return true;
+    return !entry.versionId || entry.versionId !== changed.versionId;
+  });
+  return {
+    outdated: matchedTrace.length > 0,
+    reasons: matchedTrace.map((entry) => `${entry.objectType}:${entry.objectId} changed after compile trace ${entry.fieldPath}`),
+    matchedTrace
+  };
 }
 
 export function compileSpecies(input: CompileSpeciesInput): CompileSpeciesResult {

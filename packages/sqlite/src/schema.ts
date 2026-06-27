@@ -246,6 +246,26 @@ export const phenotypeVersions = sqliteTable("phenotype_versions", {
   createdAt: text("created_at").notNull()
 });
 
+export const speciesCompileArtifacts = sqliteTable("species_compile_artifacts", {
+  artifactId: text("artifact_id").primaryKey(),
+  graphId: text("graph_id").notNull(),
+  speciesNodeId: text("species_node_id").notNull(),
+  nodeVersionId: text("node_version_id").notNull(),
+  payload: text("payload", { mode: "json" }).notNull(),
+  createdAt: text("created_at").notNull()
+});
+
+export const phenotypeCompileArtifacts = sqliteTable("phenotype_compile_artifacts", {
+  artifactId: text("artifact_id").primaryKey(),
+  graphId: text("graph_id").notNull(),
+  speciesNodeId: text("species_node_id").notNull(),
+  nodeVersionId: text("node_version_id").notNull(),
+  phenotypeType: text("phenotype_type").notNull(),
+  speciesCompileArtifactId: text("species_compile_artifact_id"),
+  payload: text("payload", { mode: "json" }).notNull(),
+  createdAt: text("created_at").notNull()
+});
+
 export const assets = sqliteTable("assets", {
   assetId: text("asset_id").primaryKey(),
   linkedObjectType: text("linked_object_type").notNull(),

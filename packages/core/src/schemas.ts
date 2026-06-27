@@ -8,7 +8,15 @@ export const GraphStatusSchema = z.enum(["draft", "active", "archived"]);
 export const NodeStatusSchema = z.enum(["draft", "active", "deprecated", "archived"]);
 export const EdgeStatusSchema = z.enum(["draft", "active", "deprecated", "archived"]);
 export const LineageStatusSchema = z.enum(["complete", "species-first", "needs-edge", "needs-review", "multi-origin"]);
-export const ParentRoleSchema = z.enum(["primary", "fusion", "reference", "constraint", "variant-source"]);
+export const ParentRoleSchema = z.enum([
+  "primary",
+  "style",
+  "function",
+  "reference",
+  "fusion",
+  "constraint",
+  "variant-source"
+]);
 export const EdgeTypeSchema = z.enum([
   "inherit",
   "specialize",
@@ -138,6 +146,27 @@ export const ContextReviewParticipationSchema = z.enum(["none", "include"]);
 export const ContextImpactParticipationSchema = z.enum(["none", "outdated-check", "trace"]);
 export const ContextPrioritySchema = z.enum(["low", "normal", "high"]);
 export const ContextResolutionRuleSchema = z.enum(["preserve", "merge", "weaken", "translate", "exclude", "manual"]);
+export const CompileTargetSchema = z.enum(["species-snapshot", "phenotype-generation"]);
+export const AtlasScopeSchema = z.enum(["none", "direct", "relevant"]);
+export const CompileLayerSchema = z.enum([
+  "atlas-foundation",
+  "atlas-context",
+  "graph-foundation",
+  "graph-context",
+  "graph-bridge-facts",
+  "species-group-rules",
+  "group-context",
+  "context-references",
+  "template-dimensions",
+  "parent-snapshots",
+  "evolution-edge-deltas",
+  "node-own-genes",
+  "phenotype-type-requirements",
+  "phenotype-context",
+  "task-brief"
+]);
+export const ResolutionRuleSchema = z.enum(["override", "preserve", "merge", "weaken", "translate", "exclude", "manual", "llm-review"]);
+export const TraceDecisionSchema = z.enum(["included", "excluded", "weakened", "translated", "merged", "manual", "llm-suggested"]);
 export const SpeciesGroupTypeSchema = z.enum(["domain", "family", "collection", "layer", "system"]);
 export const SpeciesGroupMembershipRoleSchema = z.enum(["primary", "reference", "bridge", "source", "target"]);
 export const FacetValueTypeSchema = z.enum(["string", "number", "boolean", "enum", "json"]);
@@ -252,6 +281,7 @@ export const CompilePolicySchema = z.object({
     "system-rule-first",
     "snapshot-fixed",
     "dynamic-assembly",
+    "layered-resolution",
     "llm-conflict-resolution",
     "manual-resolution",
     "hybrid"
@@ -678,6 +708,93 @@ export const PhenotypeVersionSchema = z.object({
   createdAt: IsoDateSchema
 });
 
+export const CompileScopeSchema = z.object({
+  includeDirectAttachments: z.boolean().default(true),
+  includeInheritedContext: z.boolean().default(true),
+  includeGroupRelations: z.boolean().default(true),
+  includeGraphBridges: z.boolean().default(true),
+  includeReferencedPhenotypes: z.boolean().default(false),
+  atlasScope: AtlasScopeSchema.default("none"),
+  maxReferenceDepth: z.number().int().min(0).default(1),
+  reasons: z.array(z.string()).default([])
+});
+
+export const TraceEntrySchema = z.object({
+  objectType: z.string().min(1),
+  objectId: z.string().min(1),
+  versionId: z.string().optional(),
+  layer: CompileLayerSchema,
+  fieldPath: z.string().min(1),
+  valueSummary: z.string().default(""),
+  decision: TraceDecisionSchema,
+  metadata: JsonRecordSchema
+});
+
+export const CompileConflictSchema = z.object({
+  key: z.string().min(1),
+  previousValue: z.unknown(),
+  nextValue: z.unknown(),
+  source: z.string().min(1),
+  layer: CompileLayerSchema,
+  resolutionRule: ResolutionRuleSchema,
+  parentRole: ParentRoleSchema.optional(),
+  decision: TraceDecisionSchema.default("included")
+});
+
+export const ReviewChecklistItemSchema = z.object({
+  rubricId: z.string().optional(),
+  dimension: z.string().min(1),
+  question: z.string().min(1),
+  severity: ContextReviewSeveritySchema.default("info"),
+  sourceTraceId: z.string().optional()
+});
+
+export const SpeciesCompileArtifactSchema = z.object({
+  artifactId: z.string().min(1),
+  compileTarget: z.literal("species-snapshot"),
+  graphId: z.string().min(1),
+  speciesNodeId: z.string().min(1),
+  nodeVersionId: z.string().min(1),
+  compilePolicy: CompilePolicySchema,
+  compileScope: CompileScopeSchema,
+  resolvedGeneSnapshot: JsonRecordSchema,
+  candidateGenes: JsonRecordSchema,
+  conflictReport: z.array(CompileConflictSchema).default([]),
+  sourceTrace: z.array(TraceEntrySchema).default([]),
+  contextTrace: z.array(TraceEntrySchema).default([]),
+  referenceTrace: z.array(TraceEntrySchema).default([]),
+  decisionTrace: z.array(TraceEntrySchema).default([]),
+  openQuestions: z.array(z.string()).default([]),
+  createdAt: IsoDateSchema
+});
+
+export const PhenotypeCompileArtifactSchema = z.object({
+  artifactId: z.string().min(1),
+  compileTarget: z.literal("phenotype-generation"),
+  graphId: z.string().min(1),
+  speciesNodeId: z.string().min(1),
+  nodeVersionId: z.string().min(1),
+  phenotypeType: z.string().min(1),
+  taskBrief: z.string().default(""),
+  speciesCompileArtifactId: z.string().optional(),
+  compilePolicy: CompilePolicySchema,
+  compileScope: CompileScopeSchema,
+  resolvedGeneSnapshot: JsonRecordSchema,
+  conflictReport: z.array(CompileConflictSchema).default([]),
+  sourceTrace: z.array(TraceEntrySchema).default([]),
+  contextTrace: z.array(TraceEntrySchema).default([]),
+  referenceTrace: z.array(TraceEntrySchema).default([]),
+  rubricTrace: z.array(TraceEntrySchema).default([]),
+  decisionTrace: z.array(TraceEntrySchema).default([]),
+  prompt: z.string().default(""),
+  negativePrompt: z.string().default(""),
+  artBrief: z.string().default(""),
+  reviewChecklist: z.array(ReviewChecklistItemSchema).default([]),
+  generationConstraints: JsonRecordSchema,
+  openQuestions: z.array(z.string()).default([]),
+  createdAt: IsoDateSchema
+});
+
 export const AssetIndexSchema = z.object({
   assetId: z.string().min(1),
   uri: z.string().min(1),
@@ -697,6 +814,8 @@ export const AssetIndexSchema = z.object({
     "facet-schema",
     "phenotype",
     "phenotype-version",
+    "species-compile-artifact",
+    "phenotype-compile-artifact",
     "generation-job"
   ]),
   linkedObjectId: z.string().min(1),
@@ -863,7 +982,9 @@ export const ReviewRecordSchema = z.object({
     "design-principle",
     "context-motif",
     "context-reference",
-    "context-review-rubric"
+    "context-review-rubric",
+    "species-compile-artifact",
+    "phenotype-compile-artifact"
   ]),
   objectId: z.string().min(1),
   status: ReviewStatusSchema,
@@ -883,7 +1004,7 @@ export const ImpactRecordSchema = z.object({
   changedObjectType: z.enum(["node", "edge", "species-group", "graph-bridge", "design-context"]),
   changedObjectId: z.string().min(1),
   changedVersionId: z.string().min(1),
-  objectType: z.enum(["graph", "node", "species-group", "phenotype-version"]),
+  objectType: z.enum(["graph", "node", "species-group", "phenotype-version", "species-compile-artifact", "phenotype-compile-artifact"]),
   objectId: z.string().min(1),
   reason: z.string().min(1),
   suggestedAction: z.string().min(1),
@@ -932,6 +1053,12 @@ export type EvolutionEdge = z.infer<typeof EvolutionEdgeSchema>;
 export type EdgeVersion = z.infer<typeof EdgeVersionSchema>;
 export type Phenotype = z.infer<typeof PhenotypeSchema>;
 export type PhenotypeVersion = z.infer<typeof PhenotypeVersionSchema>;
+export type CompileScope = z.infer<typeof CompileScopeSchema>;
+export type TraceEntry = z.infer<typeof TraceEntrySchema>;
+export type CompileConflict = z.infer<typeof CompileConflictSchema>;
+export type ReviewChecklistItem = z.infer<typeof ReviewChecklistItemSchema>;
+export type SpeciesCompileArtifact = z.infer<typeof SpeciesCompileArtifactSchema>;
+export type PhenotypeCompileArtifact = z.infer<typeof PhenotypeCompileArtifactSchema>;
 export type AssetIndex = z.infer<typeof AssetIndexSchema>;
 export type OutputReference = z.infer<typeof OutputReferenceSchema>;
 export type PhenotypeLibrary = z.infer<typeof PhenotypeLibrarySchema>;
