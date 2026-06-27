@@ -34,6 +34,7 @@ DNA is not primarily a binary asset store or a prompt notebook. Product requirem
 - Define acceptance criteria that a tester can verify without guessing.
 - Flag PRD gaps that materially affect implementation safety.
 - Produce a developer handoff that states what is in scope, out of scope, and blocked.
+- For issue intake work, if PM PRD notes are complete, accepted, and have no material open confirmation points, directly hand the issue batch to the Developer Agent for implementation, testing, commit, and push. Keep all issue product/development/test notes in the intake document designated for that batch.
 
 ## PRD Output Contract
 

@@ -45,6 +45,7 @@ describe("Phase 18 PRD-02 design context CLI", () => {
     runDna([
       "--db",
       db,
+      "--yes",
       "context",
       "fact",
       "add",
@@ -62,6 +63,7 @@ describe("Phase 18 PRD-02 design context CLI", () => {
     runDna([
       "--db",
       db,
+      "--yes",
       "context",
       "principle",
       "add",
@@ -77,6 +79,7 @@ describe("Phase 18 PRD-02 design context CLI", () => {
     runDna([
       "--db",
       db,
+      "--yes",
       "context",
       "motif",
       "add",
@@ -90,6 +93,7 @@ describe("Phase 18 PRD-02 design context CLI", () => {
     runDna([
       "--db",
       db,
+      "--yes",
       "context",
       "reference",
       "add",
@@ -111,6 +115,7 @@ describe("Phase 18 PRD-02 design context CLI", () => {
     runDna([
       "--db",
       db,
+      "--yes",
       "context",
       "rubric",
       "add",

@@ -14,11 +14,6 @@ import {
   compilePhenotypeGeneration,
   compileSpeciesSnapshot,
   createDefaultAsset,
-  createDefaultContextFact,
-  createDefaultContextMotif,
-  createDefaultContextReference,
-  createDefaultContextReviewRubric,
-  createDefaultDesignPrinciple,
   createDefaultLibraryRoutingPolicy,
   createDefaultOutputReference,
   createDefaultExternalLibraryMapping,
@@ -267,6 +262,31 @@ graph.command("archive").requiredOption("--id <graphId>", "graph id").action((op
   console.log(`archived graph ${options.id}`);
   store.close();
 });
+graph
+  .command("reset")
+  .requiredOption("--id <graphId>", "graph id")
+  .option("--confirm-reset <graphId>", "exact graph id required with --yes")
+  .action((options, command) => {
+    const store = openStore(command);
+    const services = createDnaServices(store);
+    const rootOptions = (command as Command).optsWithGlobals<CommandOptions>();
+    if (!rootOptions.yes) {
+      const summary = services.graph.previewReset(options.id);
+      console.log("Graph reset preview");
+      console.log(JSON.stringify(summary, null, 2));
+      console.log(`Re-run with --yes --confirm-reset ${options.id} to reset DNA metadata for this local graph.`);
+      store.close();
+      return;
+    }
+    if (options.confirmReset !== options.id) {
+      store.close();
+      throw new Error(`graph reset requires --confirm-reset ${options.id}`);
+    }
+    const summary = services.graph.reset(options.id);
+    console.log(`reset graph ${options.id}`);
+    console.log(JSON.stringify(summary, null, 2));
+    store.close();
+  });
 
 const template = program.command("template").description("Manage gene templates");
 template.command("install-builtins").action((_options, command) => {
@@ -722,34 +742,41 @@ context.command("show").requiredOption("--id <contextId>", "design context id").
 const contextFact = context.command("fact").description("Manage structured context facts");
 contextFact
   .command("add")
-  .requiredOption("--id <factId>", "fact id")
-  .requiredOption("--type <factType>", "fact type")
-  .requiredOption("--statement <statement>", "fact statement")
+  .option("--id <factId>", "fact id")
+  .option("--type <factType>", "fact type")
+  .option("--statement <statement>", "fact statement")
   .option("--scope <scopeHint>", "scope hint", "")
   .option("--strength <strength>", "hard, soft, or reference", "reference")
   .option("--behavior <behavior>", "include, weaken, translate, exclude, or reference-only", "reference-only")
   .option("--source <sourceTrace>", "source trace", collect, [])
   .action((options, command) => {
     const store = openStore(command);
-    const value = createDefaultContextFact({
-      factId: options.id,
-      factType: options.type,
-      statement: options.statement,
-      scopeHint: options.scope,
-      defaultStrength: options.strength,
-      defaultBehaviorHint: options.behavior,
-      sourceTrace: options.source
-    });
-    store.contextFacts.create(value);
-    console.log(`created context fact ${value.factId}`);
+    const services = createDnaServices(store);
+    const result = services.context.createFact(
+      {
+        factId: requiredUnlessChangeSetApply(options.id, "--id", command),
+        factType: requiredUnlessChangeSetApply(options.type, "--type", command),
+        statement: requiredUnlessChangeSetApply(options.statement, "--statement", command),
+        scopeHint: options.scope,
+        defaultStrength: options.strength,
+        defaultBehaviorHint: options.behavior,
+        sourceTrace: options.source
+      },
+      writeOptions(command)
+    );
+    if (result.changeSet.status === "preview") {
+      printChangeSet(result.changeSet);
+    } else {
+      console.log(`created context fact ${result.value.factId}`);
+    }
     store.close();
   });
 
 const contextPrinciple = context.command("principle").description("Manage design principles");
 contextPrinciple
   .command("add")
-  .requiredOption("--id <principleId>", "principle id")
-  .requiredOption("--statement <statement>", "principle statement")
+  .option("--id <principleId>", "principle id")
+  .option("--statement <statement>", "principle statement")
   .option("--priority <priority>", "must, should, or may", "should")
   .option("--scope <scopeHint>", "scope hint", "")
   .option("--behavior <behavior>", "default behavior hint", "reference-only")
@@ -760,54 +787,68 @@ contextPrinciple
   .option("--badcase <badcase>", "badcase", collect, [])
   .action((options, command) => {
     const store = openStore(command);
-    const value = createDefaultDesignPrinciple({
-      principleId: options.id,
-      statement: options.statement,
-      priority: options.priority,
-      scopeHint: options.scope,
-      defaultBehaviorHint: options.behavior,
-      experienceIntent: options.experienceIntent,
-      readabilityGoal: options.readabilityGoal,
-      platformContext: options.platformContext,
-      reviewQuestions: options.reviewQuestion,
-      badcases: options.badcase
-    });
-    store.designPrinciples.create(value);
-    console.log(`created design principle ${value.principleId}`);
+    const services = createDnaServices(store);
+    const result = services.context.createPrinciple(
+      {
+        principleId: requiredUnlessChangeSetApply(options.id, "--id", command),
+        statement: requiredUnlessChangeSetApply(options.statement, "--statement", command),
+        priority: options.priority,
+        scopeHint: options.scope,
+        defaultBehaviorHint: options.behavior,
+        experienceIntent: options.experienceIntent,
+        readabilityGoal: options.readabilityGoal,
+        platformContext: options.platformContext,
+        reviewQuestions: options.reviewQuestion,
+        badcases: options.badcase
+      },
+      writeOptions(command)
+    );
+    if (result.changeSet.status === "preview") {
+      printChangeSet(result.changeSet);
+    } else {
+      console.log(`created design principle ${result.value.principleId}`);
+    }
     store.close();
   });
 
 const contextMotif = context.command("motif").description("Manage context motifs");
 contextMotif
   .command("add")
-  .requiredOption("--id <motifId>", "motif id")
-  .requiredOption("--type <motifType>", "motif type")
-  .requiredOption("--statement <statement>", "motif statement")
+  .option("--id <motifId>", "motif id")
+  .option("--type <motifType>", "motif type")
+  .option("--statement <statement>", "motif statement")
   .option("--source-ref <sourceRef>", "source reference")
   .option("--visual-motif-ref <visualMotifRef>", "visual motif reference")
   .option("--note <note>", "note", "")
   .action((options, command) => {
     const store = openStore(command);
-    const value = createDefaultContextMotif({
-      motifId: options.id,
-      motifType: options.type,
-      statement: options.statement,
-      sourceRef: options.sourceRef,
-      visualMotifRef: options.visualMotifRef,
-      note: options.note
-    });
-    store.contextMotifs.create(value);
-    console.log(`created context motif ${value.motifId}`);
+    const services = createDnaServices(store);
+    const result = services.context.createMotif(
+      {
+        motifId: requiredUnlessChangeSetApply(options.id, "--id", command),
+        motifType: requiredUnlessChangeSetApply(options.type, "--type", command),
+        statement: requiredUnlessChangeSetApply(options.statement, "--statement", command),
+        sourceRef: options.sourceRef,
+        visualMotifRef: options.visualMotifRef,
+        note: options.note
+      },
+      writeOptions(command)
+    );
+    if (result.changeSet.status === "preview") {
+      printChangeSet(result.changeSet);
+    } else {
+      console.log(`created context motif ${result.value.motifId}`);
+    }
     store.close();
   });
 
 const contextReference = context.command("reference").description("Manage context references");
 contextReference
   .command("add")
-  .requiredOption("--id <referenceId>", "reference id")
-  .requiredOption("--type <referenceType>", "reference type")
-  .requiredOption("--source-type <sourceType>", "source reference type")
-  .requiredOption("--source-id <sourceId>", "source reference id")
+  .option("--id <referenceId>", "reference id")
+  .option("--type <referenceType>", "reference type")
+  .option("--source-type <sourceType>", "source reference type")
+  .option("--source-id <sourceId>", "source reference id")
   .option("--role <referenceRole>", "positive, negative, mood, evidence, or decision", "evidence")
   .option("--use-for <value>", "what this reference is safe to use for", collect, [])
   .option("--do-not-use-for <value>", "what this reference must not be used for", collect, [])
@@ -815,42 +856,59 @@ contextReference
   .option("--risk <risk>", "risk note", collect, [])
   .action((options, command) => {
     const store = openStore(command);
-    const value = createDefaultContextReference({
-      referenceId: options.id,
-      referenceType: options.type,
-      sourceRef: { type: options.sourceType, id: options.sourceId },
-      referenceRole: options.role,
-      useFor: options.useFor,
-      doNotUseFor: options.doNotUseFor,
-      note: options.note,
-      risk: options.risk
-    });
-    store.contextReferences.create(value);
-    console.log(`created context reference ${value.referenceId}`);
+    const services = createDnaServices(store);
+    const result = services.context.createReference(
+      {
+        referenceId: requiredUnlessChangeSetApply(options.id, "--id", command),
+        referenceType: requiredUnlessChangeSetApply(options.type, "--type", command),
+        sourceRef: {
+          type: requiredUnlessChangeSetApply(options.sourceType, "--source-type", command),
+          id: requiredUnlessChangeSetApply(options.sourceId, "--source-id", command)
+        },
+        referenceRole: options.role,
+        useFor: options.useFor,
+        doNotUseFor: options.doNotUseFor,
+        note: options.note,
+        risk: options.risk
+      },
+      writeOptions(command)
+    );
+    if (result.changeSet.status === "preview") {
+      printChangeSet(result.changeSet);
+    } else {
+      console.log(`created context reference ${result.value.referenceId}`);
+    }
     store.close();
   });
 
 const contextRubric = context.command("rubric").description("Manage context review rubrics");
 contextRubric
   .command("add")
-  .requiredOption("--id <rubricId>", "rubric id")
-  .requiredOption("--dimension <dimension>", "review dimension")
-  .requiredOption("--question <question>", "review question")
+  .option("--id <rubricId>", "rubric id")
+  .option("--dimension <dimension>", "review dimension")
+  .option("--question <question>", "review question")
   .option("--pass-signal <signal>", "pass signal", "")
   .option("--fail-signal <signal>", "fail signal", "")
   .option("--severity <severity>", "info, warning, or blocking", "info")
   .action((options, command) => {
     const store = openStore(command);
-    const value = createDefaultContextReviewRubric({
-      rubricId: options.id,
-      dimension: options.dimension,
-      question: options.question,
-      passSignal: options.passSignal,
-      failSignal: options.failSignal,
-      severity: options.severity
-    });
-    store.contextReviewRubrics.create(value);
-    console.log(`created context review rubric ${value.rubricId}`);
+    const services = createDnaServices(store);
+    const result = services.context.createReviewRubric(
+      {
+        rubricId: requiredUnlessChangeSetApply(options.id, "--id", command),
+        dimension: requiredUnlessChangeSetApply(options.dimension, "--dimension", command),
+        question: requiredUnlessChangeSetApply(options.question, "--question", command),
+        passSignal: options.passSignal,
+        failSignal: options.failSignal,
+        severity: options.severity
+      },
+      writeOptions(command)
+    );
+    if (result.changeSet.status === "preview") {
+      printChangeSet(result.changeSet);
+    } else {
+      console.log(`created context review rubric ${result.value.rubricId}`);
+    }
     store.close();
   });
 
@@ -1528,7 +1586,89 @@ impact.command("list").requiredOption("--type <objectType>", "node or edge").req
   const store = openStore(command);
   console.log(JSON.stringify(store.impacts.listByChangedObject(options.type, options.id), null, 2));
   store.close();
+ });
+
+const proposal = program.command("proposal").description("Manage local proposal packages of preview change-sets");
+proposal
+  .command("create")
+  .option("--id <proposalId>", "proposal id")
+  .option("--title <title>", "proposal title")
+  .option("--summary <summary>", "proposal summary", "")
+  .option("--risk-note <note>", "proposal risk note", collect, [])
+  .option("--review-note <note>", "proposal review note", collect, [])
+  .action((options, command) => {
+    const store = openStore(command);
+    const services = createDnaServices(store);
+    const value = services.proposal.create({
+      proposalId: requiredOption(options.id, "--id"),
+      title: requiredOption(options.title, "--title"),
+      summary: options.summary,
+      riskNotes: options.riskNote,
+      reviewNotes: options.reviewNote
+    });
+    console.log(JSON.stringify(value, null, 2));
+    store.close();
+  });
+proposal.command("list").action((_options, command) => {
+  const store = openStore(command);
+  const services = createDnaServices(store);
+  console.log(JSON.stringify(services.proposal.list(), null, 2));
+  store.close();
 });
+proposal
+  .command("show")
+  .argument("<proposalId>", "proposal id")
+  .action((proposalId, _options, command) => {
+    const store = openStore(command);
+    const services = createDnaServices(store);
+    const value = services.proposal.get(proposalId);
+    if (!value) {
+      store.close();
+      throw new Error(`proposal not found: ${proposalId}`);
+    }
+    console.log(JSON.stringify({ proposal: value, review: services.proposal.show(proposalId) }, null, 2));
+    store.close();
+  });
+proposal
+  .command("add-change-set")
+  .argument("<proposalId>", "proposal id")
+  .option("--change-set <changeSetId>", "preview change-set id to add")
+  .action((proposalId, options, command) => {
+    const store = openStore(command);
+    const services = createDnaServices(store);
+    const changeSetId = options.changeSet ?? (command as Command).optsWithGlobals<CommandOptions>().changeSet;
+    console.log(JSON.stringify(services.proposal.addChangeSet(proposalId, requiredOption(changeSetId, "--change-set")), null, 2));
+    store.close();
+  });
+proposal
+  .command("review")
+  .argument("<proposalId>", "proposal id")
+  .action((proposalId, _options, command) => {
+    const store = openStore(command);
+    const services = createDnaServices(store);
+    console.log(JSON.stringify(services.proposal.review(proposalId), null, 2));
+    store.close();
+  });
+proposal
+  .command("apply")
+  .argument("<proposalId>", "proposal id")
+  .action((proposalId, _options, command) => {
+    const options = (command as Command).optsWithGlobals<CommandOptions>();
+    if (!options.yes) throw new Error("proposal apply requires --yes");
+    const store = openStore(command);
+    const services = createDnaServices(store);
+    console.log(JSON.stringify(services.proposal.apply(proposalId), null, 2));
+    store.close();
+  });
+proposal
+  .command("discard")
+  .argument("<proposalId>", "proposal id")
+  .action((proposalId, _options, command) => {
+    const store = openStore(command);
+    const services = createDnaServices(store);
+    console.log(JSON.stringify(services.proposal.discard(proposalId), null, 2));
+    store.close();
+  });
 
 const changeSet = program.command("changeset").alias("changesets").description("Review and manage preview change-sets");
 changeSet
@@ -1705,6 +1845,12 @@ function formatContextMapText(input: {
     name: string;
     contextType: string;
     summary: string;
+    status?: string;
+    confidence?: string;
+    owner?: string;
+    version?: string;
+    sourceRefs?: string[];
+    negativeBoundaries?: string[];
     factIds: string[];
     principleIds: string[];
     motifIds: string[];
@@ -1721,7 +1867,25 @@ function formatContextMapText(input: {
 }) {
   const contextValue = input.context;
   const lines = [`Design Context: ${contextValue.name} (${contextValue.contextId}) [${contextValue.contextType}]`];
-  if (contextValue.summary) lines.push(`Summary: ${contextValue.summary}`);
+  lines.push(`Summary: ${contextValue.summary ?? ""}`);
+  lines.push(`Status: ${contextValue.status ?? "none"}`);
+  lines.push(`Confidence: ${contextValue.confidence ?? "none"}`);
+  lines.push(`Owner: ${contextValue.owner ?? "none"}`);
+  lines.push(`Version: ${contextValue.version ?? "none"}`);
+
+  lines.push("Source Refs:");
+  if (!contextValue.sourceRefs?.length) {
+    lines.push("- none");
+  } else {
+    for (const sourceRef of contextValue.sourceRefs) lines.push(`- ${sourceRef}`);
+  }
+
+  lines.push("Negative Boundaries:");
+  if (!contextValue.negativeBoundaries?.length) {
+    lines.push("- none");
+  } else {
+    for (const boundary of contextValue.negativeBoundaries) lines.push(`- ${boundary}`);
+  }
 
   lines.push("Facts:");
   if (!input.facts.length) {

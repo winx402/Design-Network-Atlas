@@ -21,7 +21,7 @@ Read or ask for the current graph context before durable recommendations:
 - Existing Phenotype, PhenotypeVersion, SpeciesCompileArtifact, PhenotypeCompileArtifact, OutputReference, PhenotypeLibrary, and routing policy records when the change may affect generated results or storage.
 - Known review records and impact records.
 
-If context is partial, state what cannot be assessed and keep high-risk changes in proposal or change-set review.
+If context is partial, state what cannot be assessed and keep high-risk changes in a local proposal package or change-set review.
 
 ## Edit Scope Levels
 
@@ -54,7 +54,7 @@ Classify the edit before designing the patch:
 3. history gate: preserve understandable history; prefer archive, supersede, alias, or add over destructive rewrite when versions exist.
 4. impact gate: identify downstream nodes, edges, PhenotypeVersion outdated risk, review records, compile artifact staleness, and storage-routing effects.
 5. risk gate: assign low, medium, high, or structural risk using the scope levels above.
-6. execution gate: choose no-write diagnosis, preview-confirm, change-set review, proposal, draft-write, or direct audit write for generated trace/output/audit records.
+6. execution gate: choose no-write diagnosis, preview-confirm, change-set review, local proposal package, draft-write, or direct audit write for generated trace/output/audit records.
 
 ## Impact Rules
 
@@ -94,7 +94,7 @@ Return an edit proposal with these fields:
 - riskLevel: low, medium, high, or structural with concrete reason.
 - alternatives: safer or more expressive options when risk is not low.
 - compilePlan: whether SpeciesCompileArtifact or PhenotypeCompileArtifact should be refreshed, fixed, reviewed, or left unchanged.
-- writeStrategy: no-write diagnosis, preview-confirm, change-set review, proposal, draft-write, or direct audit write.
+- writeStrategy: no-write diagnosis, preview-confirm, change-set review, local proposal package, draft-write, or direct audit write.
 - reviewChecklist: what the user should confirm before apply.
 - assumptions: assumptions used.
 - blockingQuestions: questions that block a safe edit.
@@ -108,7 +108,7 @@ Return an edit proposal with these fields:
 - 影响分析 names downstream graph, context, compile artifact, result, review, and storage-routing consequences.
 - 风险等级 is tied to scope and downstream impact, not a generic label.
 - 替代方案 is provided for medium, high, or structural changes.
-- The write strategy stays reviewable through preview-confirm, change-set review, proposal, draft-write, or uses direct audit write only for generated trace/output/audit records.
+- The write strategy stays reviewable through preview-confirm, change-set review, local proposal package, draft-write, or uses direct audit write only for generated trace/output/audit records.
 
 ## Guardrails
 

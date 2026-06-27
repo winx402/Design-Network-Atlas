@@ -29,6 +29,7 @@ import {
   PhenotypeLibrary,
   PhenotypeLibraryGraphBinding,
   PhenotypeVersion,
+  Proposal,
   ReviewRecord,
   SpeciesGroup,
   SpeciesCompileArtifact,
@@ -43,6 +44,14 @@ export interface StorageEngine {
   migrate(): void;
   transaction<T>(fn: () => T): T;
   close(): void;
+}
+
+export interface GraphResetSummary {
+  graphId: string;
+  exists: boolean;
+  counts: Record<string, number>;
+  warnings: string[];
+  externalAssetsTouched: false;
 }
 
 export interface GraphRepository {
@@ -317,6 +326,13 @@ export interface ChangeSetRepository {
   update(changeSet: ChangeSet): void;
   get(changeSetId: string): ChangeSet | undefined;
   list(): ChangeSet[];
+}
+
+export interface ProposalRepository {
+  create(proposal: Proposal): void;
+  update(proposal: Proposal): void;
+  get(proposalId: string): Proposal | undefined;
+  list(): Proposal[];
 }
 
 export * from "./memory.js";

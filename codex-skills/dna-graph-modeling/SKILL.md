@@ -58,7 +58,7 @@ Run these gates in order. If a gate cannot be answered, mark it as a blocking or
 7. facet gate: define facets only for reusable dimensions with a value strategy, not one-off notes.
 8. compile gate: decide whether species should compile through system rules, fixed snapshots, Agent-assisted conflict review, or a hybrid policy.
 9. clarity gate: separate assumptions, blockingQuestions, nonBlockingQuestions, draftFields, and confidence.
-10. execution gate: choose preview-confirm, change-set review, proposal, draft-write, or direct audit write for generated trace/output/audit records.
+10. execution gate: choose preview-confirm, change-set review, local proposal package, draft-write, or direct audit write for generated trace/output/audit records.
 
 ## Modeling Workflow
 
@@ -93,7 +93,7 @@ Run these gates in order. If a gate cannot be answered, mark it as a blocking or
 6. Pick the write strategy.
    - Use preview-confirm for normal single-object writes.
    - Use change-set review for several related node/edge/template edits.
-   - Use proposal for initial multi-node trees, group systems, bridges, or high-uncertainty modeling.
+   - Use a local proposal package for initial multi-node trees, group systems, bridges, or high-uncertainty modeling that should review several preview change-sets together.
    - Use draft-write only when the user wants visible but non-final graph objects or explicitly draft generated trace/output records.
    - Use direct audit write only for generated trace/output/audit records and external pointers through CLI/application service boundaries.
 
@@ -111,7 +111,7 @@ Return a structured modeling proposal with these fields:
 - facetTemplatePlan: required, recommended, and optional facets with value strategy.
 - phenotypePlan: generated result types, expected variants, review needs, and output/library routing.
 - compilePlan: suggested CompilePolicy, compileMode, conflict strategy, expected SpeciesCompileArtifact and PhenotypeCompileArtifact contents.
-- writeStrategy: preview-confirm, change-set review, proposal, draft-write, or direct audit write with reason.
+- writeStrategy: preview-confirm, change-set review, local proposal package, draft-write, or direct audit write with reason.
 - assumptions: facts treated as assumptions.
 - blockingQuestions: questions that materially change graph structure or write safety.
 - nonBlockingQuestions: questions that can remain unresolved for a draft or preview.
@@ -125,7 +125,7 @@ Return a structured modeling proposal with these fields:
 - Facets are reusable dimensions with a value strategy.
 - Context facts and motifs stay separate from reusable facets.
 - Phenotype and phenotype library decisions stay decoupled from graph identity.
-- The write strategy explains why it is preview-confirm, change-set review, proposal, draft-write, or direct audit write.
+- The write strategy explains why it is preview-confirm, change-set review, local proposal package, draft-write, or direct audit write.
 - `待确认问题` contains only questions that materially change the graph model or write safety.
 
 ## Guardrails
@@ -134,5 +134,5 @@ Return a structured modeling proposal with these fields:
 - Do not turn a single generated image, prompt, file variant, size, or angle into a SpeciesNode.
 - Do not hide storage concerns inside graph identity; bind graphs and result libraries explicitly.
 - Do not treat custom relation types as fixed compile rules. They can be included as trace/context for Agent-assisted compile.
-- Do not bypass DNA service, CLI, change-set, or proposal write flows.
+- Do not bypass DNA service, CLI, change-set, or local proposal package write flows.
 - Do not store API keys, credentials, complete private links, raw Agent host responses, or unrelated private project material.

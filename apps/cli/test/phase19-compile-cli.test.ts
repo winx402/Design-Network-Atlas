@@ -46,6 +46,7 @@ describe("Phase 19 PRD-03 compile CLI", () => {
     runDna([
       "--db",
       db,
+      "--yes",
       "context",
       "reference",
       "add",
@@ -67,6 +68,7 @@ describe("Phase 19 PRD-03 compile CLI", () => {
     runDna([
       "--db",
       db,
+      "--yes",
       "context",
       "rubric",
       "add",

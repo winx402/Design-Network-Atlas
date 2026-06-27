@@ -35,6 +35,7 @@ import {
   PhenotypeLibraryGraphBinding,
   PROJECT_VERSION,
   PhenotypeVersion,
+  Proposal,
   ReviewRecord,
   SpeciesGroup,
   SpeciesCompileArtifact,
@@ -65,6 +66,7 @@ import {
   GenerationJobRepository,
   GraphBridgeRepository,
   GraphRepository,
+  GraphResetSummary,
   ImpactRepository,
   LibraryRoutingPolicyRepository,
   LineageRepository,
@@ -75,6 +77,7 @@ import {
   PhenotypeLibraryGraphBindingRepository,
   PhenotypeLibraryRepository,
   PhenotypeVersionRepository,
+  ProposalRepository,
   ReviewRepository,
   SearchRepository,
   SpeciesGroupMembershipRepository,
@@ -135,11 +138,13 @@ export const RUNTIME_SQLITE_TABLES = [
   "impact_records",
   "tags",
   "object_tags",
-  "change_sets"
+  "change_sets",
+  "proposals"
 ] as const;
 
 const EXCHANGE_CAPABILITIES = [
   "change-sets",
+  "proposals",
   "facets",
   "contexts",
   "templates",
@@ -264,6 +269,7 @@ export class SqliteDnaStore implements StorageEngine {
   readonly impacts: ImpactRepository;
   readonly search: SearchRepository;
   readonly changeSets: ChangeSetRepository;
+  readonly proposals: ProposalRepository;
 
   constructor(readonly dbPath: string) {
     mkdirSync(dirname(dbPath), { recursive: true });
@@ -307,6 +313,7 @@ export class SqliteDnaStore implements StorageEngine {
     this.impacts = new SqliteImpactRepository(this);
     this.search = { assets: (filter) => this.assets.search(filter) };
     this.changeSets = new SqliteChangeSetRepository(this);
+    this.proposals = new SqliteProposalRepository(this);
   }
 
   migrate(): void {
@@ -700,6 +707,13 @@ export class SqliteDnaStore implements StorageEngine {
         created_at TEXT NOT NULL,
         applied_at TEXT
       );
+      CREATE TABLE IF NOT EXISTS proposals (
+        proposal_id TEXT PRIMARY KEY,
+        status TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
     `);
     repairSqliteLibraryGraphIds(this);
   }
@@ -716,9 +730,233 @@ export class SqliteDnaStore implements StorageEngine {
     }
   }
 
+  previewGraphReset(graphId: string): GraphResetSummary {
+    return summarizeSqliteGraphReset(this, graphId);
+  }
+
+  resetGraph(graphId: string): GraphResetSummary {
+    return this.transaction(() => {
+      const summary = summarizeSqliteGraphReset(this, graphId);
+      applySqliteGraphReset(this, graphId);
+      return summary;
+    });
+  }
+
   close(): void {
     this.db.close();
   }
+}
+
+function summarizeSqliteGraphReset(store: SqliteDnaStore, graphId: string): GraphResetSummary {
+  const ids = collectSqliteGraphResetIds(store, graphId);
+  return {
+    graphId,
+    exists: Boolean(store.graphs.get(graphId)),
+    counts: {
+      graphs: store.graphs.get(graphId) ? 1 : 0,
+      nodes: ids.nodeIds.size,
+      nodeVersions: ids.nodeVersionIds.size,
+      edges: ids.edgeIds.size,
+      edgeVersions: ids.edgeVersionIds.size,
+      speciesGroups: ids.groupIds.size,
+      speciesGroupMemberships: ids.membershipIds.size,
+      speciesGroupRelations: ids.relationIds.size,
+      speciesCompileArtifacts: ids.speciesArtifactIds.size,
+      phenotypeCompileArtifacts: ids.phenotypeArtifactIds.size,
+      phenotypes: ids.phenotypeIds.size,
+      phenotypeVersions: ids.phenotypeVersionIds.size,
+      phenotypeVersionAssets: ids.phenotypeVersionAssetLinks,
+      assets: ids.assetIds.size,
+      generationJobs: ids.generationJobIds.size,
+      outputReferences: ids.outputReferenceIds.size,
+      reviewRecords: ids.reviewRecordIds.size,
+      impactRecords: ids.impactRecordIds.size,
+      graphBridges: ids.graphBridgeIds.size,
+      atlasGraphLinks: ids.atlasIds.size,
+      phenotypeLibraryGraphBindings: ids.libraryBindingIds.size,
+      phenotypeLibraryGraphIds: ids.libraryIds.size,
+      contextAttachments: ids.contextAttachmentIds.size,
+      changeSets: ids.changeSetIds.size,
+      proposals: ids.proposalIds.size
+    },
+    warnings: [],
+    externalAssetsTouched: false
+  };
+}
+
+function applySqliteGraphReset(store: SqliteDnaStore, graphId: string) {
+  const ids = collectSqliteGraphResetIds(store, graphId);
+  deleteRowsByIds(store, "proposals", "proposal_id", ids.proposalIds);
+  deleteRowsByIds(store, "context_attachments", "attachment_id", ids.contextAttachmentIds);
+  deleteRowsByIds(store, "change_sets", "change_set_id", ids.changeSetIds);
+  for (const assetId of ids.assetIds) {
+    store.db.prepare("DELETE FROM object_tags WHERE object_type = 'asset' AND object_id = ?").run(assetId);
+  }
+  deleteRowsByIds(store, "phenotype_version_assets", "phenotype_version_id", ids.phenotypeVersionIds);
+  deleteRowsByIds(store, "phenotype_version_assets", "asset_id", ids.assetIds);
+  deleteRowsByIds(store, "assets", "asset_id", ids.assetIds);
+  deleteRowsByIds(store, "output_references", "output_reference_id", ids.outputReferenceIds);
+  deleteRowsByIds(store, "generation_jobs", "generation_job_id", ids.generationJobIds);
+  deleteRowsByIds(store, "review_records", "review_record_id", ids.reviewRecordIds);
+  deleteRowsByIds(store, "impact_records", "impact_record_id", ids.impactRecordIds);
+  deleteRowsByIds(store, "phenotype_versions", "phenotype_version_id", ids.phenotypeVersionIds);
+  deleteRowsByIds(store, "phenotypes", "phenotype_id", ids.phenotypeIds);
+  deleteRowsByIds(store, "species_compile_artifacts", "artifact_id", ids.speciesArtifactIds);
+  deleteRowsByIds(store, "phenotype_compile_artifacts", "artifact_id", ids.phenotypeArtifactIds);
+  deleteRowsByIds(store, "node_versions", "node_version_id", ids.nodeVersionIds);
+  deleteRowsByIds(store, "edge_versions", "edge_version_id", ids.edgeVersionIds);
+  deleteRowsByIds(store, "edges", "edge_id", ids.edgeIds);
+  deleteRowsByIds(store, "species_group_memberships", "membership_id", ids.membershipIds);
+  deleteRowsByIds(store, "species_group_relations", "relation_id", ids.relationIds);
+  deleteRowsByIds(store, "species_groups", "group_id", ids.groupIds);
+  deleteRowsByIds(store, "graph_bridges", "bridge_id", ids.graphBridgeIds);
+  for (const atlasId of ids.atlasIds) {
+    const atlas = store.atlases.get(atlasId);
+    if (atlas) store.atlases.update({ ...atlas, graphIds: atlas.graphIds.filter((id) => id !== graphId), updatedAt: new Date().toISOString() });
+  }
+  deleteRowsByIds(store, "phenotype_library_graph_bindings", "binding_id", ids.libraryBindingIds);
+  for (const libraryId of ids.libraryIds) {
+    const library = store.phenotypeLibraries.get(libraryId);
+    if (library) {
+      store.phenotypeLibraries.update({
+        ...library,
+        graphIds: library.graphIds.filter((id) => id !== graphId),
+        updatedAt: new Date().toISOString()
+      });
+    }
+  }
+  deleteRowsByIds(store, "nodes", "node_id", ids.nodeIds);
+  store.db.prepare("DELETE FROM graphs WHERE graph_id = ?").run(graphId);
+}
+
+function collectSqliteGraphResetIds(store: SqliteDnaStore, graphId: string) {
+  const nodeIds = new Set(store.nodes.listByGraph(graphId).map((node) => node.nodeId));
+  const edgeIds = new Set(store.edges.listByGraph(graphId).map((edge) => edge.edgeId));
+  const groupIds = new Set(store.speciesGroups.listByGraph(graphId).map((group) => group.groupId));
+  const membershipIds = new Set(store.speciesGroupMemberships.listByGraph(graphId).map((membership) => membership.membershipId));
+  const relationIds = new Set(store.speciesGroupRelations.listByGraph(graphId).map((relation) => relation.relationId));
+  const nodeVersionIds = new Set(
+    parseRows<NodeVersion>(store.db.prepare("SELECT payload FROM node_versions WHERE graph_id = ?").all(graphId) as Row[]).map(
+      (version) => version.nodeVersionId
+    )
+  );
+  const edgeVersionIds = new Set(
+    parseRows<EdgeVersion>(store.db.prepare("SELECT payload FROM edge_versions WHERE graph_id = ?").all(graphId) as Row[]).map(
+      (version) => version.edgeVersionId
+    )
+  );
+  const speciesArtifactIds = new Set(store.speciesCompileArtifacts.listByGraph(graphId).map((artifact) => artifact.artifactId));
+  const phenotypeArtifactIds = new Set(store.phenotypeCompileArtifacts.listByGraph(graphId).map((artifact) => artifact.artifactId));
+  const phenotypeIds = new Set(store.phenotypes.listByGraph(graphId).map((phenotype) => phenotype.phenotypeId));
+  const phenotypeVersionRows = parseRows<PhenotypeVersion>(
+    store.db.prepare("SELECT payload FROM phenotype_versions WHERE graph_id = ?").all(graphId) as Row[]
+  );
+  const phenotypeVersionIds = new Set(phenotypeVersionRows.map((version) => version.phenotypeVersionId));
+  const phenotypeVersionAssetLinks = Number(
+    store.db
+      .prepare(`SELECT COUNT(*) AS count FROM phenotype_version_assets WHERE phenotype_version_id IN (${sqlPlaceholders(phenotypeVersionIds)})`)
+      .get(...[...phenotypeVersionIds])?.count ?? 0
+  );
+  const generationJobIds = new Set(store.generationJobs.listByGraph(graphId).map((job) => job.generationJobId));
+  const outputReferenceIds = new Set(store.outputReferences.listByGraph(graphId).map((reference) => reference.outputReferenceId));
+  const reviewRecordIds = new Set(store.reviews.listByGraph(graphId).map((review) => review.reviewRecordId));
+  const impactRecordIds = new Set(store.impacts.listByGraph(graphId).map((impact) => impact.impactRecordId));
+  const graphBridgeIds = new Set(store.graphBridges.listByGraph(graphId).map((bridge) => bridge.bridgeId));
+  const atlasIds = new Set(store.atlases.list().filter((atlas) => atlas.graphIds.includes(graphId)).map((atlas) => atlas.atlasId));
+  const libraryBindingIds = new Set(store.phenotypeLibraryGraphBindings.listByGraph(graphId).map((binding) => binding.bindingId));
+  const libraryIds = new Set(store.phenotypeLibraries.list().filter((library) => library.graphIds.includes(graphId)).map((library) => library.libraryId));
+  const deletedObjectIds = new Set([
+    graphId,
+    ...nodeIds,
+    ...edgeIds,
+    ...groupIds,
+    ...membershipIds,
+    ...relationIds,
+    ...phenotypeIds,
+    ...phenotypeVersionIds,
+    ...speciesArtifactIds,
+    ...phenotypeArtifactIds,
+    ...generationJobIds,
+    ...graphBridgeIds
+  ]);
+  const allAssets = parseRows<AssetIndex>(store.db.prepare("SELECT payload FROM assets ORDER BY created_at, asset_id").all() as Row[]);
+  const assetIds = new Set(allAssets.filter((asset) => deletedObjectIds.has(asset.linkedObjectId)).map((asset) => asset.assetId));
+  const contextAttachmentIds = new Set(
+    store.contextAttachments.list().filter((attachment) => deletedObjectIds.has(attachment.targetId)).map((attachment) => attachment.attachmentId)
+  );
+  const changeSetIds = new Set(
+    store.changeSets
+      .list()
+      .filter((changeSet) => changeSetTouchesResetGraph(changeSet, graphId, deletedObjectIds))
+      .map((changeSet) => changeSet.changeSetId)
+  );
+  const proposalIds = new Set(
+    store.proposals
+      .list()
+      .filter((proposal) => proposal.changeSetIds.some((changeSetId) => changeSetIds.has(changeSetId)))
+      .map((proposal) => proposal.proposalId)
+  );
+  return {
+    nodeIds,
+    edgeIds,
+    groupIds,
+    membershipIds,
+    relationIds,
+    nodeVersionIds,
+    edgeVersionIds,
+    speciesArtifactIds,
+    phenotypeArtifactIds,
+    phenotypeIds,
+    phenotypeVersionIds,
+    phenotypeVersionAssetLinks,
+    generationJobIds,
+    outputReferenceIds,
+    reviewRecordIds,
+    impactRecordIds,
+    graphBridgeIds,
+    atlasIds,
+    libraryBindingIds,
+    libraryIds,
+    assetIds,
+    contextAttachmentIds,
+    changeSetIds,
+    proposalIds
+  };
+}
+
+function changeSetTouchesResetGraph(changeSet: ChangeSet, graphId: string, deletedObjectIds: Set<string>): boolean {
+  const payload = changeSet.payload as Record<string, unknown>;
+  const graph = payload.graph as Graph | undefined;
+  const node = payload.node as SpeciesNode | undefined;
+  const edge = payload.edge as EvolutionEdge | undefined;
+  const group = payload.group as SpeciesGroup | undefined;
+  const membership = payload.membership as SpeciesGroupMembership | undefined;
+  const relation = payload.relation as SpeciesGroupRelation | undefined;
+  const atlas = payload.atlas as Atlas | undefined;
+  const bridge = payload.bridge as GraphBridge | undefined;
+  const attachment = payload.attachment as ContextAttachment | undefined;
+  return Boolean(
+    graph?.graphId === graphId ||
+      node?.graphId === graphId ||
+      edge?.graphId === graphId ||
+      group?.graphId === graphId ||
+      membership?.graphId === graphId ||
+      relation?.graphId === graphId ||
+      atlas?.graphIds?.includes(graphId) ||
+      bridge?.sourceGraphId === graphId ||
+      bridge?.targetGraphId === graphId ||
+      (attachment && deletedObjectIds.has(attachment.targetId))
+  );
+}
+
+function deleteRowsByIds(store: SqliteDnaStore, table: string, column: string, ids: Set<string>) {
+  if (ids.size === 0) return;
+  const statement = store.db.prepare(`DELETE FROM ${table} WHERE ${column} = ?`);
+  for (const id of ids) statement.run(id);
+}
+
+function sqlPlaceholders(ids: Set<string>) {
+  return ids.size === 0 ? "NULL" : [...ids].map(() => "?").join(", ");
 }
 
 class SqliteGraphRepository implements GraphRepository {
@@ -1825,6 +2063,28 @@ class SqliteImpactRepository implements ImpactRepository {
   }
 }
 
+class SqliteProposalRepository implements ProposalRepository {
+  constructor(private readonly store: SqliteDnaStore) {}
+  create(proposal: Proposal) {
+    this.store.db
+      .prepare("INSERT INTO proposals (proposal_id, status, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
+      .run(proposal.proposalId, proposal.status, JSON.stringify(proposal), proposal.createdAt, proposal.updatedAt);
+  }
+  update(proposal: Proposal) {
+    this.store.db
+      .prepare("UPDATE proposals SET status = ?, payload = ?, updated_at = ? WHERE proposal_id = ?")
+      .run(proposal.status, JSON.stringify(proposal), proposal.updatedAt, proposal.proposalId);
+  }
+  get(proposalId: string) {
+    return parsePayload<Proposal>(this.store.db.prepare("SELECT payload FROM proposals WHERE proposal_id = ?").get(proposalId) as Row | undefined);
+  }
+  list() {
+    return parseRows<Proposal>(
+      this.store.db.prepare("SELECT payload FROM proposals ORDER BY created_at, proposal_id").all() as Row[]
+    );
+  }
+}
+
 class SqliteChangeSetRepository implements ChangeSetRepository {
   constructor(private readonly store: SqliteDnaStore) {}
   create(changeSet: ChangeSet) {
@@ -1861,6 +2121,7 @@ export function exportProject(store: SqliteDnaStore, outDir: string): void {
   writeFileSync(join(outDir, "dna.project.json"), `${JSON.stringify(createExchangeManifest(), null, 2)}\n`);
   mkdirSync(join(outDir, "templates"), { recursive: true });
   for (const changeSet of store.changeSets.list()) writeJson(join(outDir, "change-sets", `${changeSet.changeSetId}.json`), changeSet);
+  for (const proposal of store.proposals.list()) writeJson(join(outDir, "proposals", `${proposal.proposalId}.json`), proposal);
   for (const definition of store.facetDefinitions.list()) {
     writeJson(join(outDir, "facets", "definitions", `${definition.facetId}.json`), definition);
   }
@@ -1952,6 +2213,7 @@ export function exportProject(store: SqliteDnaStore, outDir: string): void {
 export function importProject(store: SqliteDnaStore, inDir: string): void {
   validateExchangeManifest(readJsonIfExists<Record<string, unknown>>(join(inDir, "dna.project.json")));
   for (const file of listJsonFiles(join(inDir, "change-sets"))) store.changeSets.create(JSON.parse(readFileSync(file, "utf8")));
+  for (const file of listJsonFiles(join(inDir, "proposals"))) store.proposals.create(JSON.parse(readFileSync(file, "utf8")));
   for (const file of listJsonFiles(join(inDir, "facets", "definitions"))) {
     store.facetDefinitions.create(JSON.parse(readFileSync(file, "utf8")));
   }

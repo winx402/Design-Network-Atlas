@@ -72,6 +72,7 @@ export const ReviewStatusSchema = z.enum(["pass", "needs-review", "fail"]);
 export const ChangeOperationSchema = z.enum(["create", "update", "archive", "delete", "import"]);
 export const WriteModeSchema = z.enum(["preview-confirm", "draft-write", "changeset-apply"]);
 export const ChangeSetStatusSchema = z.enum(["preview", "applied", "discarded"]);
+export const ProposalStatusSchema = z.enum(["draft", "ready", "applied", "discarded"]);
 export const SharedObjectStatusSchema = z.enum(["draft", "active", "archived", "deprecated"]);
 export const DesignContextTypeSchema = z.enum([
   "worldview",
@@ -1044,6 +1045,18 @@ export const ChangeSetSchema = z.object({
   appliedAt: IsoDateSchema.optional()
 });
 
+export const ProposalSchema = z.object({
+  proposalId: z.string().min(1),
+  title: z.string().min(1),
+  summary: z.string().default(""),
+  status: ProposalStatusSchema,
+  changeSetIds: z.array(z.string().min(1)).default([]),
+  riskNotes: z.array(z.string()).default([]),
+  reviewNotes: z.array(z.string()).default([]),
+  createdAt: IsoDateSchema,
+  updatedAt: IsoDateSchema
+});
+
 export type Graph = z.infer<typeof GraphSchema>;
 export type FacetDefinition = z.infer<typeof FacetDefinitionSchema>;
 export type FacetSchema = z.infer<typeof FacetSchemaSchema>;
@@ -1088,5 +1101,6 @@ export type GenerationJob = z.infer<typeof GenerationJobSchema>;
 export type ReviewRecord = z.infer<typeof ReviewRecordSchema>;
 export type ImpactRecord = z.infer<typeof ImpactRecordSchema>;
 export type ChangeSet = z.infer<typeof ChangeSetSchema>;
+export type Proposal = z.infer<typeof ProposalSchema>;
 export type CompilePolicy = z.infer<typeof CompilePolicySchema>;
 export type WriteMode = z.infer<typeof WriteModeSchema>;

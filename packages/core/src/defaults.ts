@@ -25,6 +25,7 @@ import {
   PhenotypeLibrary,
   PhenotypeLibraryGraphBinding,
   PhenotypeVersion,
+  Proposal,
   ReviewRecord,
   SpeciesGroup,
   SpeciesGroupMembership,
@@ -39,6 +40,23 @@ export function nowIso() {
 
 export function makeId(prefix: string) {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+export function createDefaultProposal(
+  input: Partial<Proposal> & Pick<Proposal, "proposalId" | "title">
+): Proposal {
+  const timestamp = nowIso();
+  return {
+    proposalId: input.proposalId,
+    title: input.title,
+    summary: input.summary ?? "",
+    status: input.status ?? "draft",
+    changeSetIds: input.changeSetIds ?? [],
+    riskNotes: input.riskNotes ?? [],
+    reviewNotes: input.reviewNotes ?? [],
+    createdAt: input.createdAt ?? timestamp,
+    updatedAt: input.updatedAt ?? timestamp
+  };
 }
 
 export function createDefaultGraph(input: Partial<Graph> & Pick<Graph, "graphId" | "name" | "purpose">): Graph {

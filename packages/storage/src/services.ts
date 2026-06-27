@@ -4,24 +4,36 @@ import {
   createChangeSet,
   createDefaultAtlas,
   createDefaultContextAttachment,
+  createDefaultContextFact,
+  createDefaultContextMotif,
+  createDefaultContextReference,
+  createDefaultContextReviewRubric,
   createDefaultDesignContext,
+  createDefaultDesignPrinciple,
   createDefaultGraph,
   createDefaultEvolutionEdge,
   createDefaultGraphBridge,
   createDefaultNodeVersion,
+  createDefaultProposal,
   createDefaultSpeciesGroup,
   createDefaultSpeciesGroupMembership,
   createDefaultSpeciesGroupRelation,
   createDefaultSpeciesNode,
   EdgeVersion,
   ContextAttachment,
+  ContextFact,
+  ContextMotif,
+  ContextReference,
+  ContextReviewRubric,
   DesignContext,
+  DesignPrinciple,
   EvolutionEdge,
   Graph,
   GraphBridge,
   markChangeSetApplied,
   markChangeSetDiscarded,
   nowIso,
+  Proposal,
   resolveLineageStatus,
   SpeciesGroup,
   SpeciesGroupMembership,
@@ -191,6 +203,85 @@ export interface CreateContextAttachmentInput {
   status?: ContextAttachment["status"];
 }
 
+export interface CreateContextFactInput {
+  factId: string;
+  factType: ContextFact["factType"];
+  statement: string;
+  scopeHint?: string;
+  defaultStrength?: ContextFact["defaultStrength"];
+  defaultBehaviorHint?: ContextFact["defaultBehaviorHint"];
+  sourceTrace?: string[];
+  status?: ContextFact["status"];
+}
+
+export interface CreateDesignPrincipleInput {
+  principleId: string;
+  statement: string;
+  priority?: DesignPrinciple["priority"];
+  scopeHint?: string;
+  defaultBehaviorHint?: DesignPrinciple["defaultBehaviorHint"];
+  experienceIntent?: string;
+  readabilityGoal?: string;
+  platformContext?: string;
+  reviewQuestions?: string[];
+  badcases?: string[];
+  status?: DesignPrinciple["status"];
+}
+
+export interface CreateContextMotifInput {
+  motifId: string;
+  motifType: ContextMotif["motifType"];
+  statement: string;
+  sourceRef?: string;
+  visualMotifRef?: string;
+  note?: string;
+  status?: ContextMotif["status"];
+}
+
+export interface CreateContextReferenceInput {
+  referenceId: string;
+  referenceType: ContextReference["referenceType"];
+  sourceRef: ContextReference["sourceRef"];
+  referenceRole?: ContextReference["referenceRole"];
+  useFor?: string[];
+  doNotUseFor?: string[];
+  note?: string;
+  risk?: string[];
+  status?: ContextReference["status"];
+}
+
+export interface CreateContextReviewRubricInput {
+  rubricId: string;
+  dimension: ContextReviewRubric["dimension"];
+  question: string;
+  passSignal?: string;
+  failSignal?: string;
+  severity?: ContextReviewRubric["severity"];
+  status?: ContextReviewRubric["status"];
+}
+
+export interface CreateProposalInput {
+  proposalId: string;
+  title: string;
+  summary?: string;
+  changeSetIds?: string[];
+  riskNotes?: string[];
+  reviewNotes?: string[];
+}
+
+export interface ProposalReviewResult {
+  proposal: Proposal;
+  status: Proposal["status"];
+  blockers: string[];
+  childReviews: ChangeSetReviewResult[];
+}
+
+export interface ProposalApplyResult {
+  proposal: Proposal;
+  appliedChangeSetIds: string[];
+  childResults: ServiceResult<unknown>[];
+}
+
 export function createDnaServices(store: DnaServiceStore) {
   return {
     graph: {
@@ -219,6 +310,12 @@ export function createDnaServices(store: DnaServiceStore) {
           return applyGraphChangeSet(store, changeSet);
         }
         return { value: graph, changeSet };
+      },
+      previewReset(graphId: string) {
+        return store.previewGraphReset(graphId);
+      },
+      reset(graphId: string) {
+        return store.resetGraph(graphId);
       }
     },
     lineage: {
@@ -493,6 +590,166 @@ export function createDnaServices(store: DnaServiceStore) {
           return applyContextAttachmentChangeSet(store, changeSet);
         }
         return { value: attachment, changeSet };
+      },
+      createFact(input: CreateContextFactInput, options: WriteOptions): ServiceResult<ContextFact> {
+        if (options.mode === "changeset-apply") {
+          const existing = requireExistingChangeSet(store, options.changeSetId);
+          return applyContextFactChangeSet(store, existing);
+        }
+        const fact = createDefaultContextFact(input);
+        const changeSet = createChangeSet({
+          mode: options.mode,
+          objectType: "context-fact",
+          operation: "create",
+          summary: `create context fact ${fact.factId}`,
+          diff: { factId: fact.factId, factType: fact.factType, status: fact.status },
+          payload: { fact }
+        });
+        store.changeSets.create(changeSet);
+        if (shouldApply(options)) {
+          return applyContextFactChangeSet(store, changeSet);
+        }
+        return { value: fact, changeSet };
+      },
+      createPrinciple(input: CreateDesignPrincipleInput, options: WriteOptions): ServiceResult<DesignPrinciple> {
+        if (options.mode === "changeset-apply") {
+          const existing = requireExistingChangeSet(store, options.changeSetId);
+          return applyDesignPrincipleChangeSet(store, existing);
+        }
+        const principle = createDefaultDesignPrinciple(input);
+        const changeSet = createChangeSet({
+          mode: options.mode,
+          objectType: "design-principle",
+          operation: "create",
+          summary: `create design principle ${principle.principleId}`,
+          diff: { principleId: principle.principleId, priority: principle.priority, status: principle.status },
+          payload: { principle }
+        });
+        store.changeSets.create(changeSet);
+        if (shouldApply(options)) {
+          return applyDesignPrincipleChangeSet(store, changeSet);
+        }
+        return { value: principle, changeSet };
+      },
+      createMotif(input: CreateContextMotifInput, options: WriteOptions): ServiceResult<ContextMotif> {
+        if (options.mode === "changeset-apply") {
+          const existing = requireExistingChangeSet(store, options.changeSetId);
+          return applyContextMotifChangeSet(store, existing);
+        }
+        const motif = createDefaultContextMotif(input);
+        const changeSet = createChangeSet({
+          mode: options.mode,
+          objectType: "context-motif",
+          operation: "create",
+          summary: `create context motif ${motif.motifId}`,
+          diff: { motifId: motif.motifId, motifType: motif.motifType, status: motif.status },
+          payload: { motif }
+        });
+        store.changeSets.create(changeSet);
+        if (shouldApply(options)) {
+          return applyContextMotifChangeSet(store, changeSet);
+        }
+        return { value: motif, changeSet };
+      },
+      createReference(input: CreateContextReferenceInput, options: WriteOptions): ServiceResult<ContextReference> {
+        if (options.mode === "changeset-apply") {
+          const existing = requireExistingChangeSet(store, options.changeSetId);
+          return applyContextReferenceChangeSet(store, existing);
+        }
+        const reference = createDefaultContextReference(input);
+        const changeSet = createChangeSet({
+          mode: options.mode,
+          objectType: "context-reference",
+          operation: "create",
+          summary: `create context reference ${reference.referenceId}`,
+          diff: { referenceId: reference.referenceId, referenceType: reference.referenceType, status: reference.status },
+          payload: { reference }
+        });
+        store.changeSets.create(changeSet);
+        if (shouldApply(options)) {
+          return applyContextReferenceChangeSet(store, changeSet);
+        }
+        return { value: reference, changeSet };
+      },
+      createReviewRubric(input: CreateContextReviewRubricInput, options: WriteOptions): ServiceResult<ContextReviewRubric> {
+        if (options.mode === "changeset-apply") {
+          const existing = requireExistingChangeSet(store, options.changeSetId);
+          return applyContextReviewRubricChangeSet(store, existing);
+        }
+        const rubric = createDefaultContextReviewRubric(input);
+        const changeSet = createChangeSet({
+          mode: options.mode,
+          objectType: "context-review-rubric",
+          operation: "create",
+          summary: `create context review rubric ${rubric.rubricId}`,
+          diff: { rubricId: rubric.rubricId, dimension: rubric.dimension, severity: rubric.severity, status: rubric.status },
+          payload: { rubric }
+        });
+        store.changeSets.create(changeSet);
+        if (shouldApply(options)) {
+          return applyContextReviewRubricChangeSet(store, changeSet);
+        }
+        return { value: rubric, changeSet };
+      }
+    },
+    proposal: {
+      create(input: CreateProposalInput): Proposal {
+        const proposal = createDefaultProposal(input);
+        store.proposals.create(proposal);
+        return proposal;
+      },
+      list(): Proposal[] {
+        return store.proposals.list();
+      },
+      get(proposalId: string): Proposal | undefined {
+        return store.proposals.get(proposalId);
+      },
+      addChangeSet(proposalId: string, changeSetId: string): Proposal {
+        const proposal = requireProposal(store, proposalId);
+        ensureProposalEditable(proposal);
+        const changeSet = requireChangeSet(store, changeSetId);
+        if (changeSet.status !== "preview") {
+          throw new Error(`proposal can only link preview change-sets: ${changeSetId}`);
+        }
+        const next: Proposal = {
+          ...proposal,
+          changeSetIds: proposal.changeSetIds.includes(changeSetId)
+            ? proposal.changeSetIds
+            : [...proposal.changeSetIds, changeSetId],
+          status: proposal.status === "ready" ? "draft" : proposal.status,
+          updatedAt: nowIso()
+        };
+        store.proposals.update(next);
+        return next;
+      },
+      show(proposalId: string): ProposalReviewResult {
+        return reviewProposal(store, requireProposal(store, proposalId), { markReady: false });
+      },
+      review(proposalId: string): ProposalReviewResult {
+        return reviewProposal(store, requireProposal(store, proposalId), { markReady: true });
+      },
+      apply(proposalId: string): ProposalApplyResult {
+        const proposal = requireProposal(store, proposalId);
+        if (proposal.status === "applied") throw new Error(`proposal is already applied: ${proposalId}`);
+        if (proposal.status === "discarded") throw new Error(`proposal is discarded: ${proposalId}`);
+        const review = reviewProposal(store, proposal, { markReady: false });
+        if (review.blockers.length > 0) {
+          throw new Error(`blocked proposal child change-set: ${review.blockers.join("; ")}`);
+        }
+        const childResults: ServiceResult<unknown>[] = [];
+        for (const changeSetId of proposal.changeSetIds) {
+          childResults.push(applyChangeSet(store, requireExistingChangeSet(store, changeSetId)));
+        }
+        const applied: Proposal = { ...proposal, status: "applied", updatedAt: nowIso() };
+        store.proposals.update(applied);
+        return { proposal: applied, appliedChangeSetIds: proposal.changeSetIds, childResults };
+      },
+      discard(proposalId: string): Proposal {
+        const proposal = requireProposal(store, proposalId);
+        if (proposal.status === "applied") throw new Error(`applied proposal cannot be discarded: ${proposalId}`);
+        const discarded: Proposal = { ...proposal, status: "discarded", updatedAt: nowIso() };
+        store.proposals.update(discarded);
+        return discarded;
       }
     },
     changeSet: {
@@ -541,6 +798,147 @@ function requireChangeSet(store: DnaServiceStore, changeSetId: string | undefine
   return existing;
 }
 
+function requireProposal(store: DnaServiceStore, proposalId: string): Proposal {
+  const proposal = store.proposals.get(proposalId);
+  if (!proposal) throw new Error(`proposal not found: ${proposalId}`);
+  return proposal;
+}
+
+function ensureProposalEditable(proposal: Proposal) {
+  if (proposal.status === "applied") throw new Error(`applied proposal cannot be edited: ${proposal.proposalId}`);
+  if (proposal.status === "discarded") throw new Error(`discarded proposal cannot be edited: ${proposal.proposalId}`);
+}
+
+const PROPOSAL_APPLY_OBJECT_TYPES = new Set([
+  "graph",
+  "node",
+  "edge",
+  "species-group",
+  "species-group-membership",
+  "species-group-relation",
+  "atlas",
+  "graph-bridge",
+  "design-context",
+  "context-attachment",
+  "context-fact",
+  "design-principle",
+  "context-motif",
+  "context-reference",
+  "context-review-rubric"
+]);
+
+interface ProposalPlannedCreates {
+  graphIds: Set<string>;
+  nodeIds: Set<string>;
+  speciesGroupIds: Set<string>;
+  atlasIds: Set<string>;
+  designContextIds: Set<string>;
+}
+
+function reviewProposal(
+  store: DnaServiceStore,
+  proposal: Proposal,
+  options: { markReady: boolean }
+): ProposalReviewResult {
+  const blockers: string[] = [];
+  const childChangeSets: ChangeSet[] = [];
+  for (const changeSetId of proposal.changeSetIds) {
+    const changeSet = store.changeSets.get(changeSetId);
+    if (!changeSet) {
+      blockers.push(`missing change-set: ${changeSetId}`);
+      continue;
+    }
+    childChangeSets.push(changeSet);
+    if (changeSet.status !== "preview") {
+      blockers.push(`change-set ${changeSetId} is ${changeSet.status}`);
+    }
+    if (!PROPOSAL_APPLY_OBJECT_TYPES.has(changeSet.objectType)) {
+      blockers.push(`change-set ${changeSetId} has unsupported object type: ${changeSet.objectType}`);
+    }
+  }
+
+  const plannedCreates = collectProposalPlannedCreates(childChangeSets);
+  const childReviews = childChangeSets.map((changeSet) => reviewChangeSetForProposal(store, changeSet, plannedCreates));
+  for (const review of childReviews) {
+    if (review.status === "fail") {
+      blockers.push(`change-set ${review.changeSetId} review failed: ${review.constraintViolations.join("; ")}`);
+    }
+  }
+
+  const status: Proposal["status"] =
+    proposal.status === "applied" || proposal.status === "discarded"
+      ? proposal.status
+      : blockers.length > 0
+        ? "draft"
+        : "ready";
+  const nextProposal =
+    options.markReady && status === "ready" && proposal.status !== "ready"
+      ? { ...proposal, status, updatedAt: nowIso() }
+      : proposal;
+  if (nextProposal !== proposal) store.proposals.update(nextProposal);
+  return { proposal: nextProposal, status, blockers, childReviews };
+}
+
+function collectProposalPlannedCreates(changeSets: ChangeSet[]): ProposalPlannedCreates {
+  const planned: ProposalPlannedCreates = {
+    graphIds: new Set(),
+    nodeIds: new Set(),
+    speciesGroupIds: new Set(),
+    atlasIds: new Set(),
+    designContextIds: new Set()
+  };
+  for (const changeSet of changeSets) {
+    if (changeSet.status !== "preview" || changeSet.operation !== "create") continue;
+    const payload = changeSet.payload as Record<string, unknown>;
+    const graph = payload.graph as Graph | undefined;
+    const node = payload.node as SpeciesNode | undefined;
+    const group = payload.group as SpeciesGroup | undefined;
+    const atlas = payload.atlas as Atlas | undefined;
+    const context = payload.context as DesignContext | undefined;
+    if (graph?.graphId) planned.graphIds.add(graph.graphId);
+    if (node?.nodeId) planned.nodeIds.add(node.nodeId);
+    if (group?.groupId) planned.speciesGroupIds.add(group.groupId);
+    if (atlas?.atlasId) planned.atlasIds.add(atlas.atlasId);
+    if (context?.contextId) planned.designContextIds.add(context.contextId);
+  }
+  return planned;
+}
+
+function reviewChangeSetForProposal(
+  store: DnaServiceStore,
+  changeSet: ChangeSet,
+  plannedCreates: ProposalPlannedCreates
+): ChangeSetReviewResult {
+  const base = reviewChangeSet(store, changeSet);
+  const constraintViolations = base.constraintViolations.filter((violation) => !isSatisfiedByProposalPlan(violation, plannedCreates));
+  return {
+    ...base,
+    status: constraintViolations.length > 0 ? "fail" : base.missingDimensions.length > 0 ? "needs-review" : "pass",
+    constraintViolations
+  };
+}
+
+function isSatisfiedByProposalPlan(violation: string, plannedCreates: ProposalPlannedCreates): boolean {
+  return (
+    plannedIdMatches(violation, /^graph not found: (.+)$/, plannedCreates.graphIds) ||
+    plannedIdMatches(violation, /^source graph not found: (.+)$/, plannedCreates.graphIds) ||
+    plannedIdMatches(violation, /^target graph not found: (.+)$/, plannedCreates.graphIds) ||
+    plannedIdMatches(violation, /^node not found: (.+)$/, plannedCreates.nodeIds) ||
+    plannedIdMatches(violation, /^source node not found: (.+)$/, plannedCreates.nodeIds) ||
+    plannedIdMatches(violation, /^target node not found: (.+)$/, plannedCreates.nodeIds) ||
+    plannedIdMatches(violation, /^species group not found: (.+)$/, plannedCreates.speciesGroupIds) ||
+    plannedIdMatches(violation, /^source species group not found: (.+)$/, plannedCreates.speciesGroupIds) ||
+    plannedIdMatches(violation, /^target species group not found: (.+)$/, plannedCreates.speciesGroupIds) ||
+    plannedIdMatches(violation, /^atlas not found: (.+)$/, plannedCreates.atlasIds) ||
+    plannedIdMatches(violation, /^design context not found: (.+)$/, plannedCreates.designContextIds)
+  );
+}
+
+function plannedIdMatches(violation: string, pattern: RegExp, plannedIds: Set<string>): boolean {
+  const id = violation.match(pattern)?.[1];
+  return Boolean(id && plannedIds.has(id));
+}
+
 function applyChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ServiceResult<unknown> {
   if (changeSet.objectType === "graph") return applyGraphChangeSet(store, changeSet);
   if (changeSet.objectType === "node") return applyNodeChangeSet(store, changeSet);
@@ -552,6 +950,11 @@ function applyChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ServiceRe
   if (changeSet.objectType === "graph-bridge") return applyGraphBridgeChangeSet(store, changeSet);
   if (changeSet.objectType === "design-context") return applyDesignContextChangeSet(store, changeSet);
   if (changeSet.objectType === "context-attachment") return applyContextAttachmentChangeSet(store, changeSet);
+  if (changeSet.objectType === "context-fact") return applyContextFactChangeSet(store, changeSet);
+  if (changeSet.objectType === "design-principle") return applyDesignPrincipleChangeSet(store, changeSet);
+  if (changeSet.objectType === "context-motif") return applyContextMotifChangeSet(store, changeSet);
+  if (changeSet.objectType === "context-reference") return applyContextReferenceChangeSet(store, changeSet);
+  if (changeSet.objectType === "context-review-rubric") return applyContextReviewRubricChangeSet(store, changeSet);
   throw new Error(`unsupported change-set object type: ${changeSet.objectType}`);
 }
 
@@ -615,6 +1018,26 @@ function reviewChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ChangeSe
     const attachment = changeSet.payload.attachment as ContextAttachment | undefined;
     if (!attachment) constraintViolations.push("change-set payload missing context attachment");
     if (attachment && !store.designContexts.get(attachment.contextId)) constraintViolations.push(`design context not found: ${attachment.contextId}`);
+  } else if (changeSet.objectType === "context-fact") {
+    const fact = changeSet.payload.fact as ContextFact | undefined;
+    if (!fact) constraintViolations.push("change-set payload missing context fact");
+    if (fact && !fact.statement) missingDimensions.push("fact.statement");
+  } else if (changeSet.objectType === "design-principle") {
+    const principle = changeSet.payload.principle as DesignPrinciple | undefined;
+    if (!principle) constraintViolations.push("change-set payload missing design principle");
+    if (principle && !principle.statement) missingDimensions.push("principle.statement");
+  } else if (changeSet.objectType === "context-motif") {
+    const motif = changeSet.payload.motif as ContextMotif | undefined;
+    if (!motif) constraintViolations.push("change-set payload missing context motif");
+    if (motif && !motif.statement) missingDimensions.push("motif.statement");
+  } else if (changeSet.objectType === "context-reference") {
+    const reference = changeSet.payload.reference as ContextReference | undefined;
+    if (!reference) constraintViolations.push("change-set payload missing context reference");
+    if (reference && !reference.sourceRef) missingDimensions.push("reference.sourceRef");
+  } else if (changeSet.objectType === "context-review-rubric") {
+    const rubric = changeSet.payload.rubric as ContextReviewRubric | undefined;
+    if (!rubric) constraintViolations.push("change-set payload missing context review rubric");
+    if (rubric && !rubric.question) missingDimensions.push("rubric.question");
   } else {
     suggestedActions.push(`manual review required for unsupported object type: ${changeSet.objectType}`);
   }
@@ -637,6 +1060,12 @@ function requireAtlas(store: DnaServiceStore, atlasId: string): Atlas {
   const atlas = store.atlases.get(atlasId);
   if (!atlas) throw new Error(`atlas not found: ${atlasId}`);
   return atlas;
+}
+
+function requireChangeSetObjectType(changeSet: ChangeSet, expected: string) {
+  if (changeSet.objectType !== expected) {
+    throw new Error(`change-set object type mismatch: expected ${expected}, received ${changeSet.objectType}`);
+  }
 }
 
 function applyGraphChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ServiceResult<Graph> {
@@ -855,4 +1284,69 @@ function applyContextAttachmentChangeSet(store: DnaServiceStore, changeSet: Chan
     return next;
   });
   return { value: attachment, changeSet: applied };
+}
+
+function applyContextFactChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ServiceResult<ContextFact> {
+  requireChangeSetObjectType(changeSet, "context-fact");
+  const fact = changeSet.payload.fact as ContextFact | undefined;
+  if (!fact) throw new Error("change-set payload missing context fact");
+  const applied = store.transaction(() => {
+    store.contextFacts.create(fact);
+    const next = markChangeSetApplied(changeSet);
+    store.changeSets.update(next);
+    return next;
+  });
+  return { value: fact, changeSet: applied };
+}
+
+function applyDesignPrincipleChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ServiceResult<DesignPrinciple> {
+  requireChangeSetObjectType(changeSet, "design-principle");
+  const principle = changeSet.payload.principle as DesignPrinciple | undefined;
+  if (!principle) throw new Error("change-set payload missing design principle");
+  const applied = store.transaction(() => {
+    store.designPrinciples.create(principle);
+    const next = markChangeSetApplied(changeSet);
+    store.changeSets.update(next);
+    return next;
+  });
+  return { value: principle, changeSet: applied };
+}
+
+function applyContextMotifChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ServiceResult<ContextMotif> {
+  requireChangeSetObjectType(changeSet, "context-motif");
+  const motif = changeSet.payload.motif as ContextMotif | undefined;
+  if (!motif) throw new Error("change-set payload missing context motif");
+  const applied = store.transaction(() => {
+    store.contextMotifs.create(motif);
+    const next = markChangeSetApplied(changeSet);
+    store.changeSets.update(next);
+    return next;
+  });
+  return { value: motif, changeSet: applied };
+}
+
+function applyContextReferenceChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ServiceResult<ContextReference> {
+  requireChangeSetObjectType(changeSet, "context-reference");
+  const reference = changeSet.payload.reference as ContextReference | undefined;
+  if (!reference) throw new Error("change-set payload missing context reference");
+  const applied = store.transaction(() => {
+    store.contextReferences.create(reference);
+    const next = markChangeSetApplied(changeSet);
+    store.changeSets.update(next);
+    return next;
+  });
+  return { value: reference, changeSet: applied };
+}
+
+function applyContextReviewRubricChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ServiceResult<ContextReviewRubric> {
+  requireChangeSetObjectType(changeSet, "context-review-rubric");
+  const rubric = changeSet.payload.rubric as ContextReviewRubric | undefined;
+  if (!rubric) throw new Error("change-set payload missing context review rubric");
+  const applied = store.transaction(() => {
+    store.contextReviewRubrics.create(rubric);
+    const next = markChangeSetApplied(changeSet);
+    store.changeSets.update(next);
+    return next;
+  });
+  return { value: rubric, changeSet: applied };
 }

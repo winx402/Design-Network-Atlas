@@ -30,6 +30,7 @@ import {
   PhenotypeLibrary,
   PhenotypeLibraryGraphBinding,
   PhenotypeVersion,
+  Proposal,
   ReviewRecord,
   SpeciesGroup,
   SpeciesCompileArtifact,
@@ -53,6 +54,7 @@ import {
   EdgeRepository,
   EdgeVersionRepository,
   ExternalLibraryMappingRepository,
+  GraphResetSummary,
   AtlasRepository,
   FacetAssignmentRepository,
   FacetDefinitionRepository,
@@ -70,6 +72,7 @@ import {
   PhenotypeLibraryRepository,
   PhenotypeCompileArtifactRepository,
   PhenotypeVersionRepository,
+  ProposalRepository,
   ReviewRepository,
   SearchRepository,
   SpeciesGroupMembershipRepository,
@@ -120,6 +123,9 @@ export interface DnaServiceStore extends StorageEngine {
   impacts: ImpactRepository;
   search: SearchRepository;
   changeSets: ChangeSetRepository;
+  proposals: ProposalRepository;
+  previewGraphReset(graphId: string): GraphResetSummary;
+  resetGraph(graphId: string): GraphResetSummary;
 }
 
 export interface InMemoryStoreOptions {
@@ -165,6 +171,7 @@ interface MemoryState {
   reviews: Map<string, ReviewRecord>;
   impacts: Map<string, ImpactRecord>;
   changeSets: Map<string, ChangeSet>;
+  proposals: Map<string, Proposal>;
 }
 
 export class InMemoryDnaStore implements DnaServiceStore {
@@ -207,6 +214,7 @@ export class InMemoryDnaStore implements DnaServiceStore {
   readonly impacts: ImpactRepository;
   readonly search: SearchRepository;
   readonly changeSets: ChangeSetRepository;
+  readonly proposals: ProposalRepository;
 
   constructor(private readonly options: InMemoryStoreOptions = {}) {
     this.graphs = {
@@ -502,6 +510,12 @@ export class InMemoryDnaStore implements DnaServiceStore {
       get: (changeSetId) => this.state.changeSets.get(changeSetId),
       list: () => [...this.state.changeSets.values()].sort((left, right) => left.createdAt.localeCompare(right.createdAt))
     };
+    this.proposals = {
+      create: (proposal) => this.state.proposals.set(proposal.proposalId, proposal),
+      update: (proposal) => this.state.proposals.set(proposal.proposalId, proposal),
+      get: (proposalId) => this.state.proposals.get(proposalId),
+      list: () => [...this.state.proposals.values()].sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+    };
   }
 
   migrate(): void {}
@@ -514,6 +528,18 @@ export class InMemoryDnaStore implements DnaServiceStore {
       this.state = snapshot;
       throw error;
     }
+  }
+
+  previewGraphReset(graphId: string): GraphResetSummary {
+    return summarizeMemoryGraphReset(this.state, graphId);
+  }
+
+  resetGraph(graphId: string): GraphResetSummary {
+    return this.transaction(() => {
+      const summary = summarizeMemoryGraphReset(this.state, graphId);
+      applyMemoryGraphReset(this.state, graphId);
+      return summary;
+    });
   }
 
   close(): void {}
@@ -562,7 +588,8 @@ function createState(): MemoryState {
     generationJobs: new Map(),
     reviews: new Map(),
     impacts: new Map(),
-    changeSets: new Map()
+    changeSets: new Map(),
+    proposals: new Map()
   };
 }
 
@@ -605,7 +632,8 @@ function cloneState(state: MemoryState): MemoryState {
     generationJobs: new Map(state.generationJobs),
     reviews: new Map(state.reviews),
     impacts: new Map(state.impacts),
-    changeSets: new Map(state.changeSets)
+    changeSets: new Map(state.changeSets),
+    proposals: new Map(state.proposals)
   };
 }
 
@@ -617,4 +645,200 @@ function syncMemoryLibraryGraphId(state: MemoryState, libraryId: string, graphId
     graphIds: [...library.graphIds, graphId].sort(),
     updatedAt: new Date().toISOString()
   });
+}
+
+function summarizeMemoryGraphReset(state: MemoryState, graphId: string): GraphResetSummary {
+  const ids = collectMemoryGraphResetIds(state, graphId);
+  const counts = resetCounts({
+    graphs: state.graphs.has(graphId) ? 1 : 0,
+    nodes: ids.nodeIds.size,
+    nodeVersions: ids.nodeVersionIds.size,
+    edges: ids.edgeIds.size,
+    edgeVersions: ids.edgeVersionIds.size,
+    speciesGroups: ids.groupIds.size,
+    speciesGroupMemberships: ids.membershipIds.size,
+    speciesGroupRelations: ids.relationIds.size,
+    speciesCompileArtifacts: ids.speciesArtifactIds.size,
+    phenotypeCompileArtifacts: ids.phenotypeArtifactIds.size,
+    phenotypes: ids.phenotypeIds.size,
+    phenotypeVersions: ids.phenotypeVersionIds.size,
+    phenotypeVersionAssets: ids.phenotypeVersionAssetLinks,
+    assets: ids.assetIds.size,
+    generationJobs: ids.generationJobIds.size,
+    outputReferences: ids.outputReferenceIds.size,
+    reviewRecords: ids.reviewRecordIds.size,
+    impactRecords: ids.impactRecordIds.size,
+    graphBridges: ids.graphBridgeIds.size,
+    atlasGraphLinks: ids.atlasIds.size,
+    phenotypeLibraryGraphBindings: ids.libraryBindingIds.size,
+    phenotypeLibraryGraphIds: ids.libraryIds.size,
+    contextAttachments: ids.contextAttachmentIds.size,
+    changeSets: ids.changeSetIds.size,
+    proposals: ids.proposalIds.size
+  });
+  return { graphId, exists: state.graphs.has(graphId), counts, warnings: [], externalAssetsTouched: false };
+}
+
+function applyMemoryGraphReset(state: MemoryState, graphId: string) {
+  const ids = collectMemoryGraphResetIds(state, graphId);
+  for (const id of ids.proposalIds) state.proposals.delete(id);
+  for (const id of ids.contextAttachmentIds) state.contextAttachments.delete(id);
+  for (const id of ids.changeSetIds) state.changeSets.delete(id);
+  for (const id of ids.assetIds) state.assets.delete(id);
+  for (const id of ids.outputReferenceIds) state.outputReferences.delete(id);
+  for (const id of ids.generationJobIds) state.generationJobs.delete(id);
+  for (const id of ids.reviewRecordIds) state.reviews.delete(id);
+  for (const id of ids.impactRecordIds) state.impacts.delete(id);
+  for (const id of ids.phenotypeVersionIds) state.phenotypeVersions.delete(id);
+  for (const id of ids.phenotypeIds) state.phenotypes.delete(id);
+  for (const id of ids.speciesArtifactIds) state.speciesCompileArtifacts.delete(id);
+  for (const id of ids.phenotypeArtifactIds) state.phenotypeCompileArtifacts.delete(id);
+  for (const id of ids.nodeVersionIds) state.nodeVersions.delete(id);
+  for (const id of ids.edgeVersionIds) state.edgeVersions.delete(id);
+  for (const id of ids.edgeIds) state.edges.delete(id);
+  for (const id of ids.membershipIds) state.speciesGroupMemberships.delete(id);
+  for (const id of ids.relationIds) state.speciesGroupRelations.delete(id);
+  for (const id of ids.groupIds) state.speciesGroups.delete(id);
+  for (const id of ids.graphBridgeIds) state.graphBridges.delete(id);
+  for (const atlasId of ids.atlasIds) {
+    const atlas = state.atlases.get(atlasId);
+    if (atlas) state.atlases.set(atlasId, { ...atlas, graphIds: atlas.graphIds.filter((id) => id !== graphId), updatedAt: new Date().toISOString() });
+  }
+  for (const bindingId of ids.libraryBindingIds) state.phenotypeLibraryGraphBindings.delete(bindingId);
+  for (const libraryId of ids.libraryIds) {
+    const library = state.phenotypeLibraries.get(libraryId);
+    if (library) {
+      state.phenotypeLibraries.set(libraryId, {
+        ...library,
+        graphIds: library.graphIds.filter((id) => id !== graphId),
+        updatedAt: new Date().toISOString()
+      });
+    }
+  }
+  state.graphs.delete(graphId);
+  for (const id of ids.nodeIds) state.nodes.delete(id);
+}
+
+function collectMemoryGraphResetIds(state: MemoryState, graphId: string) {
+  const nodeIds = new Set([...state.nodes.values()].filter((node) => node.graphId === graphId).map((node) => node.nodeId));
+  const edgeIds = new Set([...state.edges.values()].filter((edge) => edge.graphId === graphId).map((edge) => edge.edgeId));
+  const groupIds = new Set([...state.speciesGroups.values()].filter((group) => group.graphId === graphId).map((group) => group.groupId));
+  const membershipIds = new Set(
+    [...state.speciesGroupMemberships.values()].filter((membership) => membership.graphId === graphId).map((membership) => membership.membershipId)
+  );
+  const relationIds = new Set([...state.speciesGroupRelations.values()].filter((relation) => relation.graphId === graphId).map((relation) => relation.relationId));
+  const phenotypeIds = new Set([...state.phenotypes.values()].filter((phenotype) => phenotype.graphId === graphId).map((phenotype) => phenotype.phenotypeId));
+  const phenotypeVersionIds = new Set(
+    [...state.phenotypeVersions.values()].filter((version) => version.graphId === graphId).map((version) => version.phenotypeVersionId)
+  );
+  const nodeVersionIds = new Set([...state.nodeVersions.values()].filter((version) => version.graphId === graphId).map((version) => version.nodeVersionId));
+  const edgeVersionIds = new Set([...state.edgeVersions.values()].filter((version) => version.graphId === graphId).map((version) => version.edgeVersionId));
+  const speciesArtifactIds = new Set(
+    [...state.speciesCompileArtifacts.values()].filter((artifact) => artifact.graphId === graphId).map((artifact) => artifact.artifactId)
+  );
+  const phenotypeArtifactIds = new Set(
+    [...state.phenotypeCompileArtifacts.values()].filter((artifact) => artifact.graphId === graphId).map((artifact) => artifact.artifactId)
+  );
+  const generationJobIds = new Set([...state.generationJobs.values()].filter((job) => job.graphId === graphId).map((job) => job.generationJobId));
+  const outputReferenceIds = new Set(
+    [...state.outputReferences.values()].filter((reference) => reference.graphId === graphId).map((reference) => reference.outputReferenceId)
+  );
+  const reviewRecordIds = new Set([...state.reviews.values()].filter((review) => review.graphId === graphId).map((review) => review.reviewRecordId));
+  const impactRecordIds = new Set([...state.impacts.values()].filter((impact) => impact.graphId === graphId).map((impact) => impact.impactRecordId));
+  const graphBridgeIds = new Set(
+    [...state.graphBridges.values()]
+      .filter((bridge) => bridge.sourceGraphId === graphId || bridge.targetGraphId === graphId)
+      .map((bridge) => bridge.bridgeId)
+  );
+  const atlasIds = new Set([...state.atlases.values()].filter((atlas) => atlas.graphIds.includes(graphId)).map((atlas) => atlas.atlasId));
+  const libraryBindingIds = new Set(
+    [...state.phenotypeLibraryGraphBindings.values()].filter((binding) => binding.graphId === graphId).map((binding) => binding.bindingId)
+  );
+  const libraryIds = new Set([...state.phenotypeLibraries.values()].filter((library) => library.graphIds.includes(graphId)).map((library) => library.libraryId));
+  const deletedObjectIds = new Set([
+    graphId,
+    ...nodeIds,
+    ...edgeIds,
+    ...groupIds,
+    ...membershipIds,
+    ...relationIds,
+    ...phenotypeIds,
+    ...phenotypeVersionIds,
+    ...speciesArtifactIds,
+    ...phenotypeArtifactIds,
+    ...generationJobIds,
+    ...graphBridgeIds
+  ]);
+  const assetIds = new Set([...state.assets.values()].filter((asset) => deletedObjectIds.has(asset.linkedObjectId)).map((asset) => asset.assetId));
+  const contextAttachmentIds = new Set(
+    [...state.contextAttachments.values()].filter((attachment) => deletedObjectIds.has(attachment.targetId)).map((attachment) => attachment.attachmentId)
+  );
+  const changeSetIds = new Set(
+    [...state.changeSets.values()]
+      .filter((changeSet) => changeSetTouchesGraph(changeSet, graphId, deletedObjectIds))
+      .map((changeSet) => changeSet.changeSetId)
+  );
+  const proposalIds = new Set(
+    [...state.proposals.values()]
+      .filter((proposal) => proposal.changeSetIds.some((changeSetId) => changeSetIds.has(changeSetId)))
+      .map((proposal) => proposal.proposalId)
+  );
+  const phenotypeVersionAssetLinks = [...state.phenotypeVersions.values()]
+    .filter((version) => phenotypeVersionIds.has(version.phenotypeVersionId))
+    .reduce((total, version) => total + version.assetIds.length, 0);
+  return {
+    nodeIds,
+    nodeVersionIds,
+    edgeIds,
+    edgeVersionIds,
+    groupIds,
+    membershipIds,
+    relationIds,
+    speciesArtifactIds,
+    phenotypeArtifactIds,
+    phenotypeIds,
+    phenotypeVersionIds,
+    phenotypeVersionAssetLinks,
+    assetIds,
+    generationJobIds,
+    outputReferenceIds,
+    reviewRecordIds,
+    impactRecordIds,
+    graphBridgeIds,
+    atlasIds,
+    libraryBindingIds,
+    libraryIds,
+    contextAttachmentIds,
+    changeSetIds,
+    proposalIds
+  };
+}
+
+function resetCounts(counts: Record<string, number>) {
+  return counts;
+}
+
+function changeSetTouchesGraph(changeSet: ChangeSet, graphId: string, deletedObjectIds: Set<string>): boolean {
+  const payload = changeSet.payload as Record<string, unknown>;
+  const graph = payload.graph as Graph | undefined;
+  const node = payload.node as SpeciesNode | undefined;
+  const edge = payload.edge as EvolutionEdge | undefined;
+  const group = payload.group as SpeciesGroup | undefined;
+  const membership = payload.membership as SpeciesGroupMembership | undefined;
+  const relation = payload.relation as SpeciesGroupRelation | undefined;
+  const atlas = payload.atlas as Atlas | undefined;
+  const bridge = payload.bridge as GraphBridge | undefined;
+  const attachment = payload.attachment as ContextAttachment | undefined;
+  return Boolean(
+    graph?.graphId === graphId ||
+      node?.graphId === graphId ||
+      edge?.graphId === graphId ||
+      group?.graphId === graphId ||
+      membership?.graphId === graphId ||
+      relation?.graphId === graphId ||
+      atlas?.graphIds?.includes(graphId) ||
+      bridge?.sourceGraphId === graphId ||
+      bridge?.targetGraphId === graphId ||
+      (attachment && deletedObjectIds.has(attachment.targetId))
+  );
 }
