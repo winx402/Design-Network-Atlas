@@ -147,6 +147,7 @@ export const ContextImpactParticipationSchema = z.enum(["none", "outdated-check"
 export const ContextPrioritySchema = z.enum(["low", "normal", "high"]);
 export const ContextResolutionRuleSchema = z.enum(["preserve", "merge", "weaken", "translate", "exclude", "manual"]);
 export const CompileTargetSchema = z.enum(["species-snapshot", "phenotype-generation"]);
+export const CompileModeSchema = z.enum(["system", "manual", "agent-assisted", "hybrid"]);
 export const AtlasScopeSchema = z.enum(["none", "direct", "relevant"]);
 export const CompileLayerSchema = z.enum([
   "atlas-foundation",
@@ -702,6 +703,9 @@ export const PhenotypeVersionSchema = z.object({
   tool: z.string().default("manual"),
   toolParameters: JsonRecordSchema,
   assetIds: z.array(z.string()).default([]),
+  speciesCompileArtifactId: z.string().optional(),
+  phenotypeCompileArtifactId: z.string().optional(),
+  compileArtifactSnapshot: JsonRecordSchema,
   status: PhenotypeVersionStatusSchema,
   reviewRecords: z.array(z.string()).default([]),
   facets: FacetsSchema,
@@ -727,6 +731,9 @@ export const TraceEntrySchema = z.object({
   fieldPath: z.string().min(1),
   valueSummary: z.string().default(""),
   decision: TraceDecisionSchema,
+  priority: z.number().int().default(0),
+  overridable: z.boolean().default(true),
+  resolutionRule: ResolutionRuleSchema.default("merge"),
   metadata: JsonRecordSchema
 });
 
@@ -755,6 +762,10 @@ export const SpeciesCompileArtifactSchema = z.object({
   graphId: z.string().min(1),
   speciesNodeId: z.string().min(1),
   nodeVersionId: z.string().min(1),
+  compileMode: CompileModeSchema,
+  compiledBy: z.string().default("system"),
+  assistantContributionSummary: z.string().default(""),
+  inputSummary: JsonRecordSchema,
   compilePolicy: CompilePolicySchema,
   compileScope: CompileScopeSchema,
   resolvedGeneSnapshot: JsonRecordSchema,
@@ -777,6 +788,10 @@ export const PhenotypeCompileArtifactSchema = z.object({
   phenotypeType: z.string().min(1),
   taskBrief: z.string().default(""),
   speciesCompileArtifactId: z.string().optional(),
+  compileMode: CompileModeSchema,
+  compiledBy: z.string().default("system"),
+  assistantContributionSummary: z.string().default(""),
+  inputSummary: JsonRecordSchema,
   compilePolicy: CompilePolicySchema,
   compileScope: CompileScopeSchema,
   resolvedGeneSnapshot: JsonRecordSchema,
@@ -1054,6 +1069,7 @@ export type EdgeVersion = z.infer<typeof EdgeVersionSchema>;
 export type Phenotype = z.infer<typeof PhenotypeSchema>;
 export type PhenotypeVersion = z.infer<typeof PhenotypeVersionSchema>;
 export type CompileScope = z.infer<typeof CompileScopeSchema>;
+export type CompileMode = z.infer<typeof CompileModeSchema>;
 export type TraceEntry = z.infer<typeof TraceEntrySchema>;
 export type CompileConflict = z.infer<typeof CompileConflictSchema>;
 export type ReviewChecklistItem = z.infer<typeof ReviewChecklistItemSchema>;

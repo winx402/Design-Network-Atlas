@@ -1,0 +1,4 @@
+interface:
+  display_name: "DNA Phenotype Generation"
+  short_description: "Guide DNA generated-result workflows from existing graph constraints."
+  default_prompt: "Use this skill to turn an existing DNA species version into a reviewable generation, review, and output-registration plan."

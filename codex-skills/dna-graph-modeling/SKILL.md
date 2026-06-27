@@ -1,118 +1,134 @@
 ---
 name: dna-graph-modeling
-description: Build a new Design Network Atlas graph from a user scenario. Use when the user has a project, design domain, game art system, UI/icon system, asset taxonomy, brand visual system, or rough concept and needs help mapping it into Graph, SpeciesNode, EvolutionEdge, facets, facts, Phenotype types, phenotype library routing, and a preview, change-set review, or proposal write strategy.
+description: Build a new Design Network Atlas graph from a design scenario. Use when a user needs to map a game art system, UI/icon system, brand family, asset taxonomy, worldbuilding context, or rough visual domain into DNA graphs, groups, species, evolution edges, facets, context, phenotype types, compile artifacts, and a reviewable write strategy.
 ---
 
 # DNA Graph Modeling
 
-Use this skill to turn an ambiguous design scenario into a DNA graph plan. The job is not to explain CLI syntax; the job is to decide what the graph should mean.
+Use this skill when the user has a design domain but not yet a reliable DNA graph. The skill's job is scenario mapping and graph modeling, not CLI documentation. Use `dna --help` only when command syntax is explicitly needed.
 
-Use `dna --help` and subcommand help such as `dna node create --help` for CLI syntax. Do not turn this skill into command documentation.
+## Core Principle
 
-## Decision Gates
+Model stable design meaning first, then decide how it should be written. A good result separates design identity, inheritance, reusable dimensions, background context, generated outputs, and storage routing.
 
-Run these gates before proposing objects:
+For Chinese responses, keep these review anchors when useful: `直接生效`, `待确认问题`, `表型库`, and `素材/生成结果`.
 
-1. Scope gate: decide whether the user is modeling a design graph, a phenotype library, or only a one-off generation task. If it is only a one-off output, do not force a graph.
-2. Identity gate: decide what remains stable across many outputs. Only stable identities become SpeciesNode entries.
-3. Inheritance gate: decide which constraints should be inherited through parentage, which should be stored as facts/motifs, and which are local Phenotype requirements.
-4. Variation gate: decide whether differences are EvolutionEdge deltas, facets values, Phenotype variants, or asset storage metadata.
-5. Governance gate: decide whether the proposal can be preview-confirmed, needs change-set review, or is large enough to require proposal semantics.
+## Concept Map
 
-If a gate cannot be answered from the user input, ask one focused question or mark the field as unresolved. Do not fill the graph with plausible but unconfirmed domain facts.
+| Design question | DNA object |
+| --- | --- |
+| What domain or product visual system is being modeled? | Graph |
+| Which stable families or systems need shared context? | SpeciesGroup |
+| What stable design object can generate many outputs? | SpeciesNode |
+| How does a child object evolve from parent constraints? | EvolutionEdge |
+| Which reusable dimensions describe many objects? | FacetDefinition, FacetSchema, GeneTemplate |
+| Which background facts, motifs, principles, references, or review rules support generation? | DesignContext, ContextFact, ContextMotif, DesignPrinciple, ContextReference, ContextReviewRubric |
+| Which relationship spans groups or graphs? | SpeciesGroupRelation, GraphBridge |
+| What concrete generated or curated output is needed? | Phenotype, PhenotypeVersion |
+| Where will generated results or files be registered? | PhenotypeLibrary, StorageMount, OutputReference, AssetIndex |
+| What compiled package should generation/review consume? | SpeciesCompileArtifact, PhenotypeCompileArtifact |
+
+Use "phenotype library" as the plain-language bridge for `PhenotypeLibrary` when discussing generated-result storage.
 
 ## Classification Matrix
 
-Use this matrix to avoid shallow or wrong mappings:
-
-| User concept is mostly... | Map to | Do not map to |
+| User concept is mostly... | Map to | Avoid |
 | --- | --- | --- |
-| Stable design identity that can inherit and generate many results | SpeciesNode | Phenotype or tag |
-| Transformation from one stable identity to another | EvolutionEdge | Child name or facet |
-| Reusable descriptive dimension such as silhouette, material, palette, role, state, rarity, density, mood, affordance | facet | SpeciesNode |
-| Cross-cutting lore, brand rule, motif, setting fact, or constraint reused by multiple objects | fact/motif | facet value hidden in one node |
-| Concrete output for a task, prompt, brief, generated image group, concept sheet, icon set, model brief, animation brief | Phenotype | SpeciesNode |
-| File path, external library item, Eagle item, NAS object, Git blob, runtime export copy | AssetIndex or phenotype library mount | graph identity |
-| Search term, workflow state, review label, owner label | tag/metadata | EvolutionEdge |
+| Stable design identity | SpeciesNode | Phenotype or tag |
+| Parent-to-child transformation | EvolutionEdge | Child name only |
+| Shared family or collection | SpeciesGroup | Repeated local node note |
+| Reusable design dimension | facet/template | One-off context fact |
+| Worldview, story, rationale, reference, or rubric | context object | Hidden node gene |
+| Concrete generated or curated output | Phenotype or PhenotypeVersion | SpeciesNode |
+| File path or external library item | OutputReference, AssetIndex, phenotype library | Graph identity |
 
-Escalate to multiple root SpeciesNode entries when the domain has separate starting identities. Use multiple parents only when the child genuinely merges inherited constraints from parent roles; otherwise prefer facets or facts.
+## Decision Gates
 
-## Workflow
+Run these gates in order. If a gate cannot be answered, mark it as a blocking or non-blocking uncertainty instead of inventing missing facts.
 
-1. Understand the scenario.
-   - Identify project/domain, intended production outputs, team workflow, existing asset libraries, and whether this is one graph or multiple graphs.
-   - Separate confirmed facts from assumptions. Put uncertain points into `待确认问题`.
+1. domain-boundary gate: decide whether this is one graph, several graphs linked by GraphBridge, or only a one-off output that should go to phenotype-generation instead.
+2. group gate: decide whether families, factions, UI systems, regions, disciplines, or asset sets need SpeciesGroup boundaries.
+3. bridge gate: decide whether cross-group or cross-graph relationships are meaningful enough to record as SpeciesGroupRelation or GraphBridge.
+4. context gate: separate worldbuilding, design rationale, cultural motif, brand principle, reference, and review rubric from node or edge genes.
+5. species gate: create SpeciesNode only for stable design objects that can inherit constraints and produce multiple outputs.
+6. evolution gate: create EvolutionEdge only when there is a parent-to-child transformation with meaningful deltas or preservation rules.
+7. facet gate: define facets only for reusable dimensions with a value strategy, not one-off notes.
+8. compile gate: decide whether species should compile through system rules, fixed snapshots, Agent-assisted conflict review, or a hybrid policy.
+9. clarity gate: separate assumptions, blockingQuestions, nonBlockingQuestions, draftFields, and confidence.
+10. execution gate: choose direct apply, preview-confirm, change-set review, proposal, or draft-write.
 
-2. Inventory design objects.
-   - Extract candidate stable design objects, reusable motifs/facts, visual constraints, output needs, and storage needs.
-   - Classify each candidate as Graph, SpeciesNode, EvolutionEdge, facet, fact/motif, Phenotype, AssetIndex, phenotype library, tag, or unresolved.
+## Modeling Workflow
 
-3. Divide SpeciesNode boundaries.
-   - Make a SpeciesNode only for a stable design object that can inherit constraints and produce multiple results.
-   - Do not create a SpeciesNode for a single generated image, a size variant, an angle, a file format, a transient prompt, or a pure tag.
-   - Allow multiple root SpeciesNode entries when the domain has independent starting species.
-   - Allow multiple parents when the child genuinely combines inherited constraints from distinct parent roles.
+1. Extract the design scenario.
+   - Identify domain, user goal, target outputs, existing libraries, and whether generation, curation, or both are expected.
+   - Split confirmed facts from assumptions.
 
-4. Design EvolutionEdge relationships.
-   - Use EvolutionEdge for the meaningful transformation from parent to child: style overlay, structure change, material change, faction change, rarity change, function constraint, platform adaptation, or composition fusion.
-   - Name the edge by the transformation, not by the child object.
-   - Record edge deltas as structured constraints when possible; keep narrative notes only when the design decision is not yet structured.
+2. Classify candidate concepts.
+   - Stable identity becomes SpeciesNode.
+   - Transformation becomes EvolutionEdge.
+   - Shared collection or family boundary becomes SpeciesGroup.
+   - Reusable descriptive dimension becomes facet or template.
+   - Worldview, story, culture, rationale, or source reference becomes context.
+   - Concrete output becomes Phenotype or PhenotypeVersion.
+   - File or external library location becomes OutputReference or AssetIndex.
 
-5. Define facets and templates.
-   - Use facets for design dimensions that matter repeatedly in the domain.
-   - Prefer a small first template with required, recommended, and optional facets.
-   - Keep facts/motifs separate from facets: facts can apply across many concepts; facets define the dimensions used to describe a concept.
+3. Build the initial graph structure.
+   - Allow multiple root SpeciesNode entries when the domain has independent starting points.
+   - Allow multiple parents only when the child genuinely merges constraints from distinct parent roles.
+   - Use SpeciesGroupRelation and GraphBridge for important non-inheritance relationships.
 
-6. Design Phenotype outputs.
-   - For each important SpeciesNode, list expected Phenotype types: image prompt, concept art brief, UI icon, model brief, animation brief, sound brief, runtime export, document, dataset, or custom type.
-   - Record when one Phenotype version may contain multiple assets, such as size variants, crop variants, angles, layers, or storage mirrors.
-   - Decide whether the graph needs a phenotype library and whether it should route to one logical library with multiple storage mounts.
+4. Define genes and facets conservatively.
+   - Start with required and recommended facets only.
+   - Keep facts and motifs outside facets when they may apply to multiple concept objects.
+   - Note where a custom facet value or custom relation type should be handled by Agent-assisted compile instead of fixed rules.
 
-7. Choose write strategy.
-   - Use `直接生效` only for small, explicit, low-risk graph seeds the user has already confirmed.
-   - Use `preview-confirm` for normal single-object writes.
-   - Use `change-set review` for a bounded set of SpeciesNode or EvolutionEdge changes that should be reviewed before application.
-   - Use `proposal` for multi-node trees, multi-parent fusion, template design, or initial graph construction that needs human review as a batch.
-   - Use draft status for unclear concepts that should be visible but not treated as final graph truth.
+5. Plan compile artifacts.
+   - SpeciesCompileArtifact should explain resolved genes, trace, conflicts, open questions, and why Agent host suggestions are advisory.
+   - PhenotypeCompileArtifact should turn accepted species/context constraints into a prompt, brief, negative prompt, generation constraints, and review checklist.
+   - Do not create a standalone artifact skill. Artifacts are persisted compile outputs; skills are scenario workflows.
 
-## Modeling Heuristics
+6. Pick the write strategy.
+   - Use preview-confirm for normal single-object writes.
+   - Use change-set review for several related node/edge/template edits.
+   - Use proposal for initial multi-node trees, group systems, bridges, or high-uncertainty modeling.
+   - Use draft-write only when the user wants visible but non-final graph objects.
 
-- If a concept answers "what stable thing can produce many generated or collected results?", it is likely a SpeciesNode.
-- If a concept answers "how did this child differ from its parent?", it is likely an EvolutionEdge.
-- If a concept answers "which dimension should every similar object carry?", it is likely a facet.
-- If a concept answers "what concrete generated or curated result exists for this task?", it is likely a Phenotype.
-- If a concept answers "where is the actual file or external object?", it is likely AssetIndex or phenotype library storage metadata.
+## Output Contract
+
+Return a structured modeling proposal with these fields:
+
+- graphScope: graph id suggestion, purpose, boundaries, root candidates, and whether multiple graphs are required.
+- objectClassification: user concepts mapped to Graph, SpeciesGroup, SpeciesNode, EvolutionEdge, facet, context, Phenotype, OutputReference, or unresolved.
+- groupPlan: SpeciesGroup and SpeciesGroupRelation candidates with rationale.
+- bridgePlan: GraphBridge candidates, compile relevance, and why a simple parent edge is not enough.
+- speciesPlan: SpeciesNode candidates with parent candidates, role, level, category, status, and rationale.
+- evolutionPlan: EvolutionEdge candidates with source, target, parent role, direction, delta genes, must preserve, must avoid, and conflict notes.
+- contextPlan: DesignContext, ContextFact, ContextMotif, DesignPrinciple, ContextReference, and ContextReviewRubric candidates.
+- facetTemplatePlan: required, recommended, and optional facets with value strategy.
+- phenotypePlan: generated result types, expected variants, review needs, and output/library routing.
+- compilePlan: suggested CompilePolicy, compileMode, conflict strategy, expected SpeciesCompileArtifact and PhenotypeCompileArtifact contents.
+- writeStrategy: direct, preview-confirm, change-set review, proposal, or draft-write with reason.
+- assumptions: facts treated as assumptions.
+- blockingQuestions: questions that materially change graph structure or write safety.
+- nonBlockingQuestions: questions that can remain unresolved for a draft or preview.
+- draftFields: fields that should stay draft until confirmed.
+- confidence: high, medium, or low with one concrete reason.
 
 ## Quality Bar
 
-A useful graph modeling result must satisfy all of these:
-
-- Every proposed SpeciesNode has a stable identity, a reason it is not just a Phenotype, and either a root reason or parent candidates.
-- Every proposed EvolutionEdge states the transformation delta and the parent role; it is not just a relationship label.
-- Every facet is reusable across multiple objects and has a clear value strategy: enum, free text, number, boolean, reference, or custom.
-- Facts/motifs are separated from facets and can apply to more than one object.
-- Phenotype types explain what will be generated or curated, and whether one Phenotype version can own multiple assets.
-- The phenotype library recommendation keeps graph identity decoupled from storage, with one logical library and multiple mounts unless governance boundaries require otherwise.
-- The write strategy explains why it is directly applied, preview-confirmed, change-set reviewed, proposal-based, or draft-only.
-- The proposal lists only material unresolved questions, not generic discovery questions.
-
-## Required Output
-
-Return a modeling proposal with these sections:
-
-- Graph scope: graph id suggestion, purpose, root SpeciesNode candidates, and whether multiple graphs are needed.
-- Object classification: table of user concepts mapped to DNA object types.
-- Species plan: SpeciesNode list with parent candidates, level, category, status, and rationale.
-- Evolution plan: EvolutionEdge list with source, target, parent role, direction, delta, and conflict notes.
-- Facets/template plan: required, recommended, optional facets, plus reusable facts/motifs.
-- Phenotype plan: Phenotype types, expected asset variants, and phenotype library routing.
-- Write strategy: directly apply, preview-confirm, change-set review, proposal, or draft-write with reason.
-- 待确认问题: only questions that materially change the graph model.
+- Every SpeciesNode has a stable identity and a reason it is not just one generated result.
+- Every EvolutionEdge describes the transformation, not only the child label.
+- Facets are reusable dimensions with a value strategy.
+- Context facts and motifs stay separate from reusable facets.
+- Phenotype and phenotype library decisions stay decoupled from graph identity.
+- The write strategy explains why it is `直接生效`, preview-confirm, change-set review, proposal, or draft-write.
+- `待确认问题` contains only questions that materially change the graph model or write safety.
 
 ## Guardrails
 
-- Do not pretend unknown domain facts are confirmed.
-- Do not flatten everything into a tree if multiple roots or multiple parents better represent the design relationship.
-- Do not put storage concerns into graph identity; connect graph and phenotype library through bindings and routing.
-- Do not bypass DNA service/CLI write flows. After the model is accepted, express persistence as preview, change-set review, or proposal operations.
-- Do not include secrets, provider credentials, complete private links, or unrelated private project material in the graph proposal.
+- Do not invent domain facts, lore, style history, storage locations, or user decisions.
+- Do not turn a single generated image, prompt, file variant, size, or angle into a SpeciesNode.
+- Do not hide storage concerns inside graph identity; bind graphs and result libraries explicitly.
+- Do not treat custom relation types as fixed compile rules. They can be included as trace/context for Agent-assisted compile.
+- Do not bypass DNA service, CLI, change-set, or proposal write flows.
+- Do not store API keys, credentials, complete private links, raw Agent host responses, or unrelated private project material.

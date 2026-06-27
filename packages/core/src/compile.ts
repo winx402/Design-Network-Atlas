@@ -75,6 +75,10 @@ export interface CompileSpeciesSnapshotInput {
   graph: Graph;
   node: SpeciesNode;
   nodeVersionId: string;
+  compileMode?: SpeciesCompileArtifact["compileMode"];
+  compiledBy?: string;
+  assistantContributionSummary?: string;
+  inputSummary?: Record<string, unknown>;
   compileScope?: Partial<CompileScope>;
   parentSnapshots?: Array<{ nodeVersionId: string; parentNodeId?: string; role?: string; snapshot: Record<string, unknown> }>;
   edgeDeltas?: Array<{ edgeVersionId: string; delta: Record<string, unknown> }>;
@@ -93,6 +97,7 @@ export interface CompileSpeciesSnapshotInput {
   facetDefinitions?: FacetDefinition[];
   facetSchemas?: FacetSchema[];
   facetAssignments?: FacetAssignment[];
+  assistantSuggestions?: Array<{ fieldPath: string; valueSummary: string }>;
   llmSuggestions?: Array<{ fieldPath: string; valueSummary: string }>;
 }
 
@@ -103,6 +108,10 @@ export interface CompilePhenotypeGenerationInput {
   nodeVersionId: string;
   phenotypeType: string;
   taskBrief: string;
+  compileMode?: PhenotypeCompileArtifact["compileMode"];
+  compiledBy?: string;
+  assistantContributionSummary?: string;
+  inputSummary?: Record<string, unknown>;
   compileScope?: Partial<CompileScope>;
   speciesArtifact?: SpeciesCompileArtifact;
   resolvedGeneSnapshot?: Record<string, unknown>;
@@ -162,10 +171,38 @@ function summarizeValue(value: unknown): string {
   return json.length > 160 ? `${json.slice(0, 157)}...` : json;
 }
 
-function trace(input: Omit<TraceEntry, "metadata"> & { metadata?: Record<string, unknown> }): TraceEntry {
+function trace(
+  input: Omit<TraceEntry, "metadata" | "priority" | "overridable" | "resolutionRule"> &
+    Partial<Pick<TraceEntry, "priority" | "overridable" | "resolutionRule">> & { metadata?: Record<string, unknown> }
+): TraceEntry {
   return {
-    ...input,
+    objectType: input.objectType,
+    objectId: input.objectId,
+    versionId: input.versionId,
+    layer: input.layer,
+    fieldPath: input.fieldPath,
+    valueSummary: input.valueSummary,
+    decision: input.decision,
+    priority: input.priority ?? 0,
+    overridable: input.overridable ?? true,
+    resolutionRule: input.resolutionRule ?? "merge",
     metadata: input.metadata ?? {}
+  };
+}
+
+function compileMetadata(input: {
+  compileMode?: SpeciesCompileArtifact["compileMode"];
+  compiledBy?: string;
+  assistantContributionSummary?: string;
+  hasAssistantWork?: boolean;
+  fallbackMode?: SpeciesCompileArtifact["compileMode"];
+}): Pick<SpeciesCompileArtifact, "compileMode" | "compiledBy" | "assistantContributionSummary"> {
+  const hasAssistantWork = input.hasAssistantWork || Boolean(input.assistantContributionSummary);
+  const compileMode = input.compileMode ?? (hasAssistantWork ? "agent-assisted" : input.fallbackMode ?? "system");
+  return {
+    compileMode,
+    compiledBy: input.compiledBy ?? (compileMode === "agent-assisted" ? "agent-skill" : "system"),
+    assistantContributionSummary: input.assistantContributionSummary ?? ""
   };
 }
 
@@ -445,19 +482,34 @@ export function compileSpeciesSnapshot(input: CompileSpeciesSnapshotInput): Spec
       })
     );
   }
-  for (const suggestion of input.llmSuggestions ?? []) {
+  const assistantSuggestions = [
+    ...(input.assistantSuggestions ?? []).map((suggestion) => ({ ...suggestion, source: "assistant" as const })),
+    ...(input.llmSuggestions ?? []).map((suggestion) => ({ ...suggestion, source: "legacy-llm" as const }))
+  ];
+  for (const suggestion of assistantSuggestions) {
     decisionTrace.push(
       trace({
-        objectType: "llm-suggestion",
+        objectType: suggestion.source === "legacy-llm" ? "llm-suggestion" : "agent-suggestion",
         objectId: `${input.artifactId}:${suggestion.fieldPath}`,
         layer: "graph-context",
         fieldPath: suggestion.fieldPath,
         valueSummary: suggestion.valueSummary,
-        decision: "llm-suggested"
+        decision: "llm-suggested",
+        resolutionRule: "llm-review"
       })
     );
-    openQuestions.push(`Review LLM suggestion before writing ${suggestion.fieldPath}.`);
+    openQuestions.push(
+      suggestion.source === "legacy-llm"
+        ? `Review LLM suggestion before writing ${suggestion.fieldPath}.`
+        : `Review Agent host suggestion before writing ${suggestion.fieldPath}.`
+    );
   }
+  const metadata = compileMetadata({
+    compileMode: input.compileMode,
+    compiledBy: input.compiledBy,
+    assistantContributionSummary: input.assistantContributionSummary,
+    hasAssistantWork: assistantSuggestions.length > 0
+  });
 
   return {
     artifactId: input.artifactId,
@@ -465,6 +517,12 @@ export function compileSpeciesSnapshot(input: CompileSpeciesSnapshotInput): Spec
     graphId: input.graph.graphId,
     speciesNodeId: input.node.nodeId,
     nodeVersionId: input.nodeVersionId,
+    ...metadata,
+    inputSummary: input.inputSummary ?? {
+      graphId: input.graph.graphId,
+      speciesNodeId: input.node.nodeId,
+      nodeVersionId: input.nodeVersionId
+    },
     compilePolicy,
     compileScope,
     resolvedGeneSnapshot,
@@ -559,6 +617,14 @@ export function compilePhenotypeGeneration(input: CompilePhenotypeGenerationInpu
     .filter(Boolean)
     .join("\n");
 
+  const metadata = compileMetadata({
+    compileMode: input.compileMode,
+    compiledBy: input.compiledBy,
+    assistantContributionSummary: input.assistantContributionSummary,
+    hasAssistantWork: Boolean(input.assistantContributionSummary),
+    fallbackMode: input.speciesArtifact?.compileMode
+  });
+
   return {
     artifactId: input.artifactId,
     compileTarget: "phenotype-generation",
@@ -568,6 +634,15 @@ export function compilePhenotypeGeneration(input: CompilePhenotypeGenerationInpu
     phenotypeType: input.phenotypeType,
     taskBrief: input.taskBrief,
     speciesCompileArtifactId: input.speciesArtifact?.artifactId,
+    ...metadata,
+    inputSummary: input.inputSummary ?? {
+      graphId: input.graph.graphId,
+      speciesNodeId: input.node.nodeId,
+      nodeVersionId: input.nodeVersionId,
+      phenotypeType: input.phenotypeType,
+      taskBrief: input.taskBrief,
+      speciesCompileArtifactId: input.speciesArtifact?.artifactId
+    },
     compilePolicy: input.node.compilePolicy ?? input.graph.compilePolicy,
     compileScope,
     resolvedGeneSnapshot,

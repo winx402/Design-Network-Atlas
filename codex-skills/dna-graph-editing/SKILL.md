@@ -1,121 +1,116 @@
 ---
 name: dna-graph-editing
-description: Safely edit an existing Design Network Atlas graph. Use when the user wants to add, remove, merge, split, rename, reparent, refactor, review, or extend existing Graph, SpeciesNode, EvolutionEdge, facets, facts, Phenotype types, phenotype library bindings, or routing policies, and needs impact analysis, risk grading, alternatives, preview, change-set review, or proposal guidance.
+description: Safely edit an existing Design Network Atlas graph. Use when a user wants to add, remove, merge, split, rename, reparent, refactor, review, extend, or repair existing DNA graph objects and needs reasonableness checks, impact scope, risk grading, compile implications, storage-routing implications, and a reviewable write strategy.
 ---
 
 # DNA Graph Editing
 
-Use this skill when a DNA graph already exists and the user wants to change it. The main work is to protect graph meaning while still moving the design forward.
+Use this skill when a DNA graph already exists and the user wants to change it. The skill's job is to protect graph meaning and downstream generation quality while still proposing a practical edit. Use `dna --help` only when command syntax is explicitly needed.
 
-Use `dna --help` and subcommand help such as `dna changeset --help` for CLI syntax. Do not turn this skill into command documentation.
+For Chinese responses, keep these review anchors when useful: `当前图谱`, `合理性`, `影响分析`, `风险等级`, and `替代方案`.
 
-## Decision Gates
+## Required Context
 
-Run these gates before proposing an edit:
+Read or ask for the current graph context before durable recommendations:
 
-1. Context gate: confirm which current graph, branch, SpeciesNode, EvolutionEdge, facets, Phenotype versions, and library bindings are in scope. If current state is missing, say what cannot be assessed.
-2. Object gate: decide whether the requested change belongs to graph identity, Phenotype output, AssetIndex/storage, tags/metadata, review policy, or template/facet schema.
-3. History gate: decide whether existing versions, reviews, or assets must remain understandable after the edit. Prefer archive, supersede, or add over destructive rewrite when history exists.
-4. Impact gate: decide whether the change can alter downstream generated results, only changes metadata, or changes routing/search behavior.
-5. Governance gate: decide whether the edit is direct/preview-safe, needs change-set review, needs proposal review, or should stay as diagnosis only.
+- Graph purpose, roots, SpeciesGroup boundaries, SpeciesNode entries, EvolutionEdge links, and parent roles.
+- Existing facets, templates, context records, ContextReference entries, and ContextReviewRubric entries.
+- Existing Phenotype, PhenotypeVersion, SpeciesCompileArtifact, PhenotypeCompileArtifact, OutputReference, PhenotypeLibrary, and routing policy records when the change may affect generated results or storage.
+- Known review records and impact records.
 
-Do not apply a change just because it is easy to encode. A graph edit is valid only if it improves the model without hiding downstream consequences.
+If context is partial, state what cannot be assessed and keep high-risk changes in proposal or change-set review.
+
+## Edit Scope Levels
+
+Classify the edit before designing the patch:
+
+- single-node: one SpeciesNode label, description, local genes, motifs, status, or tags.
+- single-edge: one EvolutionEdge delta, preservation rule, value resolution, or badcase.
+- single-group: one SpeciesGroup membership, shared fact, or local group relation.
+- multi-group: several groups, cross-group relations, shared template revisions, or broad motif changes.
+- cross-graph: GraphBridge, atlas-level relationship, shared library, or synchronized visual family across graphs.
+- context: DesignContext, ContextFact, ContextMotif, DesignPrinciple, ContextReference, or ContextReviewRubric.
+- compile-policy: CompilePolicy, compileMode, fixed snapshot, resolution rule, Agent-assisted conflict handling, or artifact trace behavior.
+- storage-routing: PhenotypeLibrary binding, StorageMount, ExternalLibraryMapping, LibraryRoutingPolicy, OutputReference, or AssetIndex metadata.
 
 ## Edit Classification Matrix
 
-Use this matrix to choose the smallest correct change:
-
 | User asks to... | First consider | Watch for |
 | --- | --- | --- |
-| Add a new concept | SpeciesNode if stable; Phenotype if task result; tag if search-only | Creating species for one file or prompt |
-| Add a style that affects many objects | shared parent, facet, fact/motif, or template revision | Repeating the same edge delta everywhere |
-| Move a node under another parent | reparent with impact check or add second parent role | Making old Phenotype versions misleading |
-| Split a broad node | new child SpeciesNode entries plus EvolutionEdge deltas | Losing shared facets or facts |
-| Merge two nodes | alias/supersede one node, preserve versions, then redirect future use | Destroying review and output history |
-| Rename | metadata-only rename if identity is unchanged | Treating a semantic change as a label cleanup |
-| Delete | archive/deprecate first | Breaking references from Phenotype, reviews, impacts, or assets |
-| Change facets | template/schema revision plus affected node review | Invalidating existing snapshots without marking outdated |
-| Change library routing | LibraryRoutingPolicy or mount binding | Coupling graph id to storage layout |
+| Add a concept | SpeciesNode, Phenotype, context, or tag | Creating species for one file |
+| Add a style that affects many objects | parent, facet, context, template, or group | Repeated edge deltas |
+| Move a node | reparent, add parent role, or create relation | Making old outputs misleading |
+| Split or merge nodes | archive, supersede, alias, or proposal | Destroying version history |
+| Change storage | LibraryRoutingPolicy or OutputReference | Coupling graph identity to storage |
+| Change review criteria | ContextReviewRubric or compile artifact refresh | Accepting stale results |
+
+## Decision Gates
+
+1. object gate: decide whether the request belongs to graph identity, generated result, output reference, tag, context, review, template, compile policy, or routing.
+2. reasonableness gate: reject or redirect edits that would make a file, prompt, tag, or one-off output into a species.
+3. history gate: preserve understandable history; prefer archive, supersede, alias, or add over destructive rewrite when versions exist.
+4. impact gate: identify downstream nodes, edges, PhenotypeVersion outdated risk, review records, compile artifact staleness, and storage-routing effects.
+5. risk gate: assign low, medium, high, or structural risk using the scope levels above.
+6. execution gate: choose no-write diagnosis, preview-confirm, change-set review, proposal, or draft-write.
+
+## Impact Rules
+
+- Parent, edge, root, shared facet, template, compile-policy, group, bridge, and context changes can invalidate SpeciesCompileArtifact and PhenotypeCompileArtifact records.
+- Upstream visual constraint changes should mark downstream PhenotypeVersion outdated instead of silently regenerating results.
+- ContextReference and ContextReviewRubric changes may alter prompts, negative prompts, review checklists, or acceptance criteria.
+- storage-routing changes may affect where new OutputReference records go, but they should not alter species identity.
+- Metadata-only rename can be low risk if identity, inheritance, facets, and output references remain valid.
+
+## Risk Escalation
+
+- Low: additive single-node or single-edge change with no downstream generation impact.
+- Medium: branch-local visual change, review checklist change, context revision, or bounded routing change.
+- High: root, template, shared facet, compile-policy, group, or multi-parent change that may affect many descendants.
+- Structural: split, merge, reparent, multi-group, cross-graph, bridge, or atlas-level change.
+
+Escalate one level if current graph data is missing, existing outputs are accepted, or the change affects production library routing.
 
 ## Workflow
 
-1. Read the 当前图谱 context.
-   - Inspect graph purpose, root SpeciesNode entries, parent/child links, multi-parent roles, facets, template bindings, Phenotype types, phenotype library bindings, reviews, and impact records.
-   - If only partial data is available, say what is missing before proposing durable changes.
+1. Normalize the user request into DNA object changes.
+2. Compare the requested edit against current graph meaning.
+3. Identify affected descendants, related context, compile artifacts, PhenotypeVersion records, output references, libraries, and routing policies.
+4. Produce alternatives when the direct edit is risky.
+5. Recommend the smallest reviewable write path.
+6. Specify validation: impact check, review node/phenotype, compile artifact refresh, result regeneration decision, and storage routing check.
 
-2. Classify the edit intent.
-   - Add SpeciesNode, add EvolutionEdge, adjust facets, change template, change parentage, merge duplicates, split overloaded node, rename concept, archive concept, change Phenotype type, change library routing, or repair graph structure.
-   - Identify whether the request is a semantic change, a naming cleanup, a storage/routing change, or a generation-output change.
+## Output Contract
 
-3. Check 合理性.
-   - Verify that a proposed SpeciesNode is a stable design object, not a single Phenotype, tag, file variant, prompt, or fact.
-   - Verify that a proposed EvolutionEdge expresses a transformation from parent to child.
-   - Verify that facets describe reusable dimensions rather than one-off values.
-   - Verify that phenotype library changes stay decoupled from graph identity.
+Return an edit proposal with these fields:
 
-4. Run 影响分析.
-   - Identify downstream SpeciesNode entries, EvolutionEdge versions, Phenotype versions, AssetIndex references, reviews, and routing policies affected by the change.
-   - Mark likely outdated Phenotype versions when upstream constraints, parentage, facets, or edge deltas change.
-   - Distinguish visual-impacting changes from metadata-only changes.
-
-5. Grade risk and change size.
-   - Low risk: additive, local, no downstream generated result changes.
-   - Medium risk: changes one branch, affects a small set of Phenotype versions, or changes review criteria.
-   - High risk: changes root nodes, shared facets, template semantics, multi-parent rules, or many downstream results.
-   - Structural risk: requires split/merge/reparenting across multiple branches or changes graph interpretation.
-
-6. Offer 替代方案.
-   - Prefer additive extension when deletion would break history.
-   - Prefer archive over hard delete when Phenotype versions or reviews already reference the object.
-   - Prefer split when a SpeciesNode mixes multiple stable objects.
-   - Prefer merge when two nodes differ only by name or tag but share identity.
-   - Prefer edge adjustment when the child identity is sound but inheritance is wrong.
-
-7. Choose write strategy.
-   - Use preview-confirm for low-risk single edits.
-   - Use change-set review for medium-risk edits or edits needing user approval before persistence.
-   - Use proposal for high-risk, multi-node, multi-edge, root-level, or structural edits.
-   - Require `impact check` before applying parent, edge, root, template, or shared facet changes.
-   - Keep unresolved edits as draft or pending proposal; do not silently apply uncertain graph facts.
-
-## Editing Heuristics
-
-- If the user says "add this asset", check whether it is actually a Phenotype or AssetIndex before creating a SpeciesNode.
-- If the user says "this style should affect many objects", consider a facet, fact/motif, template revision, or parent SpeciesNode instead of repeated edge deltas.
-- If the user says "move this under that parent", check whether old Phenotype versions become outdated.
-- If the user says "delete", check archive, deprecate, or replace first.
-- If a change affects generation guidance, revise review checklist expectations along with the graph.
+- currentState: graph objects inspected and missing context.
+- requestedChange: normalized edit intent and affected object types.
+- scopeLevel: single-node, single-edge, single-group, multi-group, cross-graph, context, compile-policy, storage-routing, or mixed.
+- reasonableness: pass, concern, or reject with rationale.
+- impactAnalysis: downstream SpeciesNode, EvolutionEdge, context, compile artifact, PhenotypeVersion outdated, OutputReference, review, and routing implications.
+- riskLevel: low, medium, high, or structural with concrete reason.
+- alternatives: safer or more expressive options when risk is not low.
+- compilePlan: whether SpeciesCompileArtifact or PhenotypeCompileArtifact should be refreshed, fixed, reviewed, or left unchanged.
+- writeStrategy: no-write diagnosis, preview-confirm, change-set review, proposal, or draft-write.
+- reviewChecklist: what the user should confirm before apply.
+- assumptions: assumptions used.
+- blockingQuestions: questions that block a safe edit.
+- nonBlockingQuestions: questions that can remain unresolved.
+- confidence: high, medium, or low with one concrete reason.
 
 ## Quality Bar
 
-A useful graph editing result must satisfy all of these:
-
-- It states the current graph context used and what context was unavailable.
-- It classifies the edit into graph identity, Phenotype, AssetIndex/storage, tag/metadata, review, template/facet, or routing.
-- It explains why the change is reasonable or why it should be rejected.
-- It names downstream SpeciesNode entries, EvolutionEdge versions, Phenotype versions, AssetIndex references, reviews, impacts, or routing policies that may become outdated.
-- It distinguishes visual-impacting changes from metadata-only and storage-routing changes.
-- It gives a risk level with a concrete reason, not just a label.
-- It gives at least one safer alternative when the change is medium, high, or structural risk.
-- It chooses preview-confirm, change-set review, proposal, draft-write, or no-write diagnosis and explains why.
-
-## Required Output
-
-Return an edit proposal with these sections:
-
-- Current state: summarized 当前图谱 objects and missing context.
-- Requested change: normalized edit intent and affected DNA object types.
-- Reasonableness check: pass, concerns, or reject with rationale.
-- Impact analysis: downstream objects, outdated risk, visual impact, storage impact, and review impact.
-- 风险等级 / Risk level: low, medium, high, or structural, with reason.
-- Alternatives: at least one safer or more expressive option when risk is not low.
-- Recommended write path: preview-confirm, change-set review, proposal, draft-write, or no-write diagnosis.
-- Review checklist: what the user should confirm before apply.
+- The proposal states which 当前图谱 context was inspected and what is missing.
+- The 合理性 check explains pass, concern, or rejection.
+- 影响分析 names downstream graph, context, compile artifact, result, review, and storage-routing consequences.
+- 风险等级 is tied to scope and downstream impact, not a generic label.
+- 替代方案 is provided for medium, high, or structural changes.
+- The write strategy stays reviewable through preview-confirm, change-set review, proposal, or draft-write.
 
 ## Guardrails
 
-- Do not write directly to database internals, exported JSON, or asset storage by hand.
-- Do not force a user request into a graph edit when it belongs to Phenotype, AssetIndex, tag, or library routing.
-- Do not apply edits that make existing reviews or Phenotype versions misleading without marking the impact.
-- Do not treat generated output regeneration as automatic; recommend it only after version and impact review.
-- Do not include secrets, provider credentials, complete private links, or unrelated private project material in the edit proposal.
+- Do not write directly to SQLite internals, exported JSON, or external asset storage by hand.
+- Do not force a user request into graph identity when it belongs to Phenotype, OutputReference, AssetIndex, tag, context, review, or routing.
+- Do not make existing reviews, compile artifacts, or PhenotypeVersion records misleading without marking impact.
+- Do not treat regeneration as automatic; recommend it after version and impact review.
+- Do not store API keys, credentials, complete private links, raw Agent host responses, or unrelated private project material.
