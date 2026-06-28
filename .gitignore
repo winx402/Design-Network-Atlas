@@ -3,6 +3,7 @@ dist/
 coverage/
 *.tsbuildinfo
 .dna/
+codex-agents/
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
