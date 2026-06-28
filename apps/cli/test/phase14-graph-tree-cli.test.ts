@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -19,6 +19,16 @@ function runDna(args: string[]) {
     encoding: "utf8",
     env: { ...process.env, FORCE_COLOR: "0" }
   });
+}
+
+function runDnaFailure(args: string[]) {
+  const result = spawnSync("pnpm", ["--silent", "tsx", "apps/cli/src/index.ts", ...args], {
+    cwd: projectRoot,
+    encoding: "utf8",
+    env: { ...process.env, FORCE_COLOR: "0" }
+  });
+  expect(result.status).not.toBe(0);
+  return `${result.stdout}${result.stderr}`;
 }
 
 describe("Phase 14 graph tree CLI", () => {
@@ -218,5 +228,19 @@ describe("Phase 14 graph tree CLI", () => {
     ]);
     expect(json.groupOverlay.ungroupedNodeIds).toEqual(["node-root", "node-ungrouped"]);
     expect(json.groupOverlay.groupRelations).toEqual([expect.objectContaining({ relationshipId: "rel-groups" })]);
+  }, 60_000);
+
+  test("adds recovery guidance for unknown graph ids in direct graph commands", () => {
+    const db = join(tempDir("phase14-graph-missing"), "dna.sqlite");
+
+    for (const args of [
+      ["--db", db, "graph", "tree", "--id", "missing-id"],
+      ["--db", db, "graph", "show", "--id", "missing-id"],
+      ["--db", db, "graph", "archive", "--id", "missing-id"]
+    ]) {
+      const output = runDnaFailure(args);
+      expect(output).toContain("graph not found: missing-id");
+      expect(output).toContain("Run dna graph list to see available graph ids.");
+    }
   }, 60_000);
 });

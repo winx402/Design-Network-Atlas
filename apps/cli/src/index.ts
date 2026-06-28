@@ -90,6 +90,16 @@ function requiredUnlessChangeSetApply<T>(value: T | undefined, optionName: strin
   throw new Error(`missing required option: ${optionName}`);
 }
 
+function graphNotFoundError(graphId: string) {
+  return new Error(`graph not found: ${graphId}\nRun dna graph list to see available graph ids.`);
+}
+
+function getGraphOrThrow(store: SqliteDnaStore, graphId: string) {
+  const value = store.graphs.get(graphId);
+  if (!value) throw graphNotFoundError(graphId);
+  return value;
+}
+
 function requiredOption<T>(value: T | undefined, optionName: string): T {
   if (value !== undefined) return value;
   throw new Error(`missing required option: ${optionName}`);
@@ -425,8 +435,7 @@ graph.command("list").action((_options, command) => {
 });
 graph.command("show").requiredOption("--id <graphId>", "graph id").action((options, command) => {
   const store = openStore(command);
-  const value = store.graphs.get(options.id);
-  if (!value) throw new Error(`graph not found: ${options.id}`);
+  const value = getGraphOrThrow(store, options.id);
   console.log(JSON.stringify(value, null, 2));
   store.close();
 });
@@ -438,8 +447,7 @@ graph
   .option("--include-phenotypes", "include planned and generated phenotype containers as a review overlay")
   .action((options, command) => {
     const store = openStore(command);
-    const value = store.graphs.get(options.id);
-    if (!value) throw new Error(`graph not found: ${options.id}`);
+    const value = getGraphOrThrow(store, options.id);
     const tree = buildGraphTree({
       graph: value,
       nodes: store.nodes.listByGraph(options.id),
@@ -477,8 +485,7 @@ graph
   });
 graph.command("archive").requiredOption("--id <graphId>", "graph id").action((options, command) => {
   const store = openStore(command);
-  const value = store.graphs.get(options.id);
-  if (!value) throw new Error(`graph not found: ${options.id}`);
+  const value = getGraphOrThrow(store, options.id);
   if (!shouldApply(command)) {
     store.close();
     return preview(command, `archive graph ${options.id}`, { before: value, after: { ...value, status: "archived" } });
