@@ -53,50 +53,105 @@ Run these gates in order. If a gate cannot be answered, mark it as a blocking or
 2. group gate: decide whether families, factions, UI systems, regions, disciplines, or asset sets need SpeciesGroup boundaries.
 3. bridge gate: decide whether cross-group or cross-graph relationships are meaningful enough to record as SpeciesGroupRelation or GraphBridge.
 4. context gate: separate worldbuilding, design rationale, cultural motif, brand principle, reference, and review rubric from node or edge genes.
-5. species gate: create SpeciesNode only for stable design objects that can inherit constraints and produce multiple outputs.
+5. species gate: create SpeciesNode only for stable design objects that can pass phenotype readiness and produce multiple outputs.
 6. evolution gate: create EvolutionEdge only when there is a parent-to-child transformation with meaningful deltas or preservation rules.
 7. facet gate: define facets only for reusable dimensions with a value strategy, not one-off notes.
 8. compile gate: decide whether species should compile through system rules, fixed snapshots, Agent-assisted conflict review, or a hybrid policy.
 9. clarity gate: separate assumptions, blockingQuestions, nonBlockingQuestions, draftFields, and confidence.
 10. execution gate: choose preview-confirm, change-set review, local proposal package, draft-write, or direct audit write for generated trace/output/audit records.
 
-## Modeling Workflow
+## Macro Workflow
 
-1. Extract the design scenario.
-   - Identify domain, user goal, target outputs, existing libraries, and whether generation, curation, or both are expected.
-   - Split confirmed facts from assumptions.
+Use these nine modules before listing SpeciesNode candidates. Each module contributes one section to the final modeling proposal.
 
-2. Classify candidate concepts.
-   - Stable identity becomes SpeciesNode.
-   - Transformation becomes EvolutionEdge.
-   - Shared collection or family boundary becomes SpeciesGroup.
-   - Reusable descriptive dimension becomes facet or template.
-   - Worldview, story, culture, rationale, or source reference becomes context.
-   - Concrete output becomes Phenotype or PhenotypeVersion.
-   - File or external library location becomes OutputReference or AssetIndex.
+## Scenario Lens
 
-3. Build the initial graph structure.
-   - Allow multiple root SpeciesNode entries when the domain has independent starting points.
-   - Allow multiple parents only when the child genuinely merges constraints from distinct parent roles.
-   - Use SpeciesGroupRelation and GraphBridge for important non-inheritance relationships.
+- Module question: What design-generation domain is being modeled, and which lens should shape the rest of the graph?
+- Evidence to inspect: user goal, requested output types, discipline, reviewer role, existing source names or IDs, delivery surface, and whether the scenario is a game UI / icon system, character / equipment / prop visual system, monster / environment / worldbuilding object network, VFX / signal / audio cue system, brand / product visual family, or asset taxonomy / storage-heavy scenario.
+- Decision boundary: choose a lens before listing species; if the user only asks for one prompt, one generated file, or one review result, redirect to phenotype-generation or output registration instead of graph modeling.
+- Positive pattern: an icon family with reusable states and production review needs can become a graph lens.
+- Counterexample: a single banner prompt with no stable object family is not enough for a new graph.
+- Output contribution: graphScope, assumptions, blockingQuestions, and the lens note inside reviewOutline.
 
-4. Define genes and facets conservatively.
-   - Start with required and recommended facets only.
-   - Keep facts and motifs outside facets when they may apply to multiple concept objects.
-   - Note where a custom facet value or custom relation type should be handled by Agent-assisted compile instead of fixed rules.
+## Domain Split
 
-5. Plan compile artifacts.
-   - SpeciesCompileArtifact should explain resolved genes, trace, conflicts, open questions, and why Agent host suggestions are advisory.
-   - PhenotypeCompileArtifact should turn accepted species/context constraints into a prompt, brief, negative prompt, generation constraints, and review checklist.
-   - Do not create a standalone artifact skill. Artifacts are persisted compile outputs; skills are scenario workflows.
+- Module question: Is this one Graph, multiple Graph objects in an Atlas, or a one-off generated output?
+- Evidence to inspect: production output type, reviewer or discipline, downstream consumption path, source boundaries, and whether relationships are inheritance or only reference, drive, consume, or review relationships.
+- Decision boundary: split into multiple Graph objects when disciplines, output pipelines, or review ownership differ; connect them with GraphBridge only when the relation spans graph boundaries without pretending to be inheritance.
+- Positive pattern: UI icon assets and character equipment can be separate graphs connected by a bridge when they share a brand principle but have different reviewers and phenotype outputs.
+- Counterexample: putting every department, storage folder, or page framework into one graph hides review ownership and downstream impact.
+- Output contribution: graphScope, bridgePlan, reviewOutline, and nonBlockingQuestions for unresolved graph boundaries.
 
-6. Pick the write strategy.
-   - Use preview-confirm for normal single-object writes.
-   - Use change-set review for several related node/edge/template edits.
-   - Use a local proposal package for initial multi-node trees, group systems, bridges, or high-uncertainty modeling that should review several preview change-sets together.
-   - For large initial modeling drafts, prepare a `dna.modeling-batch.v1` JSON file for `dna proposal import-batch --in <file>` instead of listing dozens of one-off commands. The batch format may include graphs, atlases, species groups, group memberships, group relations, graph bridges, species nodes, evolution edges, phenotype libraries, library graph bindings, storage mounts, external library mappings, and library routing policies.
-   - Use draft-write only when the user wants visible but non-final graph objects or explicitly draft generated trace/output records.
-   - Use direct audit write only for generated trace/output/audit records and external pointers through CLI/application service boundaries.
+## Group Organization
+
+- Module question: Which SpeciesGroup boundaries are needed before species are proposed?
+- Evidence to inspect: families, factions, components, disciplines, release slices, source batches, review units, shared context facts, and production ownership.
+- Decision boundary: groups are review and production units, not decorative categories. Use SpeciesGroup for shared constraints or review ownership, SpeciesGroupRelation for weak relationships between groups, and avoid groups when only a tag or file folder is present.
+- Positive pattern: a set of button states or monster roles sharing review criteria can be a group before individual drawable species are chosen.
+- Counterexample: "all exported PNGs" is storage organization and belongs to phenotype library/routing, not a SpeciesGroup by itself.
+- Output contribution: groupPlan, group relations in reviewOutline, and firstSliceStrategy grouping.
+
+## Phenotype Readiness
+
+- Module question: Does each SpeciesNode candidate represent a drawable, reviewable stable object?
+- Evidence to inspect: source document, object ID or asset ID when available, expected first phenotype type, first visual deliverable, drawable visual signal, negative boundary, and group membership.
+- Decision boundary: SpeciesNode is a hard gate. Before creating a species candidate, answer: Can an artist or generator start drawing this object immediately? What is the expected first phenotype type? What source document, object ID, or asset ID confirms identity? Would this remain the same species if storage path, file format, prompt, or provider changed? What negative boundary prevents over-broad interpretation?
+- Positive pattern: "primary attack button icon, first phenotype type icon-prompt, source UI spec ID, negative boundary excludes page layout" can be a species candidate.
+- Counterexample: visual language, UI system, ecosystem, production workflow, review standard, material library, storage directory, page framework, or counter relationship fails phenotype readiness and must use abstract system downgrade.
+- Output contribution: strengthened speciesPlan with source evidence, object ID or asset ID, expected first phenotype type, drawable visual signal, negative boundary, group membership, confidence, and draft fields.
+
+## Relationship Semantics
+
+- Module question: Which relationships are true inheritance and which are reference, driver, consumer, review, or shared context links?
+- Evidence to inspect: parent roles, transformation deltas, preservation rules, source-to-target identity, production variants, cross-graph dependencies, and whether a child becomes an independent stable object.
+- Decision boundary: prohibit fake inheritance. EvolutionEdge is only for real parent-child variants, form derivation, fusion sources, or production variants that become independent stable objects. References, drivers, consumers, review rules, and shared semantics use SpeciesGroupRelation, GraphBridge, context, facets, or templates.
+- Positive pattern: a battle-sprite variant derived from a character base with preserved silhouette and altered pose can be an EvolutionEdge.
+- Counterexample: "danger cue reminds reviewers of monster ecology" is a reference or context relation, not an inheritance edge.
+- Output contribution: evolutionPlan, bridgePlan, groupPlan relation notes, and reviewOutline notes for multi-root graphs where no inheritance edge should be invented.
+
+## Review Shape
+
+- Module question: How should the graph be inspected by a human reviewer before writes are applied?
+- Evidence to inspect: atlas, graph boundaries, group boundaries, roots, independent nodes, group relations, bridges, and unresolved assumptions.
+- Decision boundary: reviewability is part of the model. If the graph tree is flat because nodes are independent roots, say that explicitly. If there are multiple roots with no real derivation, do not invent an edge to make the tree look tidy.
+- Positive pattern: a reviewOutline lists atlas -> graphs -> groups -> species nodes, graph bridges, group relations, and a note that independent roots are intentionally flat.
+- Counterexample: a lineage tree that hides groups or makes fake parent edges for readability is misleading.
+- Output contribution: reviewOutline.
+
+## First Slice Strategy
+
+- Module question: What is the smallest useful first modeling slice that can be reviewed and expanded later?
+- Evidence to inspect: first-release outputs, priority, available source evidence, stable object confidence, group coverage, and downstream compile/generation needs.
+- Decision boundary: include only objects with enough evidence and immediate phenotype value. Exclude but name expandable objects when source is missing, priority is low, the item is not a stable object, not a first-release phenotype, or is only an abstract rule.
+- Positive pattern: firstSliceStrategy includes one graph, two groups, three drawable species, one bridge, and the minimum context/rubric needed for first generation.
+- Counterexample: importing a full taxonomy of unverified names creates review debt and weakens confidence.
+- Output contribution: firstSliceStrategy with included first-slice objects, excluded but expandable objects, and exclusion reasons.
+
+## Write Strategy
+
+- Module question: Which write boundary preserves reviewability and provenance?
+- Evidence to inspect: uncertainty, number of objects, whether formal graph facts are inferred, whether generated trace/output/audit records are involved, and whether a local proposal package is needed.
+- Decision boundary: formal graph/context/facet facts use preview-confirm, change-set review, or local proposal package. Generated trace/output/audit records and external pointers may use direct audit write or draft-write only through CLI/application service boundaries.
+- Positive pattern: a large initial draft uses a local proposal package and a `dna.modeling-batch.v1` plan so several preview change-sets can be reviewed together.
+- Counterexample: writing inferred graph facts directly because the batch is large bypasses the graph truth boundary.
+- Output contribution: writeStrategy, modelingBatchPlan, blockingQuestions, and confidence.
+
+## Case Patterns
+
+- Module question: Which concise examples or counterexamples help apply the framework to this domain?
+- Evidence to inspect: scenario lens, likely ambiguous nouns, expected output formats, storage/routing mentions, and review ownership.
+- Decision boundary: use patterns to guide classification, not to force every scenario into a game-only model.
+- Positive pattern: game UI: page framework as context/group fact; cards, buttons, tags, and states as species or phenotypes depending on stability.
+- Counterexample: treating "Eagle folder path" as graph identity in a storage-heavy scenario; Eagle/NAS/Cocos/export paths are phenotype library/routing, not graph identity.
+- Output contribution: objectClassification notes, assumptions, and reviewChecklist.
+
+Required patterns:
+
+- character / weapon: character, weapon, and equipment can be species; portrait, icon, and battle sprite are phenotypes unless each becomes its own stable design object.
+- monster / ecology: ecology rules are context/group facts; concrete monsters, backgrounds, or areas can be species when drawable and reviewable.
+- VFX / signal / audio: signal family is usually group/context; concrete cast, hit, danger, or settlement cues can be species or phenotype targets depending on stability.
+- brand / product visual family: brand principle is context/facet; concrete logo, icon, package, or product variants can be species candidates.
+- storage-heavy scenario: external library, export path, and routing policy stay in PhenotypeLibrary, StorageMount, ExternalLibraryMapping, LibraryRoutingPolicy, OutputReference, or AssetIndex.
 
 ## Output Contract
 
@@ -106,12 +161,14 @@ Return a structured modeling proposal with these fields:
 - objectClassification: user concepts mapped to Graph, SpeciesGroup, SpeciesNode, EvolutionEdge, facet, context, Phenotype, OutputReference, or unresolved.
 - groupPlan: SpeciesGroup and SpeciesGroupRelation candidates with rationale.
 - bridgePlan: GraphBridge candidates, compile relevance, and why a simple parent edge is not enough.
-- speciesPlan: SpeciesNode candidates with parent candidates, role, level, category, status, and rationale.
+- reviewOutline: atlas -> graphs -> groups -> species nodes, graph bridges, group relations, explicit note when graph tree is flat because nodes are independent roots, and explicit note for multi-root graphs where no inheritance edge should be invented.
+- speciesPlan: SpeciesNode candidates with parent candidates, role, level, category, status, source evidence, object ID or asset ID when available, expected first phenotype type, drawable visual signal, negative boundary, group membership, confidence, draft fields, and rationale.
 - evolutionPlan: EvolutionEdge candidates with source, target, parent role, direction, delta genes, must preserve, must avoid, and conflict notes.
 - contextPlan: DesignContext, ContextFact, ContextMotif, DesignPrinciple, ContextReference, and ContextReviewRubric candidates.
 - facetTemplatePlan: required, recommended, and optional facets with value strategy.
 - phenotypePlan: generated result types, expected variants, review needs, and output/library routing.
 - compilePlan: suggested CompilePolicy, compileMode, conflict strategy, expected SpeciesCompileArtifact and PhenotypeCompileArtifact contents.
+- firstSliceStrategy: included first-slice objects, excluded but expandable objects, and exclusion reasons such as source missing, low priority, not stable object, not first-release phenotype, or abstract rule.
 - writeStrategy: preview-confirm, change-set review, local proposal package, draft-write, or direct audit write with reason.
 - modelingBatchPlan: when a local proposal package is appropriate, state whether to produce `dna.modeling-batch.v1`, list included object sections, and note references that must resolve before import.
 - assumptions: facts treated as assumptions.
@@ -123,7 +180,10 @@ Return a structured modeling proposal with these fields:
 ## Quality Bar
 
 - Every SpeciesNode has a stable identity and a reason it is not just one generated result.
+- Every SpeciesNode passes phenotype readiness; unclear candidates become context, group facts, facets, or unresolved items instead of species.
+- Abstract system downgrade is explicit when visual language, UI system, ecosystem, workflow, review standard, material library, storage directory, page framework, or counter relationship appears.
 - Every EvolutionEdge describes the transformation, not only the child label.
+- Fake inheritance is rejected even when it would make the graph tree easier to read.
 - Facets are reusable dimensions with a value strategy.
 - Context facts and motifs stay separate from reusable facets.
 - Phenotype and phenotype library decisions stay decoupled from graph identity.

@@ -47,6 +47,17 @@ Classify the edit before designing the patch:
 | Change storage | LibraryRoutingPolicy or OutputReference | Coupling graph identity to storage |
 | Change review criteria | ContextReviewRubric or compile artifact refresh | Accepting stale results |
 
+## Shared Design Invariants
+
+Use these invariants to protect existing graph meaning. This skill applies the modeling principles to edits; it does not repeat the full modeling workflow for a new graph.
+
+- phenotype readiness: New SpeciesNode additions must still be drawable, reviewable, and tied to an expected first phenotype type. If the requested node is only a prompt, file variant, output angle, or one-off deliverable, redirect it to Phenotype, PhenotypeVersion, OutputReference, AssetIndex, context, or unresolved.
+- abstraction downgrade: Abstract concepts requested as nodes, such as visual language, UI system, ecosystem, production workflow, review standard, material library, storage directory, page framework, or counter relationship, should move to DesignContext, ContextFact, ContextReviewRubric, SpeciesGroup, SpeciesGroupRelation, GraphBridge, facet/template, or phenotype library/routing when appropriate.
+- inheritance safety: Reparenting must not create fake inheritance for readability. EvolutionEdge is only valid when the child is genuinely derived, specialized, fused, or produced as a stable variant of the parent.
+- storage decoupling: Storage/routing edits must not alter graph identity. LibraryRoutingPolicy, StorageMount, ExternalLibraryMapping, OutputReference, and AssetIndex changes can affect where results live, but they do not rename or redefine SpeciesNode identity.
+- impact analysis: Existing SpeciesCompileArtifact, PhenotypeCompileArtifact, PhenotypeVersion, ReviewRecord, ImpactRecord, OutputReference, and routing records must be marked stale, unaffected, or requiring review explicitly.
+- history preservation: Split, merge, rename, archive, and refactor edits must preserve stable identity and version history rather than silently overwriting what accepted outputs mean.
+
 ## Decision Gates
 
 1. object gate: decide whether the request belongs to graph identity, generated result, output reference, tag, context, review, template, compile policy, or routing.
@@ -90,6 +101,7 @@ Return an edit proposal with these fields:
 - requestedChange: normalized edit intent and affected object types.
 - scopeLevel: single-node, single-edge, single-group, multi-group, cross-graph, context, compile-policy, storage-routing, or mixed.
 - reasonableness: pass, concern, or reject with rationale.
+- editInvariantCheck: phenotype readiness, abstraction downgrade, inheritance safety, storage decoupling, impact analysis, and history preservation, each marked pass, concern, reject, or not applicable with a short reason.
 - impactAnalysis: downstream SpeciesNode, EvolutionEdge, context, compile artifact, PhenotypeVersion outdated, OutputReference, review, and routing implications.
 - riskLevel: low, medium, high, or structural with concrete reason.
 - alternatives: safer or more expressive options when risk is not low.
@@ -105,6 +117,7 @@ Return an edit proposal with these fields:
 
 - The proposal states which 当前图谱 context was inspected and what is missing.
 - The 合理性 check explains pass, concern, or rejection.
+- The editInvariantCheck shows how phenotype readiness, abstraction downgrade, inheritance safety, storage decoupling, and impact analysis were applied.
 - 影响分析 names downstream graph, context, compile artifact, result, review, and storage-routing consequences.
 - 风险等级 is tied to scope and downstream impact, not a generic label.
 - 替代方案 is provided for medium, high, or structural changes.

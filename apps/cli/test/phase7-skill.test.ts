@@ -38,11 +38,43 @@ describe("Phase 7 Codex scenario skills", () => {
     expect(content).toContain("待确认问题");
     expect(content).toContain("Decision Gates");
     expect(content).toContain("Classification Matrix");
+    for (const heading of [
+      "## Scenario Lens",
+      "## Domain Split",
+      "## Group Organization",
+      "## Phenotype Readiness",
+      "## Relationship Semantics",
+      "## Review Shape",
+      "## First Slice Strategy",
+      "## Write Strategy",
+      "## Case Patterns"
+    ]) {
+      expect(content).toContain(heading);
+    }
+    for (const phrase of [
+      "Module question:",
+      "Evidence to inspect:",
+      "Decision boundary:",
+      "Positive pattern:",
+      "Counterexample:",
+      "Output contribution:"
+    ]) {
+      expect(content).toContain(phrase);
+    }
+    expect(content).toContain("Can an artist or generator start drawing this object immediately?");
+    expect(content).toContain("expected first phenotype type");
+    expect(content).toContain("abstract system downgrade");
+    expect(content).toContain("fake inheritance");
+    expect(content).toContain("reviewOutline");
+    expect(content).toContain("firstSliceStrategy");
+    expect(content).toContain("game UI / icon system");
+    expect(content).toContain("storage-heavy scenario");
     expect(content).toContain("Quality Bar");
     expect(content).toContain("Use `dna --help`");
     expect(content).not.toMatch(/```bash[\s\S]*dna --db/);
-    expect(content).not.toMatch(/\bsqlite3\b|better-sqlite3|INSERT INTO|UPDATE\s+\w+/i);
-    expect(content).not.toMatch(/OPENAI_API_KEY|sk-[a-zA-Z0-9_-]{8,}|password\s*=/i);
+    expect(content).not.toMatch(/```(?:bash|sh|shell|sql)[\s\S]*```/i);
+    expect(content).not.toMatch(/\bsqlite3\b|better-sqlite3|INSERT INTO|UPDATE\s+\w+|direct SQLite/i);
+    expect(content).not.toMatch(/OPENAI_API_KEY\s*=|sk-[a-zA-Z0-9_-]{8,}|password\s*=|Bearer\s+[A-Za-z0-9._-]+/i);
   });
 
   test("graph editing skill evaluates existing graph changes with impact and risk guidance", () => {
@@ -60,10 +92,18 @@ describe("Phase 7 Codex scenario skills", () => {
     expect(content).toContain("替代方案");
     expect(content).toContain("Decision Gates");
     expect(content).toContain("Edit Classification Matrix");
+    expect(content).toContain("Shared Design Invariants");
+    expect(content).toContain("phenotype readiness");
+    expect(content).toContain("abstraction downgrade");
+    expect(content).toContain("inheritance safety");
+    expect(content).toContain("storage decoupling");
+    expect(content).toContain("impact analysis");
+    expect(content).toContain("editInvariantCheck");
     expect(content).toContain("Quality Bar");
     expect(content).toContain("Use `dna --help`");
     expect(content).not.toMatch(/```bash[\s\S]*dna --db/);
-    expect(content).not.toMatch(/\bsqlite3\b|better-sqlite3|INSERT INTO|UPDATE\s+\w+/i);
-    expect(content).not.toMatch(/OPENAI_API_KEY|sk-[a-zA-Z0-9_-]{8,}|password\s*=/i);
+    expect(content).not.toMatch(/```(?:bash|sh|shell|sql)[\s\S]*```/i);
+    expect(content).not.toMatch(/\bsqlite3\b|better-sqlite3|INSERT INTO|UPDATE\s+\w+|direct SQLite/i);
+    expect(content).not.toMatch(/OPENAI_API_KEY\s*=|sk-[a-zA-Z0-9_-]{8,}|password\s*=|Bearer\s+[A-Za-z0-9._-]+/i);
   });
 });

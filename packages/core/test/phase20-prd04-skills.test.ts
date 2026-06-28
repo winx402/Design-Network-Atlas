@@ -16,6 +16,15 @@ describe("Phase 20 PRD-04 skill contracts", () => {
   test("graph modeling skill covers scenario mapping gates and reviewable write outputs", () => {
     const source = skill("dna-graph-modeling");
     for (const phrase of [
+      "Scenario Lens",
+      "Domain Split",
+      "Group Organization",
+      "Phenotype Readiness",
+      "Relationship Semantics",
+      "Review Shape",
+      "First Slice Strategy",
+      "Write Strategy",
+      "Case Patterns",
       "domain-boundary gate",
       "group gate",
       "bridge gate",
@@ -30,12 +39,31 @@ describe("Phase 20 PRD-04 skill contracts", () => {
       "draftFields",
       "confidence",
       "SpeciesCompileArtifact",
-      "PhenotypeCompileArtifact"
+      "PhenotypeCompileArtifact",
+      "reviewOutline",
+      "firstSliceStrategy",
+      "source evidence",
+      "drawable visual signal",
+      "negative boundary",
+      "abstract system downgrade",
+      "visual language",
+      "page framework",
+      "storage directory",
+      "fake inheritance",
+      "game UI / icon system",
+      "character / weapon",
+      "monster / ecology",
+      "VFX / signal / audio",
+      "brand / product visual family",
+      "storage-heavy scenario"
     ]) {
       expect(source).toContain(phrase);
     }
     expect(count(source, "dna --help")).toBeLessThanOrEqual(1);
     expect(source).not.toContain("Usage:");
+    expect(source).not.toMatch(/```(?:bash|sh|shell|sql)[\s\S]*```/i);
+    expect(source).not.toMatch(/\bsqlite3\b|better-sqlite3|INSERT INTO|UPDATE\s+\w+|direct SQLite/i);
+    expect(source).not.toMatch(/OPENAI_API_KEY\s*=|sk-[a-zA-Z0-9_-]{8,}|password\s*=|Bearer\s+[A-Za-z0-9._-]+/i);
   });
 
   test("graph editing skill grades impact scope across graph, context, compile, and routing changes", () => {
@@ -48,6 +76,13 @@ describe("Phase 20 PRD-04 skill contracts", () => {
       "context",
       "compile-policy",
       "storage-routing",
+      "Shared Design Invariants",
+      "phenotype readiness",
+      "abstraction downgrade",
+      "inheritance safety",
+      "storage decoupling",
+      "impact analysis",
+      "editInvariantCheck",
       "compile artifact",
       "ContextReference",
       "ContextReviewRubric",
@@ -58,6 +93,9 @@ describe("Phase 20 PRD-04 skill contracts", () => {
     }
     expect(count(source, "dna --help")).toBeLessThanOrEqual(1);
     expect(source).not.toContain("Usage:");
+    expect(source).not.toMatch(/```(?:bash|sh|shell|sql)[\s\S]*```/i);
+    expect(source).not.toMatch(/\bsqlite3\b|better-sqlite3|INSERT INTO|UPDATE\s+\w+|direct SQLite/i);
+    expect(source).not.toMatch(/OPENAI_API_KEY\s*=|sk-[a-zA-Z0-9_-]{8,}|password\s*=|Bearer\s+[A-Za-z0-9._-]+/i);
   });
 
   test("phenotype generation skill orchestrates existing graph outputs without inventing source facts", () => {
