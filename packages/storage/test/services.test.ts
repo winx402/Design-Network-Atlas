@@ -103,4 +103,64 @@ describe("Phase 2 service and change-set behavior", () => {
       )
     ).toThrow(/change-set not found/);
   });
+
+  test("facet service previews and applies definitions, schemas, and assignments through change-sets", () => {
+    const store = createInMemoryDnaStore();
+    const services = createDnaServices(store);
+    store.graphs.create(createDefaultGraph({ graphId: "graph-facet", name: "Facet Graph", purpose: "facet test" }));
+
+    const preview = services.facet.createDefinition(
+      { facetId: "facet-tone", name: "Tone", valueType: "enum", allowedValues: ["warm", "cool"] },
+      { mode: "preview-confirm", apply: false }
+    );
+    expect(preview.changeSet.status).toBe("preview");
+    expect(store.facetDefinitions.get("facet-tone")).toBeUndefined();
+
+    services.facet.createDefinition(
+      { facetId: "facet-tone", name: "Tone", valueType: "enum", allowedValues: ["warm", "cool"] },
+      { mode: "preview-confirm", apply: true }
+    );
+    services.facet.createSchema(
+      { facetSchemaId: "schema-tone", name: "Tone Schema", facetIds: ["facet-tone"], requiredFacetIds: ["facet-tone"] },
+      { mode: "preview-confirm", apply: true }
+    );
+    const assignment = services.facet.createAssignment(
+      { assignmentId: "assign-graph-tone", targetType: "graph", targetId: "graph-facet", values: { "facet-tone": "warm" } },
+      { mode: "preview-confirm", apply: true }
+    );
+
+    expect(assignment.changeSet.status).toBe("applied");
+    expect(store.facetAssignments.get("assign-graph-tone")?.values).toEqual({ "facet-tone": "warm" });
+  });
+
+  test("facet service validates schema references, assignment targets, and allowed values", () => {
+    const store = createInMemoryDnaStore();
+    const services = createDnaServices(store);
+    store.graphs.create(createDefaultGraph({ graphId: "graph-facet-validation", name: "Facet Validation", purpose: "facet validation" }));
+    services.facet.createDefinition(
+      { facetId: "facet-tone", name: "Tone", valueType: "enum", allowedValues: ["warm", "cool"] },
+      { mode: "preview-confirm", apply: true }
+    );
+
+    expect(() =>
+      services.facet.createSchema(
+        { facetSchemaId: "schema-missing", name: "Missing Schema", facetIds: ["facet-missing"] },
+        { mode: "preview-confirm", apply: true }
+      )
+    ).toThrow(/facet definition not found: facet-missing/);
+
+    expect(() =>
+      services.facet.createAssignment(
+        { assignmentId: "assign-missing-target", targetType: "graph", targetId: "graph-missing", values: { "facet-tone": "warm" } },
+        { mode: "preview-confirm", apply: true }
+      )
+    ).toThrow(/assignment target not found/);
+
+    expect(() =>
+      services.facet.createAssignment(
+        { assignmentId: "assign-bad-value", targetType: "graph", targetId: "graph-facet-validation", values: { "facet-tone": "loud" } },
+        { mode: "preview-confirm", apply: true }
+      )
+    ).toThrow(/not allowed/);
+  });
 });

@@ -17,7 +17,7 @@ export const ParentRoleSchema = z.enum([
   "variant-source"
 ]);
 export const PhenotypeTypeSourceSchema = z.enum(["built-in", "template", "custom"]);
-export const PhenotypeStatusSchema = z.enum(["active", "archived", "deleted"]);
+export const PhenotypeStatusSchema = z.enum(["planned", "active", "archived", "deleted"]);
 export const PhenotypeVersionStatusSchema = z.enum([
   "pending-confirmation",
   "accepted",
@@ -625,6 +625,13 @@ export const NodeVersionSchema = z.object({
   createdAt: IsoDateSchema
 });
 
+export const PhenotypeOutputPlanSchema = z.object({
+  expectedAssetTypes: z.array(AssetTypeSchema).default([]),
+  routingPolicyId: z.string().min(1).optional(),
+  reviewRubricIds: z.array(z.string().min(1)).default([]),
+  notes: z.string().optional()
+});
+
 export const PhenotypeSchema = z.object({
   phenotypeId: z.string().min(1),
   graphId: z.string().min(1),
@@ -637,6 +644,7 @@ export const PhenotypeSchema = z.object({
   tags: z.array(z.string()).default([]),
   status: PhenotypeStatusSchema,
   facets: FacetsSchema,
+  outputPlan: PhenotypeOutputPlanSchema.default({}),
   createdAt: IsoDateSchema,
   updatedAt: IsoDateSchema
 });
@@ -1025,6 +1033,8 @@ export type TemplatePack = z.infer<typeof TemplatePackSchema>;
 export type GeneTemplate = z.infer<typeof GeneTemplateSchema>;
 export type SpeciesNode = z.infer<typeof SpeciesNodeSchema>;
 export type NodeVersion = z.infer<typeof NodeVersionSchema>;
+export type AssetType = z.infer<typeof AssetTypeSchema>;
+export type PhenotypeOutputPlan = z.infer<typeof PhenotypeOutputPlanSchema>;
 export type Phenotype = z.infer<typeof PhenotypeSchema>;
 export type PhenotypeVersion = z.infer<typeof PhenotypeVersionSchema>;
 export type CompileScope = z.infer<typeof CompileScopeSchema>;

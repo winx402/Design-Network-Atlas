@@ -48,6 +48,7 @@
 | Phase 14 | graph tree unit + CLI E2E | 多 root、多父节点和附加关系输出清晰；`--include-groups` 可审阅 groups、memberships、ungrouped nodes 和 group relations |
 | Phase 15 | HTTP API + sync + provider baseline | API 可读本地数据，网页默认关闭，routing fallback/metadata 生效，generation jobs 可导入导出 |
 | Phase 16 | change-set/proposal review CLI E2E | preview change-set 可 list/show/review/apply/discard；proposal 可批量导入建模草案；export profile 可区分 full、review-current 和 proposal-review |
+| Phase 24 | modeling intake quality + facet closure + planned phenotype CLI E2E | `context create --version` 不被 root version 截获；facet definition/schema/assignment 有 service/change-set 写入路径；`dna.modeling-batch.v1` 支持 facets 与 `phenotypePlans`；import report 紧凑且显式 review stage；`modeling check` 对 batch/graph/proposal 输出稳定 findings |
 
 ## 4. 关键测试数据
 
@@ -82,6 +83,7 @@
 - `DesignRelationshipSchema` 接受 graph/group/node 三种同层级 endpoint。
 - `DesignRelationshipSchema` 保存 relationship type、direction、designContract、auxiliaryRefs、review/provenance metadata。
 - `PhenotypeSchema` 支持 built-in、template、custom 三种表型类型来源。
+- `PhenotypeSchema` 支持 `planned` 状态和 bounded `outputPlan`，用于 batch/planned phenotype coverage。
 - `PhenotypeVersionSchema` 默认状态为 `pending-confirmation`，并支持多个 asset ids。
 - `AssetIndexSchema` 支持多种 storage type、asset type、role、variant role。
 - `GenerationJobSchema` 保存输入快照、输出快照和非敏感工具参数。
@@ -237,6 +239,9 @@
 - `dna export --profile review-current` 不生成 `change-sets/` 或 `proposals/`，manifest 记录省略摘要，且当前正式 state 可导入。
 - `dna export --profile proposal-review --proposal <id>` 只导出目标 proposal 与 linked change-sets，遇到缺失 change-set 必须失败。
 - `dna proposal import-batch --in <file>` 接受 `format: "dna.modeling-batch.v1"`，默认生成 proposal + 有序 preview change-sets，不写正式 graph/node/group/library objects。
+- `dna proposal import-batch --in <file>` 的默认报告必须是紧凑 review-oriented report；完整 change-set ids 只能通过显式 JSON/id 输出取得。
+- `dna.modeling-batch.v1` 支持 `facetDefinitions`、`facetSchemas`、`facetAssignments` 和 `phenotypePlans`，并对 duplicate id、引用、allowed values、planned phenotype target、expected asset type 做 all-or-nothing validation。
+- `dna modeling check` 可检查 batch、persisted graph 和 proposal package，输出 stable JSON + text，并覆盖 species phenotype readiness、graph split quality、group quality、relationship contract quality、context/facet coverage 和 review readiness。
 - invalid modeling batch 必须 all-or-nothing 失败，不留下 proposal、change-set 或正式对象。
 - `dna graph tree --include-groups` 在默认 tree 之外展示 `Groups:`、`Ungrouped nodes:` 和 `Group relations:`；默认 text/json 输出保持兼容。
 

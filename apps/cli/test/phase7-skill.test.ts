@@ -63,6 +63,9 @@ describe("Phase 7 Codex scenario skills", () => {
     }
     expect(content).toContain("Can an artist or generator start drawing this object immediately?");
     expect(content).toContain("expected first phenotype type");
+    expect(content).toContain("planned phenotype coverage");
+    expect(content).toContain("phenotypePlans");
+    expect(content).toContain("modeling quality checks");
     expect(content).toContain("abstract system downgrade");
     expect(content).toContain("fake inheritance");
     expect(content).toContain("reviewOutline");

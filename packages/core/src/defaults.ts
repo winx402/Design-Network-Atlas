@@ -428,10 +428,11 @@ export function createDefaultPhenotype(
     phenotypeTypeSource: input.phenotypeTypeSource ?? "built-in",
     name: input.name,
     objectBrief: input.objectBrief ?? "",
-    currentAcceptedVersion: input.currentAcceptedVersion,
+    currentAcceptedVersion: input.currentAcceptedVersion ?? null,
     tags: input.tags ?? [],
     status: input.status ?? "active",
     facets: input.facets ?? {},
+    outputPlan: input.outputPlan ?? { expectedAssetTypes: [], reviewRubricIds: [] },
     createdAt: input.createdAt ?? timestamp,
     updatedAt: input.updatedAt ?? timestamp
   };

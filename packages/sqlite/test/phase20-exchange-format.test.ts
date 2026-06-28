@@ -372,6 +372,10 @@ describe("Phase 20 versioned exchange format manifest", () => {
         sections: ["change-sets", "proposals"],
         changeSetCount: 1,
         proposalCount: 1
+      },
+      review: {
+        stage: "reviewed",
+        cleanCurrentState: true
       }
     });
     expect(existsSync(join(out, "change-sets"))).toBe(false);

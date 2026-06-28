@@ -207,6 +207,8 @@ Generated trace/output/audit records 和 external pointers 可以通过 applicat
 
 Preview 模式返回 artifacts、Phenotype、PhenotypeVersion、GenerationJob 和 prompt，不持久化 artifacts、versions、jobs、assets 或 references。`--apply` 通过 application service 和 repository transaction 写入新的 artifacts、phenotype/version 和 generation job。`PhenotypeVersion` 必须记录 `speciesCompileArtifactId`、`phenotypeCompileArtifactId` 和有界 `compileArtifactSnapshot`；`GenerationJob.inputSnapshot` 必须记录 graph、node、task brief、phenotype type 以及 artifact IDs。
 
+`dna.modeling-batch.v1` 可以声明 `phenotypePlans`，但它们只是输入概念；proposal apply 或显式 `draft-write` 后会创建 `status: "planned"` 的 `Phenotype` 容器，不创建 `PhenotypeVersion`、`GenerationJob`、`AssetIndex` 或 `OutputReference`。后续正式 `phenotype generate --phenotype-id <id>` 会复用这个 planned phenotype 容器，生成版本默认仍是 `pending-confirmation`。
+
 生成模型 adapter 阶段才允许调用 provider，但必须满足：
 
 - adapter 只接收已编译约束包。
@@ -278,6 +280,7 @@ Historical compatibility tables:
 - `capabilities`：本次导出包含的能力集合。
 - `exportProfile`：`full`、`review-current` 或 `proposal-review`。
 - `omitted`：review profile 省略的 section 和计数摘要。
+- `review`：`review-current` profile 下记录 `stage: "reviewed"` 和 `cleanCurrentState: true`，同时仍不导出 `change-sets/` 或 `proposals/`。
 
 当前稳定目录结构：
 
@@ -326,7 +329,9 @@ graphs/<graph_id>/impacts/
 - `review-current`：导出当前正式 project state，默认不生成 `change-sets/` 和 `proposals/`，manifest 记录省略摘要；可以作为当前正式 state 导入。
 - `proposal-review`：要求 `--proposal <proposalId>`，只导出目标 proposal 和 linked change-sets，并保留 review 所需的当前上下文对象；若 proposal 引用缺失 change-set 必须失败。该 profile 是 review-only package，import 必须明确拒绝，不得静默半导入。
 
-`dna.modeling-batch.v1` 是独立于 Git-friendly project exchange 的初始建模批次格式，面向 LLM/Agent 生成的本地 modeling draft。它通过 `dna proposal import-batch --in <file>` 进入 proposal workflow，默认生成 proposal 和有序 preview change-sets，不直接写正式 graph facts；显式 `--mode draft-write` 只用于本地种子导入，并跳过 proposal review。
+`dna.modeling-batch.v1` 是独立于 Git-friendly project exchange 的初始建模批次格式，面向 LLM/Agent 生成的本地 modeling draft。它通过 `dna proposal import-batch --in <file>` 进入 proposal workflow，默认生成 proposal 和有序 preview change-sets，不直接写正式 graph facts；显式 `--mode draft-write` 只用于本地种子导入，并跳过 proposal review。批次格式支持 graphs、atlases、species groups、memberships、DesignRelationship、facet definitions/schemas/assignments、planned phenotype surfaces、libraries、mounts、routing policies 和相关映射。
+
+导入报告默认是紧凑审阅报告，包含 mode、review stage、proposal id、planned/applied/skipped counts、cross-graph/library flags、warnings 和 next suggested command。完整 change-set ids 只在显式 JSON/id 输出中展示。`dna modeling check` 使用 core/application 的同一份质量检查模型，可检查 batch、persisted graph 或 proposal package，并输出 stable JSON 或文本 findings；检查项包括 SpeciesNode phenotype readiness、graph split pressure、group quality、DesignRelationship contract quality、context/facet coverage 和 review readiness。
 
 ## 8. Skill、CLI、Web、Server 边界
 
@@ -340,12 +345,15 @@ CLI 是本地核心阶段的主要产品入口。CLI 必须支持：
 - template
 - node
 - relationship
+- facet
 - phenotype
 - asset
 - output-ref
 - changeset
 - proposal
   - `proposal import-batch`：导入 `dna.modeling-batch.v1` 本地建模草案，默认生成 proposal + preview change-sets。
+- modeling
+  - `modeling check`：只读检查 batch、graph 或 proposal 的建模质量，不写 graph、context、facet 或 phenotype 记录。
 - library
 - review
 - impact

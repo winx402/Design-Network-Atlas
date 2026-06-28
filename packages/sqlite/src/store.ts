@@ -163,6 +163,10 @@ interface ExchangeManifest {
     changeSetCount: number;
     proposalCount: number;
   };
+  review?: {
+    stage: "reviewed";
+    cleanCurrentState: boolean;
+  };
 }
 
 export type ExportProfile = "full" | "review-current" | "proposal-review";
@@ -176,6 +180,7 @@ function createExchangeManifest(options: {
   profile: ExportProfile;
   proposalId?: string;
   omitted?: ExchangeManifest["omitted"];
+  review?: ExchangeManifest["review"];
 }): ExchangeManifest {
   return {
     format: "dna.git-directory",
@@ -185,7 +190,8 @@ function createExchangeManifest(options: {
     capabilities: EXCHANGE_CAPABILITIES,
     exportProfile: options.profile,
     proposalId: options.proposalId,
-    omitted: options.omitted
+    omitted: options.omitted,
+    review: options.review
   };
 }
 
@@ -2068,10 +2074,17 @@ export function exportProject(store: SqliteDnaStore, outDir: string, options: Ex
             changeSetCount: allChangeSets.length - exportedChangeSets.length,
             proposalCount: allProposals.length - exportedProposals.length
           };
+  const review =
+    profile === "review-current"
+      ? {
+          stage: "reviewed" as const,
+          cleanCurrentState: true
+        }
+      : undefined;
   mkdirSync(outDir, { recursive: true });
   writeFileSync(
     join(outDir, "dna.project.json"),
-    `${JSON.stringify(createExchangeManifest({ profile, proposalId: proposal?.proposalId, omitted }), null, 2)}\n`
+    `${JSON.stringify(createExchangeManifest({ profile, proposalId: proposal?.proposalId, omitted, review }), null, 2)}\n`
   );
   mkdirSync(join(outDir, "templates"), { recursive: true });
   for (const changeSet of exportedChangeSets) writeJson(join(outDir, "change-sets", `${changeSet.changeSetId}.json`), changeSet);

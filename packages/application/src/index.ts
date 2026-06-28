@@ -39,6 +39,8 @@ import type {
   SpeciesGroupRepository
 } from "@dna/storage";
 
+export * from "./modeling-quality.js";
+
 export type ApplicationImpactSummary = {
   objectType: "graph" | "node" | "species-group" | "phenotype-version";
   objectId: string;

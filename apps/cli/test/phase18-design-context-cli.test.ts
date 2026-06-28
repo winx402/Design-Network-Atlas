@@ -22,6 +22,32 @@ function runDna(args: string[]) {
 }
 
 describe("Phase 18 PRD-02 design context CLI", () => {
+  test("context create --version writes the domain context version instead of printing CLI version", () => {
+    const db = join(tempDir("phase18-context-version"), "dna.sqlite");
+
+    const created = runDna([
+      "--db",
+      db,
+      "--yes",
+      "context",
+      "create",
+      "--id",
+      "ctx-versioned",
+      "--name",
+      "Versioned Context",
+      "--type",
+      "worldview",
+      "--version",
+      "0.5.0"
+    ]);
+    expect(created).toContain("created design context ctx-versioned");
+
+    const context = JSON.parse(runDna(["--db", db, "context", "show", "--id", "ctx-versioned"]));
+    expect(context.version).toBe("0.5.0");
+    expect(runDna(["--cli-version"]).trim()).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(runDna(["--help"])).toContain("--cli-version");
+  }, 80_000);
+
   test("creates, maps, attaches, and impact-checks design context objects", () => {
     const db = join(tempDir("phase18-design-context"), "dna.sqlite");
 

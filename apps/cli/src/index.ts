@@ -7,6 +7,9 @@ import {
   collectDesignRelationshipImpact,
   collectGroupImpact,
   collectLineageImpact,
+  checkGraphModelingQuality,
+  checkModelingBatchQuality,
+  checkProposalModelingQuality,
   preparePhenotypeGeneration,
   type ApplicationImpactSummary
 } from "@dna/application";
@@ -26,13 +29,16 @@ import {
   createReviewRecord,
   formatGraphTreeText,
   formatGraphTreeWithGroupsText,
+  formatGraphTreeWithPhenotypesText,
   buildGraphTree,
   buildGraphGroupOverlay,
+  buildGraphPhenotypeOverlay,
   makeId,
   MockGenerationProvider,
   OutputReferenceRoleSchema,
   OutputReferenceTypeSchema,
   PROJECT_VERSION,
+  type ModelingQualityReport,
   resolveLibraryRoutingPolicy,
   runGenerationProvider,
   reviewNode,
@@ -48,6 +54,7 @@ type CommandOptions = {
   yes?: boolean;
   mode?: "preview-confirm" | "draft-write" | "changeset-apply";
   changeSet?: string;
+  cliVersion?: boolean;
 };
 
 function openStore(command: Command) {
@@ -110,6 +117,36 @@ function parseKeyValue(values: string[] | undefined) {
   return result;
 }
 
+function parseFacetValueLiteral(value: string, valueType?: string): string | number | boolean | unknown {
+  if (valueType === "number") {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) throw new Error(`Expected numeric facet value, got ${value}`);
+    return parsed;
+  }
+  if (valueType === "boolean") {
+    if (value === "true") return true;
+    if (value === "false") return false;
+    throw new Error(`Expected boolean facet value true or false, got ${value}`);
+  }
+  if (valueType === "json") return JSON.parse(value);
+  return value;
+}
+
+function parseFacetAssignmentValues(values: string[] | undefined) {
+  const result: Record<string, unknown> = {};
+  for (const value of values ?? []) {
+    const [key, ...rest] = value.split("=");
+    if (!key || rest.length === 0) throw new Error(`Expected facetId=value, got ${value}`);
+    const raw = rest.join("=");
+    try {
+      result[key] = JSON.parse(raw);
+    } catch {
+      result[key] = raw;
+    }
+  }
+  return result;
+}
+
 function parseTagMappings(values: string[] | undefined) {
   return (values ?? []).map((value) => {
     const [externalTag, ...rest] = value.split("=");
@@ -137,6 +174,104 @@ function parsePort(value: string) {
 function parseExportProfile(value: string): "full" | "review-current" | "proposal-review" {
   if (value === "full" || value === "review-current" || value === "proposal-review") return value;
   throw new Error(`unknown export profile: ${value}`);
+}
+
+type ImportBatchCliResult = {
+  mode: "preview-confirm" | "draft-write";
+  reviewStage: "draft" | "pending-confirmation" | "confirmed-applied" | "discarded";
+  proposal: null | { proposalId: string; title: string; status: string; changeSetIds?: string[] };
+  changeSetIds: string[];
+  counts: {
+    planned: Record<string, number>;
+    applied: Record<string, number>;
+    skipped: Record<string, number>;
+  };
+  includesCrossGraphReferences: boolean;
+  includesLibraryObjects: boolean;
+  warning?: string;
+};
+
+function countTotal(counts: Record<string, number>) {
+  return Object.values(counts).reduce((sum, value) => sum + value, 0);
+}
+
+function nonZeroCountLines(counts: Record<string, number>) {
+  return Object.entries(counts)
+    .filter(([, value]) => value > 0)
+    .map(([key, value]) => `  - ${key}: ${value}`);
+}
+
+function nextImportBatchCommand(result: ImportBatchCliResult) {
+  if (result.mode === "preview-confirm" && result.proposal) return `dna proposal show ${result.proposal.proposalId}`;
+  return "dna export --profile review-current --out <dir>";
+}
+
+function formatImportBatchReport(result: ImportBatchCliResult, includeIds: boolean) {
+  const warnings = result.warning ? [result.warning] : [];
+  const lines = [
+    "Modeling batch import report",
+    `Mode: ${result.mode}`,
+    `Review stage: ${result.reviewStage}`,
+    `Proposal: ${result.proposal?.proposalId ?? "none"}`,
+    `Planned: ${countTotal(result.counts.planned)}`,
+    `Applied: ${countTotal(result.counts.applied)}`,
+    `Skipped: ${countTotal(result.counts.skipped)}`,
+    `Cross-graph relationships: ${result.includesCrossGraphReferences ? "yes" : "no"}`,
+    `Library objects: ${result.includesLibraryObjects ? "yes" : "no"}`
+  ];
+  const planned = nonZeroCountLines(result.counts.planned);
+  if (planned.length) lines.push("Planned counts:", ...planned);
+  const applied = nonZeroCountLines(result.counts.applied);
+  if (applied.length) lines.push("Applied counts:", ...applied);
+  const skipped = nonZeroCountLines(result.counts.skipped);
+  if (skipped.length) lines.push("Skipped counts:", ...skipped);
+  lines.push("Warnings:", ...(warnings.length ? warnings.map((warning) => `  - ${warning}`) : ["  - none"]));
+  if (includeIds) lines.push("Change-set ids:", ...result.changeSetIds.map((changeSetId) => `  - ${changeSetId}`));
+  lines.push(`Next: ${nextImportBatchCommand(result)}`);
+  return `${lines.join("\n")}\n`;
+}
+
+function formatImportBatchJson(result: ImportBatchCliResult, includeIds: boolean) {
+  if (includeIds) return result;
+  const proposal = result.proposal
+    ? {
+        proposalId: result.proposal.proposalId,
+        title: result.proposal.title,
+        status: result.proposal.status,
+        changeSetCount: result.changeSetIds.length
+      }
+    : null;
+  return {
+    mode: result.mode,
+    reviewStage: result.reviewStage,
+    proposal,
+    changeSetCount: result.changeSetIds.length,
+    counts: result.counts,
+    includesCrossGraphReferences: result.includesCrossGraphReferences,
+    includesLibraryObjects: result.includesLibraryObjects,
+    warning: result.warning,
+    next: nextImportBatchCommand(result)
+  };
+}
+
+function formatModelingQualityReport(report: ModelingQualityReport) {
+  const source = `${report.source.type}${report.source.id ? `:${report.source.id}` : ""}`;
+  const lines = [
+    "Modeling quality report",
+    `Source: ${source}`,
+    `Status: ${report.status}`,
+    `Issues: ${report.summary.issueCount} (blocking=${report.summary.blocking}, warning=${report.summary.warning}, info=${report.summary.info})`,
+    "Findings:"
+  ];
+  if (report.issues.length === 0) {
+    lines.push("- none");
+  } else {
+    for (const issue of report.issues) {
+      lines.push(`- [${issue.severity}] ${issue.objectType}:${issue.objectId} ${issue.path} - ${issue.reason}`);
+      lines.push(`  Suggested: ${issue.suggestedAction}`);
+    }
+  }
+  return `${lines.join("\n")}\n`;
 }
 
 function resolveOutputReferenceMount(
@@ -178,7 +313,7 @@ function inferPhenotypeType(store: SqliteDnaStore, phenotypeId?: string, phenoty
 const program = new Command()
   .name("dna")
   .description("DNA: Design Network Atlas local CLI")
-  .version(PROJECT_VERSION)
+  .option("-V, --cli-version", "output the CLI version")
   .option("--db <path>", "SQLite database path", ".dna/dna.sqlite")
   .option("--yes", "apply write operations without preview stop")
   .option("--mode <mode>", "write mode: preview-confirm, draft-write, changeset-apply", "preview-confirm")
@@ -195,6 +330,14 @@ Write boundaries:
   changeset-apply    apply an existing preview change-set with --change-set
 `
   );
+
+program.action((options: CommandOptions) => {
+  if (options.cliVersion) {
+    console.log(PROJECT_VERSION);
+    return;
+  }
+  program.outputHelp();
+});
 
 const graph = program.command("graph").description("Manage design genome graphs");
 graph
@@ -241,6 +384,7 @@ graph
   .requiredOption("--id <graphId>", "graph id")
   .option("--format <format>", "output format: text or json", "text")
   .option("--include-groups", "include species group memberships and group relations as a review overlay")
+  .option("--include-phenotypes", "include planned and generated phenotype containers as a review overlay")
   .action((options, command) => {
     const store = openStore(command);
     const value = store.graphs.get(options.id);
@@ -259,10 +403,22 @@ graph
           relationships: store.designRelationships.listByGraph(options.id)
         })
       : undefined;
+    const phenotypeOverlay = options.includePhenotypes
+      ? buildGraphPhenotypeOverlay({
+          graph: value,
+          nodes: store.nodes.listByGraph(options.id),
+          phenotypes: store.phenotypes.listByGraph(options.id)
+        })
+      : undefined;
     if (options.format === "json") {
-      console.log(JSON.stringify(overlay ? { ...tree, groupOverlay: overlay } : tree, null, 2));
+      console.log(JSON.stringify({ ...tree, ...(overlay ? { groupOverlay: overlay } : {}), ...(phenotypeOverlay ? { phenotypeOverlay } : {}) }, null, 2));
     } else if (options.format === "text") {
-      process.stdout.write(overlay ? formatGraphTreeWithGroupsText(tree, overlay) : formatGraphTreeText(tree));
+      let text = overlay ? formatGraphTreeWithGroupsText(tree, overlay) : formatGraphTreeText(tree);
+      if (phenotypeOverlay) {
+        const phenotypeText = formatGraphTreeWithPhenotypesText(tree, phenotypeOverlay);
+        text = `${text.trimEnd()}\n\n${phenotypeText.slice(phenotypeText.indexOf("Planned phenotypes:"))}`;
+      }
+      process.stdout.write(text);
     } else {
       throw new Error(`unknown graph tree format: ${options.format}`);
     }
@@ -459,6 +615,127 @@ relationship.command("show").requiredOption("--id <relationshipId>", "design rel
   } else {
     throw new Error(`unknown relationship format: ${options.format}`);
   }
+});
+
+const facet = program.command("facet").description("Manage facet definitions, schemas, and assignments");
+const facetDefinition = facet.command("definition").description("Manage facet definitions");
+facetDefinition
+  .command("create")
+  .option("--id <facetId>", "facet definition id")
+  .option("--name <name>", "facet name")
+  .option("--description <description>", "facet description", "")
+  .option("--value-type <valueType>", "value type: string, number, boolean, enum, json", "string")
+  .option("--allowed-value <value>", "allowed value", collect, [])
+  .option("--status <status>", "facet status", "active")
+  .action((options, command) => {
+    const store = openStore(command);
+    const services = createDnaServices(store);
+    const valueType = options.valueType;
+    const result = services.facet.createDefinition(
+      {
+        facetId: requiredUnlessChangeSetApply(options.id, "--id", command),
+        name: requiredUnlessChangeSetApply(options.name, "--name", command),
+        description: options.description,
+        valueType,
+        allowedValues: (options.allowedValue ?? []).map((value: string) => parseFacetValueLiteral(value, valueType)) as Array<string | number | boolean>,
+        status: options.status
+      },
+      writeOptions(command)
+    );
+    if (result.changeSet.status === "preview") printChangeSet(result.changeSet);
+    else console.log(`created facet definition ${result.value.facetId}`);
+    store.close();
+  });
+facetDefinition.command("list").action((_options, command) => {
+  const store = openStore(command);
+  console.log(JSON.stringify(store.facetDefinitions.list(), null, 2));
+  store.close();
+});
+facetDefinition.command("show").requiredOption("--id <facetId>", "facet definition id").action((options, command) => {
+  const store = openStore(command);
+  const value = store.facetDefinitions.get(options.id);
+  if (!value) throw new Error(`facet definition not found: ${options.id}`);
+  console.log(JSON.stringify(value, null, 2));
+  store.close();
+});
+
+const facetSchema = facet.command("schema").description("Manage facet schemas");
+facetSchema
+  .command("create")
+  .option("--id <facetSchemaId>", "facet schema id")
+  .option("--name <name>", "facet schema name")
+  .option("--description <description>", "facet schema description", "")
+  .option("--facet <facetId>", "facet definition id", collect, [])
+  .option("--required <facetId>", "required facet definition id", collect, [])
+  .option("--status <status>", "facet schema status", "active")
+  .action((options, command) => {
+    const store = openStore(command);
+    const services = createDnaServices(store);
+    const result = services.facet.createSchema(
+      {
+        facetSchemaId: requiredUnlessChangeSetApply(options.id, "--id", command),
+        name: requiredUnlessChangeSetApply(options.name, "--name", command),
+        description: options.description,
+        facetIds: options.facet,
+        requiredFacetIds: options.required,
+        status: options.status
+      },
+      writeOptions(command)
+    );
+    if (result.changeSet.status === "preview") printChangeSet(result.changeSet);
+    else console.log(`created facet schema ${result.value.facetSchemaId}`);
+    store.close();
+  });
+facetSchema.command("list").action((_options, command) => {
+  const store = openStore(command);
+  console.log(JSON.stringify(store.facetSchemas.list(), null, 2));
+  store.close();
+});
+facetSchema.command("show").requiredOption("--id <facetSchemaId>", "facet schema id").action((options, command) => {
+  const store = openStore(command);
+  const value = store.facetSchemas.get(options.id);
+  if (!value) throw new Error(`facet schema not found: ${options.id}`);
+  console.log(JSON.stringify(value, null, 2));
+  store.close();
+});
+
+const facetAssignment = facet.command("assignment").description("Manage facet assignments");
+facetAssignment
+  .command("create")
+  .option("--id <assignmentId>", "facet assignment id")
+  .option("--target-type <targetType>", "assignment target type")
+  .option("--target <targetId>", "assignment target id")
+  .option("--value <facetId=value>", "facet value assignment", collect, [])
+  .option("--status <status>", "facet assignment status", "active")
+  .action((options, command) => {
+    const store = openStore(command);
+    const services = createDnaServices(store);
+    const result = services.facet.createAssignment(
+      {
+        assignmentId: requiredUnlessChangeSetApply(options.id, "--id", command),
+        targetType: requiredUnlessChangeSetApply(options.targetType, "--target-type", command),
+        targetId: requiredUnlessChangeSetApply(options.target, "--target", command),
+        values: parseFacetAssignmentValues(options.value),
+        status: options.status
+      },
+      writeOptions(command)
+    );
+    if (result.changeSet.status === "preview") printChangeSet(result.changeSet);
+    else console.log(`created facet assignment ${result.value.assignmentId}`);
+    store.close();
+  });
+facetAssignment.command("list").option("--target-type <targetType>", "target type").option("--target <targetId>", "target id").action((options, command) => {
+  const store = openStore(command);
+  const values = options.targetType && options.target ? store.facetAssignments.listByTarget(options.targetType, options.target) : store.facetAssignments.list();
+  console.log(JSON.stringify(values, null, 2));
+  store.close();
+});
+facetAssignment.command("show").requiredOption("--id <assignmentId>", "facet assignment id").action((options, command) => {
+  const store = openStore(command);
+  const value = store.facetAssignments.get(options.id);
+  if (!value) throw new Error(`facet assignment not found: ${options.id}`);
+  console.log(JSON.stringify(value, null, 2));
+  store.close();
 });
 
 const group = program.command("group").description("Manage graph-local species groups");
@@ -1568,6 +1845,33 @@ impact.command("list").requiredOption("--type <objectType>", "node or design-rel
   store.close();
  });
 
+const modeling = program.command("modeling").description("Review modeling quality for batches, graphs, and proposals");
+modeling
+  .command("check")
+  .option("--batch <file>", "dna.modeling-batch.v1 JSON file")
+  .option("--graph <graphId>", "persisted graph id")
+  .option("--proposal <proposalId>", "local proposal id")
+  .option("--format <format>", "output format: text or json", "text")
+  .action((options, command) => {
+    const targets = [options.batch, options.graph, options.proposal].filter(Boolean);
+    if (targets.length !== 1) throw new Error("modeling check requires exactly one of --batch, --graph, or --proposal");
+    let report: ModelingQualityReport;
+    if (options.batch) {
+      report = checkModelingBatchQuality(JSON.parse(readFileSync(options.batch, "utf8")));
+    } else {
+      const store = openStore(command);
+      report = options.graph ? checkGraphModelingQuality(store, options.graph) : checkProposalModelingQuality(store, options.proposal);
+      store.close();
+    }
+    if (options.format === "json") {
+      console.log(JSON.stringify(report, null, 2));
+    } else if (options.format === "text") {
+      process.stdout.write(formatModelingQualityReport(report));
+    } else {
+      throw new Error(`unknown modeling check format: ${options.format}`);
+    }
+  });
+
 const proposal = program.command("proposal").description("Manage local proposal packages of preview change-sets");
 proposal
   .command("create")
@@ -1596,6 +1900,8 @@ proposal
   .requiredOption("--title <title>", "proposal title for preview-confirm mode")
   .option("--summary <summary>", "proposal summary", "")
   .option("--mode <mode>", "import mode: preview-confirm or draft-write", "preview-confirm")
+  .option("--format <format>", "report format: text or json", "text")
+  .option("--include-ids", "include generated change-set ids in the report")
   .action((options, command) => {
     const importMode = (command as Command).optsWithGlobals<CommandOptions>().mode ?? options.mode;
     if (importMode === "changeset-apply") throw new Error("changeset-apply is not an import-batch mode");
@@ -1612,7 +1918,13 @@ proposal
       batch,
       mode: importMode
     });
-    console.log(JSON.stringify(result, null, 2));
+    if (options.format === "json") {
+      console.log(JSON.stringify(formatImportBatchJson(result, Boolean(options.includeIds)), null, 2));
+    } else if (options.format === "text") {
+      process.stdout.write(formatImportBatchReport(result, Boolean(options.includeIds)));
+    } else {
+      throw new Error(`unknown import-batch report format: ${options.format}`);
+    }
     store.close();
   });
 proposal.command("list").action((_options, command) => {

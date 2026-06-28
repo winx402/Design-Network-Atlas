@@ -103,9 +103,12 @@ describe("Phase 22 proposal CLI", () => {
     const show = runDna(["--db", db, "proposal", "show", "proposal-cli"]);
     expect(show).toContain(graphChangeSetId);
     expect(show).toContain(nodeChangeSetId);
-    expect(runDna(["--db", db, "proposal", "review", "proposal-cli"])).toContain('"status": "ready"');
+    expect(show).toContain('"reviewStage": "draft"');
+    const reviewed = runDna(["--db", db, "proposal", "review", "proposal-cli"]);
+    expect(reviewed).toContain('"status": "ready"');
+    expect(reviewed).toContain('"reviewStage": "pending-confirmation"');
 
-    runDna(["--db", db, "--yes", "proposal", "apply", "proposal-cli"]);
+    expect(runDna(["--db", db, "--yes", "proposal", "apply", "proposal-cli"])).toContain('"reviewStage": "confirmed-applied"');
 
     expect(runDna(["--db", db, "graph", "show", "--id", "graph-proposal-cli"])).toContain("Proposal CLI Graph");
     expect(runDna(["--db", db, "node", "show", "--id", "node-proposal-cli"])).toContain("Proposal CLI Node");
@@ -196,10 +199,36 @@ describe("Phase 22 proposal CLI", () => {
       "--title",
       "Batch proposal"
     ]);
-    const result = JSON.parse(output);
+
+    expect(output).toContain("Modeling batch import report");
+    expect(output).toContain("Mode: preview-confirm");
+    expect(output).toContain("Review stage: draft");
+    expect(output).toContain("Proposal: proposal-batch");
+    expect(output).toContain("Planned: 9");
+    expect(output).toContain("Next: dna proposal show proposal-batch");
+    expect(output).not.toContain("changeSetIds");
+    expect(output).not.toMatch(/cs-[a-z0-9-]+/);
+
+    const jsonOutput = runDna([
+      "--db",
+      db,
+      "proposal",
+      "import-batch",
+      "--in",
+      batchFile,
+      "--id",
+      "proposal-batch-json",
+      "--title",
+      "Batch proposal JSON",
+      "--format",
+      "json",
+      "--include-ids"
+    ]);
+    const result = JSON.parse(jsonOutput);
 
     expect(result.mode).toBe("preview-confirm");
-    expect(result.proposal.proposalId).toBe("proposal-batch");
+    expect(result.reviewStage).toBe("draft");
+    expect(result.proposal.proposalId).toBe("proposal-batch-json");
     expect(result.changeSetIds).toHaveLength(9);
     expect(result.counts.planned).toMatchObject({
       graphs: 1,
@@ -290,12 +319,52 @@ describe("Phase 22 proposal CLI", () => {
       "--mode",
       "draft-write"
     ]);
-    const result = JSON.parse(output);
 
+    expect(output).toContain("Modeling batch import report");
+    expect(output).toContain("Mode: draft-write");
+    expect(output).toContain("Review stage: confirmed-applied");
+    expect(output).toContain("Warnings:");
+    expect(output).toContain("skips proposal review");
+    expect(output).toContain("Applied: 1");
+    expect(output).not.toContain("changeSetIds");
+    expect(output).not.toMatch(/cs-[a-z0-9-]+/);
+
+    const jsonBatchFile = join(dir, "draft-batch-json.json");
+    writeFileSync(
+      jsonBatchFile,
+      `${JSON.stringify(
+        {
+          format: "dna.modeling-batch.v1",
+          graphs: [{ graphId: "graph-draft-batch-json", name: "Draft Batch JSON", purpose: "local seed" }]
+        },
+        null,
+        2
+      )}\n`
+    );
+    const jsonOutput = runDna([
+      "--db",
+      db,
+      "proposal",
+      "import-batch",
+      "--in",
+      jsonBatchFile,
+      "--id",
+      "proposal-draft-json",
+      "--title",
+      "Draft JSON",
+      "--mode",
+      "draft-write",
+      "--format",
+      "json",
+      "--include-ids"
+    ]);
+    const result = JSON.parse(jsonOutput);
     expect(result.mode).toBe("draft-write");
+    expect(result.reviewStage).toBe("confirmed-applied");
     expect(result.warning).toContain("skips proposal review");
     expect(result.proposal).toBeNull();
     expect(result.counts.applied.graphs).toBe(1);
+    expect(result.changeSetIds).toHaveLength(1);
     expect(runDna(["--db", db, "graph", "show", "--id", "graph-draft-batch"])).toContain("Draft Batch");
     expect(runDna(["--db", db, "proposal", "list"])).not.toContain("proposal-draft-skipped");
   }, CLI_TIMEOUT);

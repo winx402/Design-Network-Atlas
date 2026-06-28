@@ -27,7 +27,7 @@ For Chinese responses, keep these review anchors when useful: `直接生效`, `�
 | Which reusable dimensions describe many objects? | FacetDefinition, FacetSchema, GeneTemplate |
 | Which background facts, motifs, principles, references, or review rules support generation? | DesignContext, ContextFact, ContextMotif, DesignPrinciple, ContextReference, ContextReviewRubric |
 | Which design-language relationship spans groups or graphs at the same level? | DesignRelationship |
-| What concrete generated or curated output is needed? | Phenotype, PhenotypeVersion |
+| What planned or concrete generated/curated output is needed? | planned Phenotype, PhenotypeVersion |
 | Where will generated results or files be registered? | PhenotypeLibrary, StorageMount, OutputReference, AssetIndex |
 | What compiled package should generation/review consume? | SpeciesCompileArtifact, PhenotypeCompileArtifact |
 
@@ -93,12 +93,12 @@ Use these nine modules before listing SpeciesNode candidates. Each module contri
 
 ## Phenotype Readiness
 
-- Module question: Does each SpeciesNode candidate represent a drawable, reviewable stable object?
-- Evidence to inspect: source document, object ID or asset ID when available, expected first phenotype type, first visual deliverable, drawable visual signal, negative boundary, and group membership.
-- Decision boundary: SpeciesNode is a hard gate. Before creating a species candidate, answer: Can an artist or generator start drawing this object immediately? What is the expected first phenotype type? What source document, object ID, or asset ID confirms identity? Would this remain the same species if storage path, file format, prompt, or provider changed? What negative boundary prevents over-broad interpretation?
+- Module question: Does each SpeciesNode candidate represent a drawable, reviewable stable object with explicit planned phenotype coverage?
+- Evidence to inspect: source document, object ID or asset ID when available, expected first phenotype type, first visual deliverable, planned phenotype surfaces, drawable visual signal, negative boundary, and group membership.
+- Decision boundary: SpeciesNode is a hard gate. Before creating a species candidate, answer: Can an artist or generator start drawing this object immediately? What planned phenotype surfaces should exist first? What is the expected first phenotype type? What source document, object ID, or asset ID confirms identity? Would this remain the same species if storage path, file format, prompt, provider, crop, size, seed, or output file changed? What negative boundary prevents over-broad interpretation?
 - Positive pattern: "primary attack button icon, first phenotype type icon-prompt, source UI spec ID, negative boundary excludes page layout" can be a species candidate.
 - Counterexample: visual language, UI system, ecosystem, production workflow, review standard, material library, storage directory, page framework, or counter relationship fails phenotype readiness and must use abstract system downgrade.
-- Output contribution: strengthened speciesPlan with source evidence, object ID or asset ID, expected first phenotype type, drawable visual signal, negative boundary, group membership, confidence, and draft fields.
+- Output contribution: strengthened speciesPlan with source evidence, object ID or asset ID, expected first phenotype type, planned phenotype surfaces, drawable visual signal, negative boundary, group membership, confidence, and draft fields; phenotypePlan entries for planned `Phenotype(status: planned)` containers.
 
 ## Relationship Semantics
 
@@ -132,9 +132,9 @@ Use these nine modules before listing SpeciesNode candidates. Each module contri
 - Module question: Which write boundary preserves reviewability and provenance?
 - Evidence to inspect: uncertainty, number of objects, whether formal graph facts are inferred, whether generated trace/output/audit records are involved, and whether a local proposal package is needed.
 - Decision boundary: formal graph/context/facet facts use preview-confirm, change-set review, or local proposal package. Generated trace/output/audit records and external pointers may use direct audit write or draft-write only through CLI/application service boundaries.
-- Positive pattern: a large initial draft uses a local proposal package and a `dna.modeling-batch.v1` plan so several preview change-sets can be reviewed together.
+- Positive pattern: a large initial draft uses a local proposal package and a `dna.modeling-batch.v1` plan so several preview change-sets can be reviewed together. The batch may include facetDefinitions, facetSchemas, facetAssignments, and phenotypePlans when those concepts are evidence-backed.
 - Counterexample: writing inferred graph facts directly because the batch is large bypasses the graph truth boundary.
-- Output contribution: writeStrategy, modelingBatchPlan, blockingQuestions, and confidence.
+- Output contribution: writeStrategy, modelingBatchPlan, expected review stage, modeling quality checks to run, blockingQuestions, and confidence.
 
 ## Case Patterns
 
@@ -165,11 +165,11 @@ Return a structured modeling proposal with these fields:
 - speciesPlan: SpeciesNode candidates with parent candidates, role, level, category, status, source evidence, object ID or asset ID when available, expected first phenotype type, drawable visual signal, negative boundary, group membership, confidence, draft fields, and rationale.
 - contextPlan: DesignContext, ContextFact, ContextMotif, DesignPrinciple, ContextReference, and ContextReviewRubric candidates.
 - facetTemplatePlan: required, recommended, and optional facets with value strategy.
-- phenotypePlan: generated result types, expected variants, review needs, and output/library routing.
+- phenotypePlan: planned phenotype containers with phenotypeId, graphId, nodeId, phenotypeType, name, objectBrief, expectedAssetTypes, review needs, and output/library routing; generated versions/jobs remain out of the modeling batch.
 - compilePlan: suggested CompilePolicy, compileMode, conflict strategy, expected SpeciesCompileArtifact and PhenotypeCompileArtifact contents.
 - firstSliceStrategy: included first-slice objects, excluded but expandable objects, and exclusion reasons such as source missing, low priority, not stable object, not first-release phenotype, or abstract rule.
 - writeStrategy: preview-confirm, change-set review, local proposal package, draft-write, or direct audit write with reason.
-- modelingBatchPlan: when a local proposal package is appropriate, state whether to produce `dna.modeling-batch.v1`, list included object sections, and note references that must resolve before import.
+- modelingBatchPlan: when a local proposal package is appropriate, state whether to produce `dna.modeling-batch.v1`, list included object sections including facets and phenotypePlans when relevant, note references that must resolve before import, and identify quality-check risks such as broad nodes, fake output species, weak relationships, or missing facet/context coverage.
 - assumptions: facts treated as assumptions.
 - blockingQuestions: questions that materially change graph structure or write safety.
 - nonBlockingQuestions: questions that can remain unresolved for a draft or preview.
@@ -179,13 +179,14 @@ Return a structured modeling proposal with these fields:
 ## Quality Bar
 
 - Every SpeciesNode has a stable identity and a reason it is not just one generated result.
-- Every SpeciesNode passes phenotype readiness; unclear candidates become context, group facts, facets, or unresolved items instead of species.
+- Every SpeciesNode passes phenotype readiness and has planned phenotype coverage when generation/review outputs are expected; unclear candidates become context, group facts, facets, planned phenotype surfaces, or unresolved items instead of species.
 - Abstract system downgrade is explicit when visual language, UI system, ecosystem, workflow, review standard, material library, storage directory, page framework, or counter relationship appears.
 - Every DesignRelationship describes the design-language contract, not only the target label.
 - Fake inheritance is rejected even when it would make the graph tree easier to read.
 - Facets are reusable dimensions with a value strategy.
 - Context facts and motifs stay separate from reusable facets.
 - Phenotype and phenotype library decisions stay decoupled from graph identity.
+- Planned phenotype containers are allowed in modeling batches; concrete PhenotypeVersion, GenerationJob, AssetIndex, and OutputReference records stay in their own generation/output boundaries.
 - The write strategy explains why it is preview-confirm, change-set review, local proposal package, draft-write, or direct audit write.
 - `待确认问题` contains only questions that materially change the graph model or write safety.
 
@@ -196,5 +197,5 @@ Return a structured modeling proposal with these fields:
 - Do not hide storage concerns inside graph identity; bind graphs and result libraries explicitly.
 - Do not treat custom relation types as fixed compile rules. They can be included as trace/context for Agent-assisted compile.
 - Do not bypass DNA service, CLI, change-set, or local proposal package write flows.
-- Do not include API keys, provider credentials, passwords, complete private links, generation jobs, phenotype versions, assets, output references, review records, or impact records in `dna.modeling-batch.v1`; those records use their own service boundaries.
+- Do not include API keys, provider credentials, passwords, complete private links, generation jobs, phenotype versions, assets, output references, review records, or impact records in `dna.modeling-batch.v1`; those records use their own service boundaries. Use `phenotypePlans` only for planned result containers, not completed generation attempts.
 - Do not store API keys, credentials, complete private links, raw Agent host responses, or unrelated private project material.

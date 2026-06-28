@@ -3,8 +3,12 @@ import {
   Atlas,
   DesignRelationship,
   ExternalLibraryMapping,
+  FacetAssignment,
+  FacetDefinition,
+  FacetSchema,
   Graph,
   LibraryRoutingPolicy,
+  Phenotype,
   PhenotypeLibrary,
   PhenotypeLibraryGraphBinding,
   SpeciesGroup,
@@ -107,6 +111,58 @@ const DesignRelationshipInputSchema = z
   })
   .passthrough();
 
+const FacetDefinitionInputSchema = z
+  .object({
+    facetId: z.string().min(1),
+    name: z.string().min(1),
+    description: z.string().optional(),
+    valueType: z.string().optional(),
+    allowedValues: z.array(z.union([z.string(), z.number(), z.boolean()])).optional(),
+    status: z.string().optional()
+  })
+  .passthrough();
+
+const FacetSchemaInputSchema = z
+  .object({
+    facetSchemaId: z.string().min(1),
+    name: z.string().min(1),
+    description: z.string().optional(),
+    facetIds: stringArray.optional(),
+    requiredFacetIds: stringArray.optional(),
+    status: z.string().optional()
+  })
+  .passthrough();
+
+const FacetAssignmentInputSchema = z
+  .object({
+    assignmentId: z.string().min(1),
+    targetType: z.string().min(1),
+    targetId: z.string().min(1),
+    values: JsonObjectInput.optional(),
+    status: z.string().optional()
+  })
+  .passthrough();
+
+const PhenotypePlanInputSchema = z
+  .object({
+    phenotypeId: z.string().min(1),
+    graphId: z.string().min(1),
+    nodeId: z.string().min(1),
+    phenotypeType: z.string().min(1),
+    name: z.string().min(1),
+    phenotypeTypeSource: z.string().optional(),
+    objectBrief: z.string().optional(),
+    expectedAssetTypes: stringArray.optional(),
+    routingPolicyId: z.string().optional(),
+    reviewRubricIds: stringArray.optional(),
+    tags: stringArray.optional(),
+    facets: JsonObjectInput.optional(),
+    status: z.string().optional(),
+    metadata: JsonObjectInput.optional(),
+    extensions: JsonObjectInput.optional()
+  })
+  .passthrough();
+
 const PhenotypeLibraryInputSchema = z
   .object({
     libraryId: z.string().min(1),
@@ -162,7 +218,11 @@ export const ModelingBatchSchema = z.object({
   speciesGroups: z.array(SpeciesGroupInputSchema).default([]),
   groupMemberships: z.array(SpeciesGroupMembershipInputSchema).default([]),
   designRelationships: z.array(DesignRelationshipInputSchema).default([]),
+  facetDefinitions: z.array(FacetDefinitionInputSchema).default([]),
+  facetSchemas: z.array(FacetSchemaInputSchema).default([]),
+  facetAssignments: z.array(FacetAssignmentInputSchema).default([]),
   speciesNodes: z.array(SpeciesNodeInputSchema).default([]),
+  phenotypePlans: z.array(PhenotypePlanInputSchema).default([]),
   phenotypeLibraries: z.array(PhenotypeLibraryInputSchema).default([]),
   libraryGraphBindings: z.array(LibraryGraphBindingInputSchema).default([]),
   storageMounts: z.array(StorageMountInputSchema).default([]),
@@ -179,7 +239,20 @@ export interface ModelingBatch {
     Partial<SpeciesGroupMembership> & Pick<SpeciesGroupMembership, "membershipId" | "graphId" | "groupId" | "nodeId">
   >;
   designRelationships: Array<Partial<DesignRelationship> & Pick<DesignRelationship, "relationshipId" | "source" | "target" | "relationshipType"> & { allowParallel?: boolean }>;
+  facetDefinitions: Array<Partial<FacetDefinition> & Pick<FacetDefinition, "facetId" | "name">>;
+  facetSchemas: Array<Partial<FacetSchema> & Pick<FacetSchema, "facetSchemaId" | "name">>;
+  facetAssignments: Array<Partial<FacetAssignment> & Pick<FacetAssignment, "assignmentId" | "targetType" | "targetId">>;
   speciesNodes: Array<Partial<SpeciesNode> & Pick<SpeciesNode, "graphId" | "nodeId" | "name">>;
+  phenotypePlans: Array<
+    Partial<Phenotype> &
+      Pick<Phenotype, "phenotypeId" | "graphId" | "nodeId" | "phenotypeType" | "name"> & {
+        expectedAssetTypes?: string[];
+        routingPolicyId?: string;
+        reviewRubricIds?: string[];
+        metadata?: Record<string, unknown>;
+        extensions?: Record<string, unknown>;
+      }
+  >;
   phenotypeLibraries: Array<Partial<PhenotypeLibrary> & Pick<PhenotypeLibrary, "libraryId" | "name" | "purpose" | "profile">>;
   libraryGraphBindings: Array<
     Partial<PhenotypeLibraryGraphBinding> &

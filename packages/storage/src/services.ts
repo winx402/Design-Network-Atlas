@@ -1,5 +1,6 @@
 import {
   Atlas,
+  AssetTypeSchema,
   ChangeSet,
   createChangeSet,
   createDefaultAtlas,
@@ -11,10 +12,14 @@ import {
   createDefaultDesignContext,
   createDefaultDesignPrinciple,
   createDefaultDesignRelationship,
+  createDefaultFacetAssignment,
+  createDefaultFacetDefinition,
+  createDefaultFacetSchema,
   createDefaultGraph,
   createDefaultExternalLibraryMapping,
   createDefaultLibraryRoutingPolicy,
   createDefaultNodeVersion,
+  createDefaultPhenotype,
   createDefaultPhenotypeLibrary,
   createDefaultPhenotypeLibraryGraphBinding,
   createDefaultProposal,
@@ -31,6 +36,9 @@ import {
   DesignPrinciple,
   DesignRelationship,
   ExternalLibraryMapping,
+  FacetAssignment,
+  FacetDefinition,
+  FacetSchema,
   Graph,
   LibraryRoutingPolicy,
   markChangeSetApplied,
@@ -38,6 +46,7 @@ import {
   ModelingBatch,
   ModelingBatchSchema,
   nowIso,
+  Phenotype,
   PhenotypeLibrary,
   PhenotypeLibraryGraphBinding,
   Proposal,
@@ -154,6 +163,32 @@ export interface CreateDesignRelationshipInput {
   allowParallel?: boolean;
 }
 
+export interface CreateFacetDefinitionInput {
+  facetId: string;
+  name: string;
+  description?: string;
+  valueType?: FacetDefinition["valueType"];
+  allowedValues?: FacetDefinition["allowedValues"];
+  status?: FacetDefinition["status"];
+}
+
+export interface CreateFacetSchemaInput {
+  facetSchemaId: string;
+  name: string;
+  description?: string;
+  facetIds?: string[];
+  requiredFacetIds?: string[];
+  status?: FacetSchema["status"];
+}
+
+export interface CreateFacetAssignmentInput {
+  assignmentId: string;
+  targetType: FacetAssignment["targetType"];
+  targetId: string;
+  values?: Record<string, unknown>;
+  status?: FacetAssignment["status"];
+}
+
 export interface CreateDesignContextInput {
   contextId: string;
   name: string;
@@ -254,12 +289,14 @@ export interface CreateProposalInput {
 export interface ProposalReviewResult {
   proposal: Proposal;
   status: Proposal["status"];
+  reviewStage: ProposalReviewStage;
   blockers: string[];
   childReviews: ChangeSetReviewResult[];
 }
 
 export interface ProposalApplyResult {
   proposal: Proposal;
+  reviewStage: ProposalReviewStage;
   appliedChangeSetIds: string[];
   childResults: ServiceResult<unknown>[];
 }
@@ -274,6 +311,7 @@ export interface ImportModelingBatchInput {
 
 export interface ImportModelingBatchResult {
   mode: "preview-confirm" | "draft-write";
+  reviewStage: ProposalReviewStage;
   proposal: Proposal | null;
   changeSetIds: string[];
   counts: {
@@ -285,6 +323,8 @@ export interface ImportModelingBatchResult {
   includesLibraryObjects: boolean;
   warning?: string;
 }
+
+export type ProposalReviewStage = "draft" | "pending-confirmation" | "confirmed-applied" | "discarded";
 
 export function createDnaServices(store: DnaServiceStore) {
   return {
@@ -410,6 +450,64 @@ export function createDnaServices(store: DnaServiceStore) {
           return applyDesignRelationshipChangeSet(store, changeSet);
         }
         return { value: relationship, changeSet };
+      }
+    },
+    facet: {
+      createDefinition(input: CreateFacetDefinitionInput, options: WriteOptions): ServiceResult<FacetDefinition> {
+        if (options.mode === "changeset-apply") {
+          const existing = requireExistingChangeSet(store, options.changeSetId);
+          return applyFacetDefinitionChangeSet(store, existing);
+        }
+        const definition = createDefaultFacetDefinition(input);
+        const changeSet = createChangeSet({
+          mode: options.mode,
+          objectType: "facet-definition",
+          operation: "create",
+          summary: `create facet definition ${definition.facetId}`,
+          diff: { facetId: definition.facetId, name: definition.name, valueType: definition.valueType, status: definition.status },
+          payload: { definition }
+        });
+        store.changeSets.create(changeSet);
+        if (shouldApply(options)) return applyFacetDefinitionChangeSet(store, changeSet);
+        return { value: definition, changeSet };
+      },
+      createSchema(input: CreateFacetSchemaInput, options: WriteOptions): ServiceResult<FacetSchema> {
+        if (options.mode === "changeset-apply") {
+          const existing = requireExistingChangeSet(store, options.changeSetId);
+          return applyFacetSchemaChangeSet(store, existing);
+        }
+        const schema = createDefaultFacetSchema(input);
+        throwIfFacetValidationErrors(validateFacetSchemaReferences(store, schema));
+        const changeSet = createChangeSet({
+          mode: options.mode,
+          objectType: "facet-schema",
+          operation: "create",
+          summary: `create facet schema ${schema.facetSchemaId}`,
+          diff: { facetSchemaId: schema.facetSchemaId, name: schema.name, facetIds: schema.facetIds, requiredFacetIds: schema.requiredFacetIds },
+          payload: { schema }
+        });
+        store.changeSets.create(changeSet);
+        if (shouldApply(options)) return applyFacetSchemaChangeSet(store, changeSet);
+        return { value: schema, changeSet };
+      },
+      createAssignment(input: CreateFacetAssignmentInput, options: WriteOptions): ServiceResult<FacetAssignment> {
+        if (options.mode === "changeset-apply") {
+          const existing = requireExistingChangeSet(store, options.changeSetId);
+          return applyFacetAssignmentChangeSet(store, existing);
+        }
+        const assignment = createDefaultFacetAssignment(input);
+        throwIfFacetValidationErrors(validateFacetAssignment(store, assignment));
+        const changeSet = createChangeSet({
+          mode: options.mode,
+          objectType: "facet-assignment",
+          operation: "create",
+          summary: `create facet assignment ${assignment.assignmentId}`,
+          diff: { assignmentId: assignment.assignmentId, targetType: assignment.targetType, targetId: assignment.targetId, facetIds: Object.keys(assignment.values) },
+          payload: { assignment }
+        });
+        store.changeSets.create(changeSet);
+        if (shouldApply(options)) return applyFacetAssignmentChangeSet(store, changeSet);
+        return { value: assignment, changeSet };
       }
     },
     group: {
@@ -662,6 +760,7 @@ export function createDnaServices(store: DnaServiceStore) {
           if (input.mode === "draft-write") {
             return {
               mode: "draft-write",
+              reviewStage: "confirmed-applied",
               proposal: null,
               changeSetIds: created.changeSetIds,
               counts: {
@@ -683,6 +782,7 @@ export function createDnaServices(store: DnaServiceStore) {
           store.proposals.create(proposal);
           return {
             mode: "preview-confirm",
+            reviewStage: "draft",
             proposal,
             changeSetIds: created.changeSetIds,
             counts: {
@@ -739,7 +839,7 @@ export function createDnaServices(store: DnaServiceStore) {
         }
         const applied: Proposal = { ...proposal, status: "applied", updatedAt: nowIso() };
         store.proposals.update(applied);
-        return { proposal: applied, appliedChangeSetIds: proposal.changeSetIds, childResults };
+        return { proposal: applied, reviewStage: proposalReviewStage(applied), appliedChangeSetIds: proposal.changeSetIds, childResults };
       },
       discard(proposalId: string): Proposal {
         const proposal = requireProposal(store, proposalId);
@@ -828,6 +928,32 @@ function createModelingBatchChangeSets(
       })
     );
   }
+  for (const input of batch.facetDefinitions) {
+    const definition = createDefaultFacetDefinition(input);
+    push(
+      createChangeSet({
+        mode: options.mode,
+        objectType: "facet-definition",
+        operation: "create",
+        summary: `import facet definition ${definition.facetId}`,
+        diff: { facetId: definition.facetId, name: definition.name, valueType: definition.valueType },
+        payload: { definition }
+      })
+    );
+  }
+  for (const input of batch.facetSchemas) {
+    const schema = createDefaultFacetSchema(input);
+    push(
+      createChangeSet({
+        mode: options.mode,
+        objectType: "facet-schema",
+        operation: "create",
+        summary: `import facet schema ${schema.facetSchemaId}`,
+        diff: { facetSchemaId: schema.facetSchemaId, facetIds: schema.facetIds, requiredFacetIds: schema.requiredFacetIds },
+        payload: { schema }
+      })
+    );
+  }
   for (const input of batch.speciesNodes) {
     const node = createDefaultSpeciesNode(input);
     const version = createDefaultNodeVersion({
@@ -896,6 +1022,38 @@ function createModelingBatchChangeSets(
     const policy = createDefaultLibraryRoutingPolicy(input);
     push(createLibraryChangeSet(options.mode, "library-routing-policy", `import library routing policy ${policy.routingPolicyId}`, { routingPolicyId: policy.routingPolicyId, libraryId: policy.libraryId, targetMountId: policy.targetMountId }, { policy }));
   }
+  for (const input of batch.phenotypePlans) {
+    const phenotype = createPhenotypeFromPlan(input);
+    push(
+      createChangeSet({
+        mode: options.mode,
+        objectType: "phenotype",
+        operation: "create",
+        summary: `import planned phenotype ${phenotype.phenotypeId}`,
+        diff: {
+          phenotypeId: phenotype.phenotypeId,
+          graphId: phenotype.graphId,
+          nodeId: phenotype.nodeId,
+          phenotypeType: phenotype.phenotypeType,
+          status: phenotype.status
+        },
+        payload: { phenotype }
+      })
+    );
+  }
+  for (const input of batch.facetAssignments) {
+    const assignment = createDefaultFacetAssignment(input);
+    push(
+      createChangeSet({
+        mode: options.mode,
+        objectType: "facet-assignment",
+        operation: "create",
+        summary: `import facet assignment ${assignment.assignmentId}`,
+        diff: { assignmentId: assignment.assignmentId, targetType: assignment.targetType, targetId: assignment.targetId, facetIds: Object.keys(assignment.values) },
+        payload: { assignment }
+      })
+    );
+  }
   return { changeSetIds: changeSets.map((changeSet) => changeSet.changeSetId) };
 }
 
@@ -916,13 +1074,38 @@ function countModelingBatchObjects(batch: ModelingBatch): Record<string, number>
     speciesGroups: batch.speciesGroups.length,
     groupMemberships: batch.groupMemberships.length,
     designRelationships: batch.designRelationships.length,
+    facetDefinitions: batch.facetDefinitions.length,
+    facetSchemas: batch.facetSchemas.length,
+    facetAssignments: batch.facetAssignments.length,
     speciesNodes: batch.speciesNodes.length,
+    phenotypePlans: batch.phenotypePlans.length,
     phenotypeLibraries: batch.phenotypeLibraries.length,
     libraryGraphBindings: batch.libraryGraphBindings.length,
     storageMounts: batch.storageMounts.length,
     externalLibraryMappings: batch.externalLibraryMappings.length,
     libraryRoutingPolicies: batch.libraryRoutingPolicies.length
   };
+}
+
+function createPhenotypeFromPlan(input: ModelingBatch["phenotypePlans"][number]): Phenotype {
+  return createDefaultPhenotype({
+    phenotypeId: input.phenotypeId,
+    graphId: input.graphId,
+    nodeId: input.nodeId,
+    phenotypeType: input.phenotypeType,
+    phenotypeTypeSource: input.phenotypeTypeSource ?? "custom",
+    name: input.name,
+    objectBrief: input.objectBrief ?? "",
+    currentAcceptedVersion: null,
+    tags: input.tags ?? [],
+    status: input.status ?? "planned",
+    facets: input.facets ?? {},
+    outputPlan: {
+      expectedAssetTypes: (input.expectedAssetTypes ?? []) as Phenotype["outputPlan"]["expectedAssetTypes"],
+      routingPolicyId: input.routingPolicyId,
+      reviewRubricIds: input.reviewRubricIds ?? []
+    }
+  });
 }
 
 function modelingBatchHasLibraryObjects(batch: ModelingBatch): boolean {
@@ -944,7 +1127,7 @@ function validateModelingBatchReferences(store: DnaServiceStore, batch: Modeling
   const errors: string[] = [];
   const graphIds = collectKnownIds(store.graphs.list().map((graph) => graph.graphId), batch.graphs.map((graph) => graph.graphId));
   const nodeIds = collectKnownIds(
-    batch.graphs.flatMap((graph) => store.nodes.listByGraph(graph.graphId).map((node) => node.nodeId)),
+    store.graphs.list().flatMap((graph) => store.nodes.listByGraph(graph.graphId).map((node) => node.nodeId)),
     batch.speciesNodes.map((node) => node.nodeId)
   );
   const groupIds = collectKnownIds(
@@ -952,11 +1135,25 @@ function validateModelingBatchReferences(store: DnaServiceStore, batch: Modeling
     batch.speciesGroups.map((group) => group.groupId)
   );
   const atlasIds = collectKnownIds(store.atlases.list().map((atlas) => atlas.atlasId), batch.atlases.map((atlas) => atlas.atlasId));
+  const facetDefinitionIds = collectKnownIds(
+    store.facetDefinitions.list().map((definition) => definition.facetId),
+    batch.facetDefinitions.map((definition) => definition.facetId)
+  );
   const libraryIds = collectKnownIds(store.phenotypeLibraries.list().map((library) => library.libraryId), batch.phenotypeLibraries.map((library) => library.libraryId));
   const mountIds = collectKnownIds(
     store.phenotypeLibraries.list().flatMap((library) => store.storageMounts.listByLibrary(library.libraryId).map((mount) => mount.mountId)),
     batch.storageMounts.map((mount) => mount.mountId)
   );
+  const routingPolicyIds = collectKnownIds(
+    store.phenotypeLibraries.list().flatMap((library) => store.libraryRoutingPolicies.listByLibrary(library.libraryId).map((policy) => policy.routingPolicyId)),
+    batch.libraryRoutingPolicies.map((policy) => policy.routingPolicyId)
+  );
+  const reviewRubricIds = new Set(store.contextReviewRubrics.list().map((rubric) => rubric.rubricId));
+  const nodeGraphIds = new Map<string, string>();
+  for (const graph of store.graphs.list()) {
+    for (const node of store.nodes.listByGraph(graph.graphId)) nodeGraphIds.set(node.nodeId, node.graphId);
+  }
+  for (const node of batch.speciesNodes) nodeGraphIds.set(node.nodeId, node.graphId);
 
   addDuplicateErrors(errors, "graphs", batch.graphs.map((graph) => graph.graphId));
   addDuplicateErrors(errors, "atlases", batch.atlases.map((atlas) => atlas.atlasId));
@@ -964,6 +1161,10 @@ function validateModelingBatchReferences(store: DnaServiceStore, batch: Modeling
   addDuplicateErrors(errors, "speciesNodes", batch.speciesNodes.map((node) => node.nodeId));
   addDuplicateErrors(errors, "groupMemberships", batch.groupMemberships.map((membership) => membership.membershipId));
   addDuplicateErrors(errors, "designRelationships", batch.designRelationships.map((relationship) => relationship.relationshipId));
+  addDuplicateErrors(errors, "facetDefinitions", batch.facetDefinitions.map((definition) => definition.facetId));
+  addDuplicateErrors(errors, "facetSchemas", batch.facetSchemas.map((schema) => schema.facetSchemaId));
+  addDuplicateErrors(errors, "facetAssignments", batch.facetAssignments.map((assignment) => assignment.assignmentId));
+  addDuplicateErrors(errors, "phenotypePlans", batch.phenotypePlans.map((plan) => plan.phenotypeId));
   addDuplicateErrors(errors, "phenotypeLibraries", batch.phenotypeLibraries.map((library) => library.libraryId));
   addDuplicateErrors(errors, "libraryGraphBindings", batch.libraryGraphBindings.map((binding) => binding.bindingId));
   addDuplicateErrors(errors, "storageMounts", batch.storageMounts.map((mount) => mount.mountId));
@@ -984,6 +1185,31 @@ function validateModelingBatchReferences(store: DnaServiceStore, batch: Modeling
     validateBatchEndpoint(errors, `designRelationships[${index}].source`, relationship.source, graphIds, groupIds, nodeIds);
     validateBatchEndpoint(errors, `designRelationships[${index}].target`, relationship.target, graphIds, groupIds, nodeIds);
   });
+  batch.facetSchemas.forEach((schema, index) => {
+    for (const facetId of schema.facetIds ?? []) {
+      requireKnown(errors, `facetSchemas[${index}].facetIds`, facetDefinitionIds, facetId, "facet definition");
+    }
+    for (const facetId of schema.requiredFacetIds ?? []) {
+      requireKnown(errors, `facetSchemas[${index}].requiredFacetIds`, facetDefinitionIds, facetId, "facet definition");
+      if (!(schema.facetIds ?? []).includes(facetId)) errors.push(`facetSchemas[${index}].requiredFacetIds: required facet is not in facetIds: ${facetId}`);
+    }
+  });
+  batch.facetAssignments.forEach((assignment, index) => {
+    validateBatchFacetAssignmentTarget(errors, `facetAssignments[${index}]`, assignment, {
+      graphIds,
+      atlasIds,
+      groupIds,
+      nodeIds,
+      relationshipIds: collectKnownIds(store.designRelationships.list().map((relationship) => relationship.relationshipId), batch.designRelationships.map((relationship) => relationship.relationshipId)),
+      phenotypeIds: collectKnownIds(
+        store.graphs.list().flatMap((graph) => store.phenotypes.listByGraph(graph.graphId).map((phenotype) => phenotype.phenotypeId)),
+        batch.phenotypePlans.map((plan) => plan.phenotypeId)
+      ),
+      store
+    });
+    validateBatchFacetAssignmentValues(errors, `facetAssignments[${index}]`, assignment, store, batch);
+  });
+  validateBatchPhenotypePlans(errors, batch, { graphIds, nodeIds, routingPolicyIds, reviewRubricIds, nodeGraphIds, store });
   batch.libraryGraphBindings.forEach((binding, index) => {
     requireKnown(errors, `libraryGraphBindings[${index}].libraryId`, libraryIds, binding.libraryId, "library");
     requireKnown(errors, `libraryGraphBindings[${index}].graphId`, graphIds, binding.graphId, "graph");
@@ -1005,6 +1231,56 @@ function validateModelingBatchReferences(store: DnaServiceStore, batch: Modeling
 
 function collectKnownIds(existingIds: string[], batchIds: string[]): Set<string> {
   return new Set([...existingIds, ...batchIds]);
+}
+
+function validateBatchPhenotypePlans(
+  errors: string[],
+  batch: ModelingBatch,
+  ids: {
+    graphIds: Set<string>;
+    nodeIds: Set<string>;
+    routingPolicyIds: Set<string>;
+    reviewRubricIds: Set<string>;
+    nodeGraphIds: Map<string, string>;
+    store: DnaServiceStore;
+  }
+) {
+  const targetKeys = new Map<string, string>();
+  for (const graph of ids.store.graphs.list()) {
+    for (const phenotype of ids.store.phenotypes.listByGraph(graph.graphId)) {
+      targetKeys.set(`${phenotype.graphId}:${phenotype.nodeId}:${phenotype.phenotypeType}`, phenotype.phenotypeId);
+    }
+  }
+  batch.phenotypePlans.forEach((plan, index) => {
+    if (ids.store.phenotypes.get(plan.phenotypeId)) {
+      errors.push(`phenotypePlans[${index}].phenotypeId: phenotype already exists: ${plan.phenotypeId}`);
+    }
+    requireKnown(errors, `phenotypePlans[${index}].graphId`, ids.graphIds, plan.graphId, "graph");
+    requireKnown(errors, `phenotypePlans[${index}].nodeId`, ids.nodeIds, plan.nodeId, "node");
+    const nodeGraphId = ids.nodeGraphIds.get(plan.nodeId);
+    if (nodeGraphId && nodeGraphId !== plan.graphId) {
+      errors.push(`phenotypePlans[${index}].nodeId: node ${plan.nodeId} belongs to graph ${nodeGraphId}, not ${plan.graphId}`);
+    }
+    if (plan.status && plan.status !== "planned") {
+      errors.push(`phenotypePlans[${index}].status: planned phenotypes must use status planned`);
+    }
+    for (const assetType of plan.expectedAssetTypes ?? []) {
+      if (!AssetTypeSchema.safeParse(assetType).success) {
+        errors.push(`phenotypePlans[${index}].expectedAssetTypes: unsupported asset type: ${assetType}`);
+      }
+    }
+    if (plan.routingPolicyId) requireKnown(errors, `phenotypePlans[${index}].routingPolicyId`, ids.routingPolicyIds, plan.routingPolicyId, "routing policy");
+    for (const rubricId of plan.reviewRubricIds ?? []) {
+      requireKnown(errors, `phenotypePlans[${index}].reviewRubricIds`, ids.reviewRubricIds, rubricId, "context review rubric");
+    }
+    const targetKey = `${plan.graphId}:${plan.nodeId}:${plan.phenotypeType}`;
+    const existingPlan = targetKeys.get(targetKey);
+    if (existingPlan) {
+      errors.push(`phenotypePlans[${index}]: duplicate phenotype plan target ${plan.graphId}/${plan.nodeId}/${plan.phenotypeType} with ${existingPlan}`);
+    } else {
+      targetKeys.set(targetKey, plan.phenotypeId);
+    }
+  });
 }
 
 function addDuplicateErrors(errors: string[], section: string, ids: string[]) {
@@ -1030,6 +1306,55 @@ function validateBatchEndpoint(
   requireKnown(errors, `${path}.graphId`, graphIds, endpoint.graphId, "graph");
   if (endpoint.type === "species-group") requireKnown(errors, `${path}.groupId`, groupIds, endpoint.groupId, "species group");
   if (endpoint.type === "species-node") requireKnown(errors, `${path}.nodeId`, nodeIds, endpoint.nodeId, "node");
+}
+
+function validateBatchFacetAssignmentTarget(
+  errors: string[],
+  path: string,
+  assignment: ModelingBatch["facetAssignments"][number] | FacetAssignment,
+  ids: {
+    graphIds: Set<string>;
+    atlasIds: Set<string>;
+    groupIds: Set<string>;
+    nodeIds: Set<string>;
+    relationshipIds: Set<string>;
+    phenotypeIds: Set<string>;
+    store: DnaServiceStore;
+  }
+) {
+  if (assignment.targetType === "graph") requireKnown(errors, `${path}.targetId`, ids.graphIds, assignment.targetId, "graph");
+  else if (assignment.targetType === "atlas") requireKnown(errors, `${path}.targetId`, ids.atlasIds, assignment.targetId, "atlas");
+  else if (assignment.targetType === "species-group") requireKnown(errors, `${path}.targetId`, ids.groupIds, assignment.targetId, "species group");
+  else if (assignment.targetType === "species-node") requireKnown(errors, `${path}.targetId`, ids.nodeIds, assignment.targetId, "node");
+  else if (assignment.targetType === "design-relationship") requireKnown(errors, `${path}.targetId`, ids.relationshipIds, assignment.targetId, "design relationship");
+  else if (assignment.targetType === "phenotype") requireKnown(errors, `${path}.targetId`, ids.phenotypeIds, assignment.targetId, "phenotype");
+  else if (assignment.targetType === "phenotype-version" && !ids.store.phenotypeVersions.get(assignment.targetId)) {
+    errors.push(`${path}.targetId: phenotype version not found: ${assignment.targetId}`);
+  }
+}
+
+function validateBatchFacetAssignmentValues(
+  errors: string[],
+  path: string,
+  assignment: ModelingBatch["facetAssignments"][number] | FacetAssignment,
+  store: DnaServiceStore,
+  batch: ModelingBatch
+) {
+  const batchDefinitions = new Map(batch.facetDefinitions.map((definition) => [definition.facetId, createDefaultFacetDefinition(definition)]));
+  for (const [facetId, value] of Object.entries(assignment.values ?? {})) {
+    const definition = store.facetDefinitions.get(facetId) ?? batchDefinitions.get(facetId);
+    if (!definition) {
+      errors.push(`${path}.values.${facetId}: facet definition not found: ${facetId}`);
+      continue;
+    }
+    if (!facetValueMatchesDefinition(value, definition)) {
+      errors.push(`${path}.values.${facetId}: value ${JSON.stringify(value)} does not match ${definition.valueType}`);
+      continue;
+    }
+    if (definition.allowedValues.length > 0 && !definition.allowedValues.some((allowed) => allowed === value)) {
+      errors.push(`${path}.values.${facetId}: value ${JSON.stringify(value)} is not allowed`);
+    }
+  }
 }
 
 function shouldApply(options: WriteOptions): boolean {
@@ -1075,6 +1400,10 @@ const PROPOSAL_APPLY_OBJECT_TYPES = new Set([
   "context-motif",
   "context-reference",
   "context-review-rubric",
+  "facet-definition",
+  "facet-schema",
+  "facet-assignment",
+  "phenotype",
   "phenotype-library",
   "phenotype-library-graph-binding",
   "storage-mount",
@@ -1086,10 +1415,15 @@ interface ProposalPlannedCreates {
   graphIds: Set<string>;
   nodeIds: Set<string>;
   speciesGroupIds: Set<string>;
+  designRelationshipIds: Set<string>;
   atlasIds: Set<string>;
   designContextIds: Set<string>;
+  facetDefinitionIds: Set<string>;
+  facetSchemaIds: Set<string>;
+  phenotypeIds: Set<string>;
   libraryIds: Set<string>;
   mountIds: Set<string>;
+  routingPolicyIds: Set<string>;
 }
 
 function reviewProposal(
@@ -1133,7 +1467,14 @@ function reviewProposal(
       ? { ...proposal, status, updatedAt: nowIso() }
       : proposal;
   if (nextProposal !== proposal) store.proposals.update(nextProposal);
-  return { proposal: nextProposal, status, blockers, childReviews };
+  return { proposal: nextProposal, status, reviewStage: proposalReviewStage(nextProposal), blockers, childReviews };
+}
+
+function proposalReviewStage(proposal: Proposal): ProposalReviewStage {
+  if (proposal.status === "ready") return "pending-confirmation";
+  if (proposal.status === "applied") return "confirmed-applied";
+  if (proposal.status === "discarded") return "discarded";
+  return "draft";
 }
 
 function collectProposalPlannedCreates(changeSets: ChangeSet[]): ProposalPlannedCreates {
@@ -1141,10 +1482,15 @@ function collectProposalPlannedCreates(changeSets: ChangeSet[]): ProposalPlanned
     graphIds: new Set(),
     nodeIds: new Set(),
     speciesGroupIds: new Set(),
+    designRelationshipIds: new Set(),
     atlasIds: new Set(),
     designContextIds: new Set(),
+    facetDefinitionIds: new Set(),
+    facetSchemaIds: new Set(),
+    phenotypeIds: new Set(),
     libraryIds: new Set(),
-    mountIds: new Set()
+    mountIds: new Set(),
+    routingPolicyIds: new Set()
   };
   for (const changeSet of changeSets) {
     if (changeSet.status !== "preview" || changeSet.operation !== "create") continue;
@@ -1152,17 +1498,27 @@ function collectProposalPlannedCreates(changeSets: ChangeSet[]): ProposalPlanned
     const graph = payload.graph as Graph | undefined;
     const node = payload.node as SpeciesNode | undefined;
     const group = payload.group as SpeciesGroup | undefined;
+    const relationship = payload.relationship as DesignRelationship | undefined;
     const atlas = payload.atlas as Atlas | undefined;
     const context = payload.context as DesignContext | undefined;
+    const definition = payload.definition as FacetDefinition | undefined;
+    const schema = payload.schema as FacetSchema | undefined;
+    const phenotype = payload.phenotype as Phenotype | undefined;
     const library = payload.library as PhenotypeLibrary | undefined;
     const mount = payload.mount as StorageMount | undefined;
+    const policy = payload.policy as LibraryRoutingPolicy | undefined;
     if (graph?.graphId) planned.graphIds.add(graph.graphId);
     if (node?.nodeId) planned.nodeIds.add(node.nodeId);
     if (group?.groupId) planned.speciesGroupIds.add(group.groupId);
+    if (relationship?.relationshipId) planned.designRelationshipIds.add(relationship.relationshipId);
     if (atlas?.atlasId) planned.atlasIds.add(atlas.atlasId);
     if (context?.contextId) planned.designContextIds.add(context.contextId);
+    if (definition?.facetId) planned.facetDefinitionIds.add(definition.facetId);
+    if (schema?.facetSchemaId) planned.facetSchemaIds.add(schema.facetSchemaId);
+    if (phenotype?.phenotypeId) planned.phenotypeIds.add(phenotype.phenotypeId);
     if (library?.libraryId) planned.libraryIds.add(library.libraryId);
     if (mount?.mountId) planned.mountIds.add(mount.mountId);
+    if (policy?.routingPolicyId) planned.routingPolicyIds.add(policy.routingPolicyId);
   }
   return planned;
 }
@@ -1194,14 +1550,110 @@ function isSatisfiedByProposalPlan(violation: string, plannedCreates: ProposalPl
     plannedIdMatches(violation, /^target species group not found: (.+)$/, plannedCreates.speciesGroupIds) ||
     plannedIdMatches(violation, /^atlas not found: (.+)$/, plannedCreates.atlasIds) ||
     plannedIdMatches(violation, /^design context not found: (.+)$/, plannedCreates.designContextIds) ||
+    plannedIdMatches(violation, /^facet definition not found: (.+)$/, plannedCreates.facetDefinitionIds) ||
+    plannedIdMatches(violation, /^facet schema not found: (.+)$/, plannedCreates.facetSchemaIds) ||
+    plannedIdMatches(violation, /^assignment target not found: graph (.+)$/, plannedCreates.graphIds) ||
+    plannedIdMatches(violation, /^assignment target not found: atlas (.+)$/, plannedCreates.atlasIds) ||
+    plannedIdMatches(violation, /^assignment target not found: species-group (.+)$/, plannedCreates.speciesGroupIds) ||
+    plannedIdMatches(violation, /^assignment target not found: species-node (.+)$/, plannedCreates.nodeIds) ||
+    plannedIdMatches(violation, /^assignment target not found: design-relationship (.+)$/, plannedCreates.designRelationshipIds) ||
+    plannedIdMatches(violation, /^assignment target not found: phenotype (.+)$/, plannedCreates.phenotypeIds) ||
     plannedIdMatches(violation, /^library not found: (.+)$/, plannedCreates.libraryIds) ||
-    plannedIdMatches(violation, /^storage mount not found: (.+)$/, plannedCreates.mountIds)
+    plannedIdMatches(violation, /^storage mount not found: (.+)$/, plannedCreates.mountIds) ||
+    plannedIdMatches(violation, /^routing policy not found: (.+)$/, plannedCreates.routingPolicyIds)
   );
 }
 
 function plannedIdMatches(violation: string, pattern: RegExp, plannedIds: Set<string>): boolean {
   const id = violation.match(pattern)?.[1];
   return Boolean(id && plannedIds.has(id));
+}
+
+function throwIfFacetValidationErrors(errors: string[]) {
+  if (errors.length > 0) throw new Error(errors.join("; "));
+}
+
+function validateFacetSchemaReferences(store: DnaServiceStore, schema: FacetSchema): string[] {
+  const errors: string[] = [];
+  const knownFacetIds = new Set(store.facetDefinitions.list().map((definition) => definition.facetId));
+  for (const facetId of schema.facetIds) {
+    if (!knownFacetIds.has(facetId)) errors.push(`facet definition not found: ${facetId}`);
+  }
+  for (const facetId of schema.requiredFacetIds) {
+    if (!schema.facetIds.includes(facetId)) errors.push(`required facet is not in schema facetIds: ${facetId}`);
+    if (!knownFacetIds.has(facetId)) errors.push(`facet definition not found: ${facetId}`);
+  }
+  return errors;
+}
+
+function validateFacetAssignment(store: DnaServiceStore, assignment: FacetAssignment): string[] {
+  const errors: string[] = [];
+  if (!facetAssignmentTargetExists(store, assignment)) {
+    errors.push(`assignment target not found: ${assignment.targetType} ${assignment.targetId}`);
+  }
+  for (const [facetId, value] of Object.entries(assignment.values)) {
+    const definition = store.facetDefinitions.get(facetId);
+    if (!definition) {
+      errors.push(`facet definition not found: ${facetId}`);
+      continue;
+    }
+    if (!facetValueMatchesDefinition(value, definition)) {
+      errors.push(`facetAssignments values.${facetId}: value ${JSON.stringify(value)} does not match ${definition.valueType}`);
+      continue;
+    }
+    if (definition.allowedValues.length > 0 && !definition.allowedValues.some((allowed) => allowed === value)) {
+      errors.push(`facetAssignments values.${facetId}: value ${JSON.stringify(value)} is not allowed`);
+    }
+  }
+  return errors;
+}
+
+function facetAssignmentTargetExists(store: DnaServiceStore, assignment: FacetAssignment): boolean {
+  if (assignment.targetType === "graph") return Boolean(store.graphs.get(assignment.targetId));
+  if (assignment.targetType === "atlas") return Boolean(store.atlases.get(assignment.targetId));
+  if (assignment.targetType === "species-group") return Boolean(store.speciesGroups.get(assignment.targetId));
+  if (assignment.targetType === "species-node") return Boolean(store.nodes.get(assignment.targetId));
+  if (assignment.targetType === "design-relationship") return Boolean(store.designRelationships.get(assignment.targetId));
+  if (assignment.targetType === "phenotype") return Boolean(store.phenotypes.get(assignment.targetId));
+  if (assignment.targetType === "phenotype-version") return Boolean(store.phenotypeVersions.get(assignment.targetId));
+  return assignment.targetType === "phenotype-type" && assignment.targetId.length > 0;
+}
+
+function facetValueMatchesDefinition(value: unknown, definition: FacetDefinition): boolean {
+  if (definition.valueType === "json") return true;
+  if (definition.valueType === "string" || definition.valueType === "enum") return typeof value === "string";
+  if (definition.valueType === "number") return typeof value === "number" && Number.isFinite(value);
+  if (definition.valueType === "boolean") return typeof value === "boolean";
+  return false;
+}
+
+function validatePlannedPhenotype(store: DnaServiceStore, phenotype: Phenotype): string[] {
+  const errors: string[] = [];
+  const graph = store.graphs.get(phenotype.graphId);
+  if (!graph) errors.push(`graph not found: ${phenotype.graphId}`);
+  const node = store.nodes.get(phenotype.nodeId);
+  if (!node) errors.push(`node not found: ${phenotype.nodeId}`);
+  if (node && node.graphId !== phenotype.graphId) errors.push(`node ${phenotype.nodeId} belongs to graph ${node.graphId}, not ${phenotype.graphId}`);
+  if (store.phenotypes.get(phenotype.phenotypeId)) errors.push(`phenotype already exists: ${phenotype.phenotypeId}`);
+  for (const existing of store.phenotypes.listByGraph(phenotype.graphId)) {
+    if (existing.nodeId === phenotype.nodeId && existing.phenotypeType === phenotype.phenotypeType) {
+      errors.push(`duplicate phenotype plan target ${phenotype.graphId}/${phenotype.nodeId}/${phenotype.phenotypeType} with ${existing.phenotypeId}`);
+    }
+  }
+  if (phenotype.status !== "planned") errors.push("planned phenotype must use status planned");
+  for (const assetType of phenotype.outputPlan.expectedAssetTypes) {
+    if (!AssetTypeSchema.safeParse(assetType).success) errors.push(`unsupported asset type: ${assetType}`);
+  }
+  if (phenotype.outputPlan.routingPolicyId) {
+    const exists = store.phenotypeLibraries
+      .list()
+      .some((library) => store.libraryRoutingPolicies.listByLibrary(library.libraryId).some((policy) => policy.routingPolicyId === phenotype.outputPlan.routingPolicyId));
+    if (!exists) errors.push(`routing policy not found: ${phenotype.outputPlan.routingPolicyId}`);
+  }
+  for (const rubricId of phenotype.outputPlan.reviewRubricIds) {
+    if (!store.contextReviewRubrics.get(rubricId)) errors.push(`context review rubric not found: ${rubricId}`);
+  }
+  return errors;
 }
 
 function applyChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ServiceResult<unknown> {
@@ -1218,6 +1670,10 @@ function applyChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ServiceRe
   if (changeSet.objectType === "context-motif") return applyContextMotifChangeSet(store, changeSet);
   if (changeSet.objectType === "context-reference") return applyContextReferenceChangeSet(store, changeSet);
   if (changeSet.objectType === "context-review-rubric") return applyContextReviewRubricChangeSet(store, changeSet);
+  if (changeSet.objectType === "facet-definition") return applyFacetDefinitionChangeSet(store, changeSet);
+  if (changeSet.objectType === "facet-schema") return applyFacetSchemaChangeSet(store, changeSet);
+  if (changeSet.objectType === "facet-assignment") return applyFacetAssignmentChangeSet(store, changeSet);
+  if (changeSet.objectType === "phenotype") return applyPhenotypeChangeSet(store, changeSet);
   if (changeSet.objectType === "phenotype-library") return applyPhenotypeLibraryChangeSet(store, changeSet);
   if (changeSet.objectType === "phenotype-library-graph-binding") return applyPhenotypeLibraryGraphBindingChangeSet(store, changeSet);
   if (changeSet.objectType === "storage-mount") return applyStorageMountChangeSet(store, changeSet);
@@ -1293,6 +1749,32 @@ function reviewChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ChangeSe
     const rubric = changeSet.payload.rubric as ContextReviewRubric | undefined;
     if (!rubric) constraintViolations.push("change-set payload missing context review rubric");
     if (rubric && !rubric.question) missingDimensions.push("rubric.question");
+  } else if (changeSet.objectType === "facet-definition") {
+    const definition = changeSet.payload.definition as FacetDefinition | undefined;
+    if (!definition) constraintViolations.push("change-set payload missing facet definition");
+    if (definition && !definition.name) missingDimensions.push("facetDefinition.name");
+  } else if (changeSet.objectType === "facet-schema") {
+    const schema = changeSet.payload.schema as FacetSchema | undefined;
+    if (!schema) {
+      constraintViolations.push("change-set payload missing facet schema");
+    } else {
+      constraintViolations.push(...validateFacetSchemaReferences(store, schema));
+    }
+  } else if (changeSet.objectType === "facet-assignment") {
+    const assignment = changeSet.payload.assignment as FacetAssignment | undefined;
+    if (!assignment) {
+      constraintViolations.push("change-set payload missing facet assignment");
+    } else {
+      constraintViolations.push(...validateFacetAssignment(store, assignment));
+    }
+  } else if (changeSet.objectType === "phenotype") {
+    const phenotype = changeSet.payload.phenotype as Phenotype | undefined;
+    if (!phenotype) {
+      constraintViolations.push("change-set payload missing phenotype");
+    } else {
+      constraintViolations.push(...validatePlannedPhenotype(store, phenotype));
+      if (!phenotype.objectBrief) missingDimensions.push("phenotype.objectBrief");
+    }
   } else if (changeSet.objectType === "phenotype-library") {
     const library = changeSet.payload.library as PhenotypeLibrary | undefined;
     if (!library) constraintViolations.push("change-set payload missing phenotype library");
@@ -1607,6 +2089,62 @@ function applyContextReviewRubricChangeSet(store: DnaServiceStore, changeSet: Ch
     return next;
   });
   return { value: rubric, changeSet: applied };
+}
+
+function applyFacetDefinitionChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ServiceResult<FacetDefinition> {
+  requireChangeSetObjectType(changeSet, "facet-definition");
+  const definition = changeSet.payload.definition as FacetDefinition | undefined;
+  if (!definition) throw new Error("change-set payload missing facet definition");
+  const applied = store.transaction(() => {
+    store.facetDefinitions.create(definition);
+    const next = markChangeSetApplied(changeSet);
+    store.changeSets.update(next);
+    return next;
+  });
+  return { value: definition, changeSet: applied };
+}
+
+function applyFacetSchemaChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ServiceResult<FacetSchema> {
+  requireChangeSetObjectType(changeSet, "facet-schema");
+  const schema = changeSet.payload.schema as FacetSchema | undefined;
+  if (!schema) throw new Error("change-set payload missing facet schema");
+  const applied = store.transaction(() => {
+    throwIfFacetValidationErrors(validateFacetSchemaReferences(store, schema));
+    store.facetSchemas.create(schema);
+    const next = markChangeSetApplied(changeSet);
+    store.changeSets.update(next);
+    return next;
+  });
+  return { value: schema, changeSet: applied };
+}
+
+function applyFacetAssignmentChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ServiceResult<FacetAssignment> {
+  requireChangeSetObjectType(changeSet, "facet-assignment");
+  const assignment = changeSet.payload.assignment as FacetAssignment | undefined;
+  if (!assignment) throw new Error("change-set payload missing facet assignment");
+  const applied = store.transaction(() => {
+    throwIfFacetValidationErrors(validateFacetAssignment(store, assignment));
+    store.facetAssignments.create(assignment);
+    const next = markChangeSetApplied(changeSet);
+    store.changeSets.update(next);
+    return next;
+  });
+  return { value: assignment, changeSet: applied };
+}
+
+function applyPhenotypeChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ServiceResult<Phenotype> {
+  requireChangeSetObjectType(changeSet, "phenotype");
+  const phenotype = changeSet.payload.phenotype as Phenotype | undefined;
+  if (!phenotype) throw new Error("change-set payload missing phenotype");
+  const applied = store.transaction(() => {
+    const errors = validatePlannedPhenotype(store, phenotype);
+    if (errors.length > 0) throw new Error(errors.join("; "));
+    store.phenotypes.create(phenotype);
+    const next = markChangeSetApplied(changeSet);
+    store.changeSets.update(next);
+    return next;
+  });
+  return { value: phenotype, changeSet: applied };
 }
 
 function applyPhenotypeLibraryChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ServiceResult<PhenotypeLibrary> {

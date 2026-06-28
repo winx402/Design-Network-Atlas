@@ -1,4 +1,4 @@
-import { DesignRelationship, Graph, SpeciesGroup, SpeciesGroupMembership, SpeciesNode } from "./schemas.js";
+import { DesignRelationship, Graph, Phenotype, SpeciesGroup, SpeciesGroupMembership, SpeciesNode } from "./schemas.js";
 
 export interface GraphTreeRelation {
   fromNodeId: string;
@@ -44,6 +44,15 @@ export interface GraphGroupOverlay {
 
 export interface GraphTreeWithGroupOverlay extends GraphTree {
   groupOverlay: GraphGroupOverlay;
+}
+
+export interface GraphPhenotypeOverlay {
+  phenotypes: Phenotype[];
+  byNodeId: Record<string, Phenotype[]>;
+}
+
+export interface GraphTreeWithPhenotypeOverlay extends GraphTree {
+  phenotypeOverlay: GraphPhenotypeOverlay;
 }
 
 export function buildGraphTree(input: { graph: Graph; nodes: SpeciesNode[]; relationships?: DesignRelationship[] }): GraphTree {
@@ -249,6 +258,52 @@ export function formatGraphTreeWithGroupsText(tree: GraphTree, overlay: GraphGro
       lines.push(
         `- ${source?.name ?? sourceId} (${sourceId}) -> ${target?.name ?? targetId} (${targetId}) [${relationship.relationshipType}, ${relationship.relationshipId}]${description}`
       );
+    }
+  }
+
+  return `${lines.join("\n")}\n`;
+}
+
+export function buildGraphPhenotypeOverlay(input: { graph: Graph; nodes: SpeciesNode[]; phenotypes: Phenotype[] }): GraphPhenotypeOverlay {
+  const nodeIds = new Set(input.nodes.filter((node) => node.graphId === input.graph.graphId).map((node) => node.nodeId));
+  const phenotypes = input.phenotypes
+    .filter((phenotype) => phenotype.graphId === input.graph.graphId && nodeIds.has(phenotype.nodeId))
+    .sort(
+      (left, right) =>
+        left.nodeId.localeCompare(right.nodeId) ||
+        left.phenotypeType.localeCompare(right.phenotypeType) ||
+        left.phenotypeId.localeCompare(right.phenotypeId)
+    );
+  const byNodeId: Record<string, Phenotype[]> = {};
+  for (const phenotype of phenotypes) {
+    byNodeId[phenotype.nodeId] = byNodeId[phenotype.nodeId] ?? [];
+    byNodeId[phenotype.nodeId].push(phenotype);
+  }
+  return { phenotypes, byNodeId };
+}
+
+export function formatGraphTreeWithPhenotypesText(tree: GraphTree, overlay: GraphPhenotypeOverlay): string {
+  const lines = formatGraphTreeText(tree).trimEnd().split("\n");
+  const nodeById = collectTreeNodes(tree);
+  const nodeIds = [...new Set([...Object.keys(overlay.byNodeId), ...overlay.phenotypes.map((phenotype) => phenotype.nodeId)])].sort((left, right) => {
+    const leftName = nodeById.get(left)?.name ?? left;
+    const rightName = nodeById.get(right)?.name ?? right;
+    return leftName.localeCompare(rightName) || left.localeCompare(right);
+  });
+
+  lines.push("");
+  lines.push("Planned phenotypes:");
+  if (nodeIds.length === 0) {
+    lines.push("- none");
+  } else {
+    for (const nodeId of nodeIds) {
+      const node = nodeById.get(nodeId);
+      lines.push(`- ${node?.name ?? nodeId} (${nodeId})`);
+      const phenotypes = overlay.byNodeId[nodeId] ?? [];
+      for (const phenotype of phenotypes) {
+        const assetTypes = phenotype.outputPlan.expectedAssetTypes.length ? ` assets=${phenotype.outputPlan.expectedAssetTypes.join(",")}` : "";
+        lines.push(`  - ${phenotype.name} (${phenotype.phenotypeId}) [${phenotype.phenotypeType}, ${phenotype.status}]${assetTypes}`);
+      }
     }
   }
 
