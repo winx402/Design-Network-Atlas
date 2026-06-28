@@ -14,6 +14,7 @@ import {
   FacetAssignment,
   FacetDefinition,
   FacetSchema,
+  GeneTemplate,
   GenerationJob,
   Graph,
   ImpactRecord,
@@ -357,6 +358,44 @@ export function createDefaultContextPolicy(
     priority: input.priority ?? "normal",
     resolutionRule: input.resolutionRule ?? "manual",
     status: input.status ?? "draft",
+    createdAt: input.createdAt ?? timestamp,
+    updatedAt: input.updatedAt ?? timestamp
+  };
+}
+
+export function createDefaultGeneTemplate(
+  input: Partial<GeneTemplate> & {
+    templateId: string;
+    packId?: string;
+    name?: string;
+    dimensions?: Array<{ dimensionId: string; prompt?: string; required?: boolean }>;
+  }
+): GeneTemplate {
+  const timestamp = nowIso();
+  const requiredDimensions =
+    input.requiredDimensions ?? input.dimensions?.filter((dimension) => dimension.required).map((dimension) => dimension.dimensionId) ?? [];
+  const recommendedDimensions =
+    input.recommendedDimensions ?? input.dimensions?.filter((dimension) => !dimension.required).map((dimension) => dimension.dimensionId) ?? [];
+  return {
+    templateId: input.templateId,
+    templatePackId: input.templatePackId ?? input.packId ?? null,
+    version: input.version ?? "1.0.0",
+    domain: input.domain ?? "design",
+    scope: input.scope ?? input.name ?? input.templateId,
+    extends: input.extends ?? [],
+    requiredDimensions,
+    recommendedDimensions,
+    optionalDimensions: input.optionalDimensions ?? [],
+    forbiddenDimensions: input.forbiddenDimensions ?? [],
+    dimensionSchema:
+      input.dimensionSchema ??
+      Object.fromEntries((input.dimensions ?? []).map((dimension) => [dimension.dimensionId, { prompt: dimension.prompt ?? "" }])),
+    propertyResolution: input.propertyResolution ?? {},
+    reviewQuestions: input.reviewQuestions ?? [],
+    phenotypeTypeSuggestions: input.phenotypeTypeSuggestions ?? [],
+    compatibility: input.compatibility ?? {},
+    status: input.status ?? "active",
+    facets: input.facets ?? {},
     createdAt: input.createdAt ?? timestamp,
     updatedAt: input.updatedAt ?? timestamp
   };

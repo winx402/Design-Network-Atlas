@@ -243,6 +243,15 @@ export const phenotypeCompileArtifacts = sqliteTable("phenotype_compile_artifact
   createdAt: text("created_at").notNull()
 });
 
+export const entityCompileArtifacts = sqliteTable("entity_compile_artifacts", {
+  artifactId: text("artifact_id").primaryKey(),
+  targetLevel: text("target_level").notNull(),
+  targetObjectId: text("target_object_id").notNull(),
+  graphId: text("graph_id"),
+  payload: text("payload", { mode: "json" }).notNull(),
+  createdAt: text("created_at").notNull()
+});
+
 export const assets = sqliteTable("assets", {
   assetId: text("asset_id").primaryKey(),
   linkedObjectType: text("linked_object_type").notNull(),

@@ -55,7 +55,7 @@ Use these invariants to protect existing graph meaning. This skill applies the m
 - abstraction downgrade: Abstract concepts requested as nodes, such as visual language, UI system, ecosystem, production workflow, review standard, material library, storage directory, page framework, or counter relationship, should move to DesignContext, ContextFact, ContextReviewRubric, SpeciesGroup, DesignRelationship, facet/template, or phenotype library/routing when appropriate.
 - inheritance safety: Reparenting must not create fake inheritance for readability. DesignRelationship is only valid when same-level core entities have a real design-language contract.
 - storage decoupling: Storage/routing edits must not alter graph identity. LibraryRoutingPolicy, StorageMount, ExternalLibraryMapping, OutputReference, and AssetIndex changes can affect where results live, but they do not rename or redefine SpeciesNode identity.
-- impact analysis: Existing SpeciesCompileArtifact, PhenotypeCompileArtifact, PhenotypeVersion, ReviewRecord, ImpactRecord, OutputReference, and routing records must be marked stale, unaffected, or requiring review explicitly.
+- impact analysis: Existing EntityCompileArtifact, SpeciesCompileArtifact, PhenotypeCompileArtifact, PhenotypeVersion, ReviewRecord, ImpactRecord, OutputReference, and routing records must be marked current, stale, historical, unaffected, or requiring review explicitly. Upstream edits should expose dependency-vector staleness and compile feedback; they must not auto-recompile or mutate downstream graph facts.
 - history preservation: Split, merge, rename, archive, and refactor edits must preserve stable identity and version history rather than silently overwriting what accepted outputs mean.
 
 ## Decision Gates
@@ -69,7 +69,7 @@ Use these invariants to protect existing graph meaning. This skill applies the m
 
 ## Impact Rules
 
-- Parent, node-level relationship, root, shared facet, template, compile-policy, group-level relationship, graph-level relationship, and context changes can invalidate SpeciesCompileArtifact and PhenotypeCompileArtifact records.
+- Parent, node-level relationship, root, shared facet, template, compile-policy, group-level relationship, graph-level relationship, atlas/graph/group frame input, and context changes can invalidate EntityCompileArtifact, SpeciesCompileArtifact, and PhenotypeCompileArtifact records.
 - Upstream visual constraint changes should mark downstream PhenotypeVersion outdated instead of silently regenerating results.
 - ContextReference and ContextReviewRubric changes may alter prompts, negative prompts, review checklists, or acceptance criteria.
 - storage-routing changes may affect where new OutputReference records go, but they should not alter species identity.
@@ -105,7 +105,7 @@ Return an edit proposal with these fields:
 - impactAnalysis: downstream SpeciesNode, DesignRelationship, context, compile artifact, PhenotypeVersion outdated, OutputReference, review, and routing implications.
 - riskLevel: low, medium, high, or structural with concrete reason.
 - alternatives: safer or more expressive options when risk is not low.
-- compilePlan: whether SpeciesCompileArtifact or PhenotypeCompileArtifact should be refreshed, fixed, reviewed, or left unchanged.
+- compilePlan: whether EntityCompileArtifact, SpeciesCompileArtifact, or PhenotypeCompileArtifact should be refreshed, fixed, reviewed, replayed historically, or left unchanged, and which compile feedback/open questions should become review or proposal inputs.
 - writeStrategy: no-write diagnosis, preview-confirm, change-set review, local proposal package, draft-write, or direct audit write.
 - reviewChecklist: what the user should confirm before apply.
 - assumptions: assumptions used.

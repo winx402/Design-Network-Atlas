@@ -133,8 +133,23 @@ export const ContextReviewParticipationSchema = z.enum(["none", "include"]);
 export const ContextImpactParticipationSchema = z.enum(["none", "outdated-check", "trace"]);
 export const ContextPrioritySchema = z.enum(["low", "normal", "high"]);
 export const ContextResolutionRuleSchema = z.enum(["preserve", "merge", "weaken", "translate", "exclude", "manual"]);
-export const CompileTargetSchema = z.enum(["species-snapshot", "phenotype-generation"]);
+export const CompileTargetSchema = z.enum(["entity-layer", "species-snapshot", "phenotype-generation"]);
 export const CompileModeSchema = z.enum(["system", "manual", "agent-assisted", "hybrid"]);
+export const CompileFrameLevelSchema = z.enum(["atlas", "graph", "species-group", "species-node", "phenotype"]);
+export const CompileDependencyRoleSchema = z.enum([
+  "source",
+  "inherited",
+  "relationship",
+  "context",
+  "facet",
+  "template",
+  "rubric",
+  "reference",
+  "decision"
+]);
+export const CompileArtifactValidityStateSchema = z.enum(["current", "stale", "historical", "invalid"]);
+export const CompileFeedbackSeveritySchema = z.enum(["info", "warning", "blocking"]);
+export const CompileDecisionActionSchema = z.enum(["preserve", "weaken", "translate", "exclude", "manual", "suggest-upstream-change"]);
 export const AtlasScopeSchema = z.enum(["none", "direct", "relevant"]);
 export const CompileLayerSchema = z.enum([
   "atlas-foundation",
@@ -707,6 +722,105 @@ export const CompileConflictSchema = z.object({
   decision: TraceDecisionSchema.default("included")
 });
 
+export const CompileEntityRefSchema = z.object({
+  objectType: z.enum(["atlas", "graph", "species-group", "species-node", "phenotype"]),
+  objectId: z.string().min(1),
+  graphId: z.string().optional(),
+  label: z.string().optional()
+});
+
+export const CompileSnapshotEntrySchema = z.object({
+  objectType: z.string().min(1),
+  objectId: z.string().min(1),
+  fieldPath: z.string().default(""),
+  summary: z.string().default(""),
+  value: z.unknown().optional(),
+  role: z.string().default("source")
+});
+
+export const CompileFeedbackSchema = z.object({
+  feedbackId: z.string().min(1),
+  severity: CompileFeedbackSeveritySchema,
+  targetLevel: CompileFrameLevelSchema,
+  target: CompileEntityRefSchema,
+  reason: z.string().min(1),
+  suggestedAction: z.string().default("review"),
+  sourceObjectIds: z.array(z.string()).default([])
+});
+
+export const CompileDecisionRequestSchema = z.object({
+  requestId: z.string().min(1),
+  fieldPath: z.string().min(1),
+  reason: z.string().min(1),
+  allowedActions: z.array(CompileDecisionActionSchema).default(["preserve", "weaken", "translate", "exclude", "manual"]),
+  sourceObjectIds: z.array(z.string()).default([]),
+  status: z.enum(["open", "patched", "skipped"]).default("open")
+});
+
+export const CompileDecisionPatchSchema = z.object({
+  requestId: z.string().min(1),
+  action: CompileDecisionActionSchema,
+  fieldPath: z.string().min(1),
+  valueSummary: z.string().default(""),
+  rationale: z.string().default(""),
+  confidence: z.enum(["low", "medium", "high"]),
+  sourceObjectIds: z.array(z.string()).default([])
+});
+
+export const CompileDependencyRefSchema = z.object({
+  objectType: z.string().min(1),
+  objectId: z.string().min(1),
+  versionId: z.string().optional(),
+  updatedAt: z.string().optional(),
+  contentHash: z.string().optional(),
+  role: CompileDependencyRoleSchema
+});
+
+export const CompileArtifactValiditySchema = z.object({
+  state: CompileArtifactValidityStateSchema,
+  reasons: z.array(z.string()).default([])
+});
+
+export const CompileFrameSchema = z.object({
+  frameId: z.string().min(1),
+  level: CompileFrameLevelSchema,
+  target: CompileEntityRefSchema,
+  inheritedSnapshot: z.array(CompileSnapshotEntrySchema).default([]),
+  localSnapshot: z.array(CompileSnapshotEntrySchema).default([]),
+  relationshipSnapshot: z.array(CompileSnapshotEntrySchema).default([]),
+  contextSnapshot: z.array(CompileSnapshotEntrySchema).default([]),
+  facetSnapshot: z.array(CompileSnapshotEntrySchema).default([]),
+  templateSnapshot: z.array(CompileSnapshotEntrySchema).default([]),
+  resolvedSnapshot: JsonRecordSchema,
+  traces: z.array(TraceEntrySchema).default([]),
+  conflictReport: z.array(CompileConflictSchema).default([]),
+  openQuestions: z.array(z.string()).default([]),
+  feedback: z.array(CompileFeedbackSchema).default([])
+});
+
+export const EntityCompileArtifactSchema = z.object({
+  artifactId: z.string().min(1),
+  compileTarget: z.literal("entity-layer"),
+  targetLevel: z.enum(["atlas", "graph", "species-group"]),
+  target: CompileEntityRefSchema,
+  graphId: z.string().optional(),
+  compileMode: CompileModeSchema,
+  compiledBy: z.string().default("system"),
+  assistantContributionSummary: z.string().default(""),
+  inputSummary: JsonRecordSchema,
+  compilePolicy: CompilePolicySchema.optional(),
+  compileScope: CompileScopeSchema,
+  dependencyVector: z.array(CompileDependencyRefSchema).default([]),
+  validity: CompileArtifactValiditySchema.default({ state: "current", reasons: [] }),
+  frames: z.array(CompileFrameSchema).default([]),
+  resolvedSnapshot: JsonRecordSchema,
+  conflictReport: z.array(CompileConflictSchema).default([]),
+  decisionRequests: z.array(CompileDecisionRequestSchema).default([]),
+  decisionPatches: z.array(CompileDecisionPatchSchema).default([]),
+  feedback: z.array(CompileFeedbackSchema).default([]),
+  createdAt: IsoDateSchema
+});
+
 export const ReviewChecklistItemSchema = z.object({
   rubricId: z.string().optional(),
   dimension: z.string().min(1),
@@ -730,10 +844,16 @@ export const SpeciesCompileArtifactSchema = z.object({
   resolvedGeneSnapshot: JsonRecordSchema,
   candidateGenes: JsonRecordSchema,
   conflictReport: z.array(CompileConflictSchema).default([]),
+  dependencyVector: z.array(CompileDependencyRefSchema).default([]),
+  validity: CompileArtifactValiditySchema.default({ state: "current", reasons: [] }),
+  frames: z.array(CompileFrameSchema).default([]),
   sourceTrace: z.array(TraceEntrySchema).default([]),
   contextTrace: z.array(TraceEntrySchema).default([]),
   referenceTrace: z.array(TraceEntrySchema).default([]),
   decisionTrace: z.array(TraceEntrySchema).default([]),
+  decisionRequests: z.array(CompileDecisionRequestSchema).default([]),
+  decisionPatches: z.array(CompileDecisionPatchSchema).default([]),
+  feedback: z.array(CompileFeedbackSchema).default([]),
   openQuestions: z.array(z.string()).default([]),
   createdAt: IsoDateSchema
 });
@@ -755,11 +875,17 @@ export const PhenotypeCompileArtifactSchema = z.object({
   compileScope: CompileScopeSchema,
   resolvedGeneSnapshot: JsonRecordSchema,
   conflictReport: z.array(CompileConflictSchema).default([]),
+  dependencyVector: z.array(CompileDependencyRefSchema).default([]),
+  validity: CompileArtifactValiditySchema.default({ state: "current", reasons: [] }),
+  frames: z.array(CompileFrameSchema).default([]),
   sourceTrace: z.array(TraceEntrySchema).default([]),
   contextTrace: z.array(TraceEntrySchema).default([]),
   referenceTrace: z.array(TraceEntrySchema).default([]),
   rubricTrace: z.array(TraceEntrySchema).default([]),
   decisionTrace: z.array(TraceEntrySchema).default([]),
+  decisionRequests: z.array(CompileDecisionRequestSchema).default([]),
+  decisionPatches: z.array(CompileDecisionPatchSchema).default([]),
+  feedback: z.array(CompileFeedbackSchema).default([]),
   prompt: z.string().default(""),
   negativePrompt: z.string().default(""),
   artBrief: z.string().default(""),
@@ -1039,9 +1165,19 @@ export type Phenotype = z.infer<typeof PhenotypeSchema>;
 export type PhenotypeVersion = z.infer<typeof PhenotypeVersionSchema>;
 export type CompileScope = z.infer<typeof CompileScopeSchema>;
 export type CompileMode = z.infer<typeof CompileModeSchema>;
+export type CompileFrameLevel = z.infer<typeof CompileFrameLevelSchema>;
+export type CompileEntityRef = z.infer<typeof CompileEntityRefSchema>;
+export type CompileSnapshotEntry = z.infer<typeof CompileSnapshotEntrySchema>;
+export type CompileFeedback = z.infer<typeof CompileFeedbackSchema>;
+export type CompileDecisionRequest = z.infer<typeof CompileDecisionRequestSchema>;
+export type CompileDecisionPatch = z.infer<typeof CompileDecisionPatchSchema>;
+export type CompileDependencyRef = z.infer<typeof CompileDependencyRefSchema>;
+export type CompileArtifactValidity = z.infer<typeof CompileArtifactValiditySchema>;
+export type CompileFrame = z.infer<typeof CompileFrameSchema>;
 export type TraceEntry = z.infer<typeof TraceEntrySchema>;
 export type CompileConflict = z.infer<typeof CompileConflictSchema>;
 export type ReviewChecklistItem = z.infer<typeof ReviewChecklistItemSchema>;
+export type EntityCompileArtifact = z.infer<typeof EntityCompileArtifactSchema>;
 export type SpeciesCompileArtifact = z.infer<typeof SpeciesCompileArtifactSchema>;
 export type PhenotypeCompileArtifact = z.infer<typeof PhenotypeCompileArtifactSchema>;
 export type AssetIndex = z.infer<typeof AssetIndexSchema>;

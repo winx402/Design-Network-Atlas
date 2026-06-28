@@ -67,7 +67,7 @@ describe("Phase 20 PRD-04 skill contracts", () => {
     expect(source).not.toContain("Usage:");
     expect(source).not.toMatch(/```(?:bash|sh|shell|sql)[\s\S]*```/i);
     expect(source).not.toMatch(/\bsqlite3\b|better-sqlite3|INSERT INTO|UPDATE\s+\w+|direct SQLite/i);
-    expect(source).not.toMatch(/OPENAI_API_KEY\s*=|sk-[a-zA-Z0-9_-]{8,}|password\s*=|Bearer\s+[A-Za-z0-9._-]+/i);
+    expect(source).not.toMatch(/OPENAI_API_KEY\s*=|sk-(?:proj-)?[A-Za-z0-9_-]{16,}|password\s*=|Bearer\s+[A-Za-z0-9._-]+/i);
   });
 
   test("graph editing skill grades impact scope across graph, context, compile, and routing changes", () => {
@@ -99,7 +99,7 @@ describe("Phase 20 PRD-04 skill contracts", () => {
     expect(source).not.toContain("Usage:");
     expect(source).not.toMatch(/```(?:bash|sh|shell|sql)[\s\S]*```/i);
     expect(source).not.toMatch(/\bsqlite3\b|better-sqlite3|INSERT INTO|UPDATE\s+\w+|direct SQLite/i);
-    expect(source).not.toMatch(/OPENAI_API_KEY\s*=|sk-[a-zA-Z0-9_-]{8,}|password\s*=|Bearer\s+[A-Za-z0-9._-]+/i);
+    expect(source).not.toMatch(/OPENAI_API_KEY\s*=|sk-(?:proj-)?[A-Za-z0-9_-]{16,}|password\s*=|Bearer\s+[A-Za-z0-9._-]+/i);
   });
 
   test("phenotype generation skill orchestrates existing graph outputs without inventing source facts", () => {

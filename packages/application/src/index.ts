@@ -1,11 +1,14 @@
 import {
   collectImpact,
+  checkCompileArtifactStaleness,
+  compileEntityArtifact,
   compilePhenotypeGeneration,
   compileSpeciesSnapshot,
   createDefaultPhenotype,
   createDefaultPhenotypeVersion,
   createGenerationJob,
   makeId,
+  type EntityCompileArtifact,
   type ContextAttachment,
   type DesignRelationship,
   type DesignContext,
@@ -19,6 +22,7 @@ import {
   type TraceEntry
 } from "@dna/core";
 import type {
+  AtlasRepository,
   ContextAttachmentRepository,
   ContextFactRepository,
   ContextMotifRepository,
@@ -28,6 +32,10 @@ import type {
   DesignContextRepository,
   DesignPrincipleRepository,
   DesignRelationshipRepository,
+  EntityCompileArtifactRepository,
+  FacetAssignmentRepository,
+  FacetDefinitionRepository,
+  FacetSchemaRepository,
   GraphRepository,
   LineageRepository,
   NodeVersionRepository,
@@ -36,7 +44,8 @@ import type {
   PhenotypeVersionRepository,
   SpeciesCompileArtifactRepository,
   SpeciesGroupMembershipRepository,
-  SpeciesGroupRepository
+  SpeciesGroupRepository,
+  TemplateRepository
 } from "@dna/storage";
 
 export * from "./modeling-quality.js";
@@ -65,7 +74,16 @@ export interface SpeciesCompileInputRepositories {
   contextPolicies: Pick<ContextPolicyRepository, "listByContext">;
 }
 
-export interface PhenotypeGenerationRepositories extends SpeciesCompileInputRepositories {
+export interface LayeredCompileRepositories extends SpeciesCompileInputRepositories {
+  atlases: Pick<AtlasRepository, "get" | "list">;
+  entityCompileArtifacts: Pick<EntityCompileArtifactRepository, "get" | "listByGraph">;
+  facetDefinitions: Pick<FacetDefinitionRepository, "list">;
+  facetSchemas: Pick<FacetSchemaRepository, "list">;
+  facetAssignments: Pick<FacetAssignmentRepository, "list" | "listByTarget">;
+  templates: Pick<TemplateRepository, "listTemplates">;
+}
+
+export interface PhenotypeGenerationRepositories extends LayeredCompileRepositories {
   phenotypes: Pick<PhenotypeRepository, "get">;
   speciesCompileArtifacts: Pick<SpeciesCompileArtifactRepository, "get">;
   phenotypeCompileArtifacts: Pick<PhenotypeCompileArtifactRepository, "get">;
@@ -95,6 +113,7 @@ export interface PreparePhenotypeGenerationOptions {
   phenotypeId?: string;
   speciesArtifactId?: string;
   phenotypeArtifactId?: string;
+  replayHistorical?: boolean;
   tool?: string;
   ids?: {
     speciesArtifactId?: string;
@@ -103,6 +122,32 @@ export interface PreparePhenotypeGenerationOptions {
     phenotypeVersionId?: string;
     generationJobId?: string;
   };
+}
+
+export interface PrepareEntityCompileArtifactOptions {
+  artifactId?: string;
+  targetLevel: "atlas" | "graph" | "species-group";
+  atlasId?: string;
+  graphId?: string;
+  groupId?: string;
+  upstreamArtifacts?: EntityCompileArtifact[];
+}
+
+export interface PrepareSpeciesCompileArtifactOptions {
+  artifactId?: string;
+  graphId: string;
+  nodeId: string;
+  upstreamArtifacts?: EntityCompileArtifact[];
+}
+
+export interface PreparePhenotypeCompileArtifactOptions {
+  artifactId?: string;
+  graphId: string;
+  nodeId: string;
+  phenotypeType: string;
+  taskBrief: string;
+  speciesArtifact?: SpeciesCompileArtifact;
+  speciesArtifactId?: string;
 }
 
 export interface PreparedPhenotypeGeneration {
@@ -178,11 +223,115 @@ export function buildSpeciesCompileInput(store: SpeciesCompileInputRepositories,
   };
 }
 
+function collectContexts(store: SpeciesCompileInputRepositories, attachments: ContextAttachment[]) {
+  const contextIds = unique(attachments.map((attachment) => attachment.contextId));
+  const designContexts = contextIds
+    .map((contextId) => store.designContexts.get(contextId))
+    .filter((context): context is NonNullable<typeof context> => Boolean(context));
+  return {
+    designContexts,
+    contextAttachments: attachments,
+    contextPolicies: contextIds.flatMap((contextId) => store.contextPolicies.listByContext(contextId)),
+    contextFacts: collectContextChildren(designContexts, "factIds", (id) => store.contextFacts.get(id)),
+    designPrinciples: collectContextChildren(designContexts, "principleIds", (id) => store.designPrinciples.get(id)),
+    contextMotifs: collectContextChildren(designContexts, "motifIds", (id) => store.contextMotifs.get(id)),
+    contextReferences: collectContextChildren(designContexts, "referenceIds", (id) => store.contextReferences.get(id)),
+    contextReviewRubrics: collectContextChildren(designContexts, "reviewRubricIds", (id) => store.contextReviewRubrics.get(id))
+  };
+}
+
+function compileExtras(store: LayeredCompileRepositories) {
+  return {
+    facetDefinitions: store.facetDefinitions.list(),
+    facetSchemas: store.facetSchemas.list(),
+    facetAssignments: store.facetAssignments.list(),
+    geneTemplates: store.templates.listTemplates()
+  };
+}
+
+export function prepareEntityCompileArtifact(
+  store: LayeredCompileRepositories,
+  options: PrepareEntityCompileArtifactOptions
+): EntityCompileArtifact {
+  const artifactId = options.artifactId ?? makeId("eca");
+  const atlas = options.atlasId ? store.atlases.get(options.atlasId) : undefined;
+  const group = options.groupId ? store.speciesGroups.get(options.groupId) : undefined;
+  const graph = options.graphId ? store.graphs.get(options.graphId) : group ? store.graphs.get(group.graphId) : undefined;
+  if (options.targetLevel === "atlas" && !atlas) throw new Error(`atlas not found: ${options.atlasId}`);
+  if (options.targetLevel === "graph" && !graph) throw new Error(`graph not found: ${options.graphId}`);
+  if (options.targetLevel === "species-group" && (!graph || !group)) throw new Error(`species group not found: ${options.groupId}`);
+  const targetAttachments =
+    options.targetLevel === "atlas"
+      ? store.contextAttachments.listByTarget("atlas", atlas?.atlasId ?? "")
+      : options.targetLevel === "graph"
+        ? store.contextAttachments.listByTarget("graph", graph?.graphId ?? "")
+        : store.contextAttachments.listByTarget("species-group", group?.groupId ?? "");
+  const contexts = collectContexts(store, targetAttachments);
+  const upstreamArtifacts =
+    options.upstreamArtifacts ??
+    (options.targetLevel === "species-group" && graph
+      ? [
+          prepareEntityCompileArtifact(store, {
+            artifactId: `${artifactId}:graph`,
+            targetLevel: "graph",
+            graphId: graph.graphId
+          })
+        ]
+      : undefined);
+  return compileEntityArtifact({
+    artifactId,
+    targetLevel: options.targetLevel,
+    atlas,
+    graph,
+    group,
+    upstreamArtifacts,
+    designRelationships: graph ? store.designRelationships.listByGraph(graph.graphId) : [],
+    ...contexts,
+    ...compileExtras(store)
+  });
+}
+
+export function prepareSpeciesCompileArtifact(
+  store: LayeredCompileRepositories,
+  options: PrepareSpeciesCompileArtifactOptions
+): SpeciesCompileArtifact {
+  return compileSpeciesSnapshot({
+    artifactId: options.artifactId ?? makeId("sca"),
+    ...buildSpeciesCompileInput(store, { graphId: options.graphId, nodeId: options.nodeId }),
+    upstreamArtifacts: options.upstreamArtifacts,
+    ...compileExtras(store)
+  });
+}
+
+export function preparePhenotypeCompileArtifact(
+  store: LayeredCompileRepositories & { speciesCompileArtifacts?: Pick<SpeciesCompileArtifactRepository, "get"> },
+  options: PreparePhenotypeCompileArtifactOptions
+): PhenotypeCompileArtifact {
+  const compileInput = buildSpeciesCompileInput(store, { graphId: options.graphId, nodeId: options.nodeId });
+  const speciesArtifact =
+    options.speciesArtifact ??
+    (options.speciesArtifactId && store.speciesCompileArtifacts ? store.speciesCompileArtifacts.get(options.speciesArtifactId) : undefined) ??
+    prepareSpeciesCompileArtifact(store, { graphId: options.graphId, nodeId: options.nodeId });
+  if (options.speciesArtifactId && speciesArtifact.artifactId !== options.speciesArtifactId) {
+    throw new Error(`species compile artifact not found: ${options.speciesArtifactId}`);
+  }
+  return compilePhenotypeGeneration({
+    artifactId: options.artifactId ?? makeId("pca"),
+    graph: compileInput.graph,
+    node: compileInput.node,
+    nodeVersionId: compileInput.nodeVersionId,
+    phenotypeType: options.phenotypeType,
+    taskBrief: options.taskBrief,
+    speciesArtifact,
+    contextReferences: compileInput.contextReferences,
+    contextReviewRubrics: compileInput.contextReviewRubrics
+  });
+}
+
 export function preparePhenotypeGeneration(
   store: PhenotypeGenerationRepositories,
   options: PreparePhenotypeGenerationOptions
 ): PreparedPhenotypeGeneration {
-  const compileInput = buildSpeciesCompileInput(store, { graphId: options.graphId, nodeId: options.nodeId });
   let speciesArtifact: SpeciesCompileArtifact | undefined;
   let phenotypeArtifact: PhenotypeCompileArtifact | undefined;
   let createdSpeciesArtifact = false;
@@ -203,28 +352,28 @@ export function preparePhenotypeGeneration(
     speciesArtifact = store.speciesCompileArtifacts.get(phenotypeArtifact.speciesCompileArtifactId);
     if (!speciesArtifact) throw new Error(`species compile artifact not found: ${phenotypeArtifact.speciesCompileArtifactId}`);
     validateSpeciesArtifact(speciesArtifact, options);
+    validateSuppliedCompileArtifactsCurrent(store, options, speciesArtifact, phenotypeArtifact);
   } else {
     if (options.speciesArtifactId) {
       speciesArtifact = store.speciesCompileArtifacts.get(options.speciesArtifactId);
       if (!speciesArtifact) throw new Error(`species compile artifact not found: ${options.speciesArtifactId}`);
       validateSpeciesArtifact(speciesArtifact, options);
+      validateSuppliedSpeciesArtifactCurrent(store, options, speciesArtifact);
     } else {
-      speciesArtifact = compileSpeciesSnapshot({
+      speciesArtifact = prepareSpeciesCompileArtifact(store, {
         artifactId: options.ids?.speciesArtifactId ?? makeId("sca"),
-        ...compileInput
+        graphId: options.graphId,
+        nodeId: options.nodeId
       });
       createdSpeciesArtifact = true;
     }
-    phenotypeArtifact = compilePhenotypeGeneration({
+    phenotypeArtifact = preparePhenotypeCompileArtifact(store, {
       artifactId: options.ids?.phenotypeArtifactId ?? makeId("pca"),
-      graph: compileInput.graph,
-      node: compileInput.node,
-      nodeVersionId: compileInput.nodeVersionId,
+      graphId: options.graphId,
+      nodeId: options.nodeId,
       phenotypeType: options.phenotypeType,
       taskBrief: options.taskBrief,
-      speciesArtifact,
-      contextReferences: compileInput.contextReferences,
-      contextReviewRubrics: compileInput.contextReviewRubrics
+      speciesArtifact
     });
     createdPhenotypeArtifact = true;
   }
@@ -251,6 +400,9 @@ export function preparePhenotypeGeneration(
     });
   const phenotypeVersionId = options.ids?.phenotypeVersionId ?? makeId("pv");
   const generationJobId = options.ids?.generationJobId ?? makeId("job");
+  const compileValidity = options.replayHistorical
+    ? { state: "historical" as const, reasons: ["historical replay explicitly requested"] }
+    : { state: "current" as const, reasons: [] };
   const phenotypeVersion = createDefaultPhenotypeVersion({
     graphId: options.graphId,
     nodeId: options.nodeId,
@@ -271,7 +423,7 @@ export function preparePhenotypeGeneration(
     tool: options.tool ?? "manual",
     speciesCompileArtifactId: speciesArtifact.artifactId,
     phenotypeCompileArtifactId: phenotypeArtifact.artifactId,
-    compileArtifactSnapshot: createCompileArtifactSnapshot(speciesArtifact, phenotypeArtifact)
+    compileArtifactSnapshot: createCompileArtifactSnapshot(speciesArtifact, phenotypeArtifact, compileValidity)
   });
   const job = createGenerationJob({
     generationJobId,
@@ -288,6 +440,7 @@ export function preparePhenotypeGeneration(
       nodeVersionId: phenotypeArtifact.nodeVersionId,
       taskBrief: options.taskBrief,
       phenotypeType: options.phenotypeType,
+      compileMode: options.replayHistorical ? "historical-replay" : "current",
       speciesCompileArtifactId: speciesArtifact.artifactId,
       phenotypeCompileArtifactId: phenotypeArtifact.artifactId
     },
@@ -495,6 +648,53 @@ function validatePhenotypeArtifact(
   }
 }
 
+function validateSuppliedSpeciesArtifactCurrent(
+  store: PhenotypeGenerationRepositories,
+  options: PreparePhenotypeGenerationOptions,
+  artifact: SpeciesCompileArtifact
+) {
+  if (options.replayHistorical) return;
+  const current = prepareSpeciesCompileArtifact(store, {
+    artifactId: artifact.artifactId,
+    graphId: options.graphId,
+    nodeId: options.nodeId
+  });
+  const staleness = checkCompileArtifactStaleness(artifact, current.dependencyVector);
+  if (staleness.stale) {
+    throw new Error(`stale compile artifact ${artifact.artifactId}: ${staleness.reasons.join("; ")}`);
+  }
+}
+
+function validateSuppliedCompileArtifactsCurrent(
+  store: PhenotypeGenerationRepositories,
+  options: PreparePhenotypeGenerationOptions,
+  speciesArtifact: SpeciesCompileArtifact,
+  phenotypeArtifact: PhenotypeCompileArtifact
+) {
+  if (options.replayHistorical) return;
+  const currentSpecies = prepareSpeciesCompileArtifact(store, {
+    artifactId: speciesArtifact.artifactId,
+    graphId: options.graphId,
+    nodeId: options.nodeId
+  });
+  const speciesStaleness = checkCompileArtifactStaleness(speciesArtifact, currentSpecies.dependencyVector);
+  if (speciesStaleness.stale) {
+    throw new Error(`stale compile artifact ${speciesArtifact.artifactId}: ${speciesStaleness.reasons.join("; ")}`);
+  }
+  const currentPhenotype = preparePhenotypeCompileArtifact(store, {
+    artifactId: phenotypeArtifact.artifactId,
+    graphId: options.graphId,
+    nodeId: options.nodeId,
+    phenotypeType: options.phenotypeType,
+    taskBrief: options.taskBrief,
+    speciesArtifact
+  });
+  const phenotypeStaleness = checkCompileArtifactStaleness(phenotypeArtifact, currentPhenotype.dependencyVector);
+  if (phenotypeStaleness.stale) {
+    throw new Error(`stale compile artifact ${phenotypeArtifact.artifactId}: ${phenotypeStaleness.reasons.join("; ")}`);
+  }
+}
+
 function relationshipTraceFromArtifact(artifact: PhenotypeCompileArtifact) {
   return unique(
     artifact.sourceTrace
@@ -519,20 +719,28 @@ function countTraceEntries(traceEntries: TraceEntry[]) {
   return traceEntries.length;
 }
 
-function createCompileArtifactSnapshot(speciesArtifact: SpeciesCompileArtifact, phenotypeArtifact: PhenotypeCompileArtifact) {
+function createCompileArtifactSnapshot(
+  speciesArtifact: SpeciesCompileArtifact,
+  phenotypeArtifact: PhenotypeCompileArtifact,
+  validity: { state: "current" | "stale" | "historical" | "invalid"; reasons: string[] } = { state: "current", reasons: [] }
+) {
   return {
     speciesCompileArtifactId: speciesArtifact.artifactId,
     phenotypeCompileArtifactId: phenotypeArtifact.artifactId,
+    validity,
     species: {
       artifactId: speciesArtifact.artifactId,
       nodeVersionId: speciesArtifact.nodeVersionId,
       compileMode: speciesArtifact.compileMode,
       compilePolicy: speciesArtifact.compilePolicy,
+      frameCount: speciesArtifact.frames.length,
       conflictCount: speciesArtifact.conflictReport.length,
+      feedbackCount: speciesArtifact.feedback.length,
       sourceTraceCount: countTraceEntries(speciesArtifact.sourceTrace),
       contextTraceCount: countTraceEntries(speciesArtifact.contextTrace),
       referenceTraceCount: countTraceEntries(speciesArtifact.referenceTrace),
       decisionTraceCount: countTraceEntries(speciesArtifact.decisionTrace),
+      decisionCount: speciesArtifact.decisionRequests.length + speciesArtifact.decisionPatches.length,
       openQuestions: speciesArtifact.openQuestions
     },
     phenotype: {
@@ -541,17 +749,20 @@ function createCompileArtifactSnapshot(speciesArtifact: SpeciesCompileArtifact, 
       phenotypeType: phenotypeArtifact.phenotypeType,
       taskBrief: phenotypeArtifact.taskBrief,
       compileMode: phenotypeArtifact.compileMode,
+      frameCount: phenotypeArtifact.frames.length,
       promptDigest: phenotypeArtifact.prompt,
       negativePrompt: phenotypeArtifact.negativePrompt,
       artBrief: phenotypeArtifact.artBrief,
       reviewChecklist: phenotypeArtifact.reviewChecklist,
       generationConstraints: phenotypeArtifact.generationConstraints,
       conflictCount: phenotypeArtifact.conflictReport.length,
+      feedbackCount: phenotypeArtifact.feedback.length,
       sourceTraceCount: countTraceEntries(phenotypeArtifact.sourceTrace),
       contextTraceCount: countTraceEntries(phenotypeArtifact.contextTrace),
       referenceTraceCount: countTraceEntries(phenotypeArtifact.referenceTrace),
       rubricTraceCount: countTraceEntries(phenotypeArtifact.rubricTrace),
       decisionTraceCount: countTraceEntries(phenotypeArtifact.decisionTrace),
+      decisionCount: phenotypeArtifact.decisionRequests.length + phenotypeArtifact.decisionPatches.length,
       openQuestions: phenotypeArtifact.openQuestions
     }
   };

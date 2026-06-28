@@ -12,6 +12,7 @@ import {
   DesignContext,
   DesignPrinciple,
   DesignRelationship,
+  EntityCompileArtifact,
   ExternalLibraryMapping,
   FacetAssignment,
   FacetDefinition,
@@ -49,6 +50,7 @@ import {
   DesignContextRepository,
   DesignPrincipleRepository,
   DesignRelationshipRepository,
+  EntityCompileArtifactRepository,
   ExternalLibraryMappingRepository,
   GraphResetSummary,
   AtlasRepository,
@@ -100,6 +102,7 @@ export interface DnaServiceStore extends StorageEngine {
   nodeVersions: NodeVersionRepository;
   phenotypes: PhenotypeRepository;
   phenotypeVersions: PhenotypeVersionRepository;
+  entityCompileArtifacts: EntityCompileArtifactRepository;
   speciesCompileArtifacts: SpeciesCompileArtifactRepository;
   phenotypeCompileArtifacts: PhenotypeCompileArtifactRepository;
   assets: AssetRepository;
@@ -146,6 +149,7 @@ interface MemoryState {
   nodeVersions: Map<string, NodeVersion>;
   phenotypes: Map<string, Phenotype>;
   phenotypeVersions: Map<string, PhenotypeVersion>;
+  entityCompileArtifacts: Map<string, EntityCompileArtifact>;
   speciesCompileArtifacts: Map<string, SpeciesCompileArtifact>;
   phenotypeCompileArtifacts: Map<string, PhenotypeCompileArtifact>;
   assets: Map<string, AssetIndex>;
@@ -185,6 +189,7 @@ export class InMemoryDnaStore implements DnaServiceStore {
   readonly nodeVersions: NodeVersionRepository;
   readonly phenotypes: PhenotypeRepository;
   readonly phenotypeVersions: PhenotypeVersionRepository;
+  readonly entityCompileArtifacts: EntityCompileArtifactRepository;
   readonly speciesCompileArtifacts: SpeciesCompileArtifactRepository;
   readonly phenotypeCompileArtifacts: PhenotypeCompileArtifactRepository;
   readonly assets: AssetRepository;
@@ -360,6 +365,15 @@ export class InMemoryDnaStore implements DnaServiceStore {
       get: (phenotypeVersionId) => this.state.phenotypeVersions.get(phenotypeVersionId),
       listByPhenotype: (phenotypeId) => [...this.state.phenotypeVersions.values()].filter((version) => version.phenotypeId === phenotypeId),
       listByNode: (nodeId) => [...this.state.phenotypeVersions.values()].filter((version) => version.nodeId === nodeId)
+    };
+    this.entityCompileArtifacts = {
+      create: (artifact) => this.state.entityCompileArtifacts.set(artifact.artifactId, artifact),
+      get: (artifactId) => this.state.entityCompileArtifacts.get(artifactId),
+      listByGraph: (graphId) => [...this.state.entityCompileArtifacts.values()].filter((artifact) => artifact.graphId === graphId),
+      listByTarget: (targetLevel, objectId) =>
+        [...this.state.entityCompileArtifacts.values()].filter(
+          (artifact) => artifact.targetLevel === targetLevel && artifact.target.objectId === objectId
+        )
     };
     this.speciesCompileArtifacts = {
       create: (artifact) => this.state.speciesCompileArtifacts.set(artifact.artifactId, artifact),
@@ -547,6 +561,7 @@ function createState(): MemoryState {
     nodeVersions: new Map(),
     phenotypes: new Map(),
     phenotypeVersions: new Map(),
+    entityCompileArtifacts: new Map(),
     speciesCompileArtifacts: new Map(),
     phenotypeCompileArtifacts: new Map(),
     assets: new Map(),
@@ -588,6 +603,7 @@ function cloneState(state: MemoryState): MemoryState {
     nodeVersions: new Map(state.nodeVersions),
     phenotypes: new Map(state.phenotypes),
     phenotypeVersions: new Map(state.phenotypeVersions),
+    entityCompileArtifacts: new Map(state.entityCompileArtifacts),
     speciesCompileArtifacts: new Map(state.speciesCompileArtifacts),
     phenotypeCompileArtifacts: new Map(state.phenotypeCompileArtifacts),
     assets: new Map(state.assets),
@@ -624,6 +640,7 @@ function summarizeMemoryGraphReset(state: MemoryState, graphId: string): GraphRe
     designRelationships: ids.relationshipIds.size,
     speciesGroups: ids.groupIds.size,
     speciesGroupMemberships: ids.membershipIds.size,
+    entityCompileArtifacts: ids.entityArtifactIds.size,
     speciesCompileArtifacts: ids.speciesArtifactIds.size,
     phenotypeCompileArtifacts: ids.phenotypeArtifactIds.size,
     phenotypes: ids.phenotypeIds.size,
@@ -656,6 +673,7 @@ function applyMemoryGraphReset(state: MemoryState, graphId: string) {
   for (const id of ids.impactRecordIds) state.impacts.delete(id);
   for (const id of ids.phenotypeVersionIds) state.phenotypeVersions.delete(id);
   for (const id of ids.phenotypeIds) state.phenotypes.delete(id);
+  for (const id of ids.entityArtifactIds) state.entityCompileArtifacts.delete(id);
   for (const id of ids.speciesArtifactIds) state.speciesCompileArtifacts.delete(id);
   for (const id of ids.phenotypeArtifactIds) state.phenotypeCompileArtifacts.delete(id);
   for (const id of ids.nodeVersionIds) state.nodeVersions.delete(id);
@@ -700,6 +718,9 @@ function collectMemoryGraphResetIds(state: MemoryState, graphId: string) {
   const speciesArtifactIds = new Set(
     [...state.speciesCompileArtifacts.values()].filter((artifact) => artifact.graphId === graphId).map((artifact) => artifact.artifactId)
   );
+  const entityArtifactIds = new Set(
+    [...state.entityCompileArtifacts.values()].filter((artifact) => artifact.graphId === graphId).map((artifact) => artifact.artifactId)
+  );
   const phenotypeArtifactIds = new Set(
     [...state.phenotypeCompileArtifacts.values()].filter((artifact) => artifact.graphId === graphId).map((artifact) => artifact.artifactId)
   );
@@ -722,6 +743,7 @@ function collectMemoryGraphResetIds(state: MemoryState, graphId: string) {
     ...membershipIds,
     ...phenotypeIds,
     ...phenotypeVersionIds,
+    ...entityArtifactIds,
     ...speciesArtifactIds,
     ...phenotypeArtifactIds,
     ...generationJobIds
@@ -752,6 +774,7 @@ function collectMemoryGraphResetIds(state: MemoryState, graphId: string) {
     speciesArtifactIds,
     phenotypeArtifactIds,
     phenotypeIds,
+    entityArtifactIds,
     phenotypeVersionIds,
     phenotypeVersionAssetLinks,
     assetIds,

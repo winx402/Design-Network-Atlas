@@ -3,12 +3,12 @@ import {
   collectContextImpact,
   collectDesignRelationshipImpact,
   collectGroupImpact,
+  preparePhenotypeCompileArtifact,
   preparePhenotypeGeneration,
+  prepareSpeciesCompileArtifact,
   updatePhenotypeVersionStatus
 } from "@dna/application";
 import {
-  compilePhenotypeGeneration,
-  compileSpeciesSnapshot,
   createDefaultAtlas,
   createDefaultContextAttachment,
   createDefaultContextFact,
@@ -224,25 +224,24 @@ describe("Phase 21 PRD-11 application services", () => {
       name: "Replay Node",
       constraints: { silhouette: "sharp" }
     });
-    const speciesArtifact = compileSpeciesSnapshot({
-      artifactId: "sca-replay",
-      graph,
-      node,
-      nodeVersionId: "node-replay@1.0.0"
-    });
-    const phenotypeArtifact = compilePhenotypeGeneration({
-      artifactId: "pca-replay",
-      graph,
-      node,
-      nodeVersionId: "node-replay@1.0.0",
-      phenotypeType: "ui-icon",
-      taskBrief: "sharp replay icon",
-      speciesArtifact
-    });
-
     store.graphs.create(graph);
     store.nodes.create(node);
+
+    const speciesArtifact = prepareSpeciesCompileArtifact(store, {
+      artifactId: "sca-replay",
+      graphId: graph.graphId,
+      nodeId: node.nodeId
+    });
     store.speciesCompileArtifacts.create(speciesArtifact);
+
+    const phenotypeArtifact = preparePhenotypeCompileArtifact(store, {
+      artifactId: "pca-replay",
+      graphId: graph.graphId,
+      nodeId: node.nodeId,
+      phenotypeType: "ui-icon",
+      taskBrief: "sharp replay icon",
+      speciesArtifactId: speciesArtifact.artifactId
+    });
     store.phenotypeCompileArtifacts.create(phenotypeArtifact);
 
     expect(() =>

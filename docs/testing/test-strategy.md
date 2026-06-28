@@ -150,6 +150,7 @@
 - `dna-graph-modeling` 能把新场景映射到 SpeciesNode、DesignRelationship、facets、Phenotype、phenotype library 和生效策略。
 - `dna-graph-editing` 能对已有图谱变更输出合理性、影响分析、风险等级、outdated 风险、替代方案和推荐写入路径。
 - `dna-phenotype-generation` 是正式 MVP 场景 skill，覆盖 missing compile artifact、blocking open questions、generationPlan、registrationPlan 和 writeStrategy。
+- Layered compile golden tests 覆盖 atlas、graph、species-group、species-node、phenotype frame 顺序，dependency vector，staleness/current/historical 判断，decision request/patch replay，以及 compile feedback 不改写上游 graph/context/facet/template facts。
 - Skill 不建议保存 provider credentials、完整私密链接或 raw Agent host responses。
 - Skill 不把未经确认的 LLM 推断写入正式图谱，也不直接写数据库内部结构、导出目录或外部素材库。
 
@@ -222,7 +223,7 @@
 - generic HTTP provider 通过注入 fetcher 调用外部 endpoint，runtime headers 不进入 job。
 - `sync export/import` 能重放 graph、generation job 和相关引用。
 - `dna.project.json` manifest 包含 projectVersion、exchangeVersion 和 capabilities；不支持的 exchangeVersion 必须明确失败。
-- `sync export/import` 能重放 facets、contexts、atlases、groups、group memberships/relations、compile artifacts、generation jobs、output references、reviews、impacts 和 change-sets。
+- `sync export/import` 能重放 facets、contexts、atlases、groups、group memberships/relations、entity/species/phenotype compile artifacts、dependency vectors、generation jobs、output references、reviews、impacts 和 change-sets。
 - `library bind-graph` 后导出的 `library.json.graphIds` 与 binding 保持一致。
 - 旧库已经存在 binding 但 `library.graphIds` 为空时，重新执行 SQLite migration 后会自动回填，并且导出的 `library.json.graphIds` 不为空。
 

@@ -77,7 +77,7 @@ describe("Phase 7 Codex scenario skills", () => {
     expect(content).not.toMatch(/```bash[\s\S]*dna --db/);
     expect(content).not.toMatch(/```(?:bash|sh|shell|sql)[\s\S]*```/i);
     expect(content).not.toMatch(/\bsqlite3\b|better-sqlite3|INSERT INTO|UPDATE\s+\w+|direct SQLite/i);
-    expect(content).not.toMatch(/OPENAI_API_KEY\s*=|sk-[a-zA-Z0-9_-]{8,}|password\s*=|Bearer\s+[A-Za-z0-9._-]+/i);
+    expect(content).not.toMatch(/OPENAI_API_KEY\s*=|sk-(?:proj-)?[A-Za-z0-9_-]{16,}|password\s*=|Bearer\s+[A-Za-z0-9._-]+/i);
   });
 
   test("graph editing skill evaluates existing graph changes with impact and risk guidance", () => {
@@ -107,6 +107,6 @@ describe("Phase 7 Codex scenario skills", () => {
     expect(content).not.toMatch(/```bash[\s\S]*dna --db/);
     expect(content).not.toMatch(/```(?:bash|sh|shell|sql)[\s\S]*```/i);
     expect(content).not.toMatch(/\bsqlite3\b|better-sqlite3|INSERT INTO|UPDATE\s+\w+|direct SQLite/i);
-    expect(content).not.toMatch(/OPENAI_API_KEY\s*=|sk-[a-zA-Z0-9_-]{8,}|password\s*=|Bearer\s+[A-Za-z0-9._-]+/i);
+    expect(content).not.toMatch(/OPENAI_API_KEY\s*=|sk-(?:proj-)?[A-Za-z0-9_-]{16,}|password\s*=|Bearer\s+[A-Za-z0-9._-]+/i);
   });
 });

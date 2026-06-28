@@ -10,13 +10,14 @@ import {
   checkGraphModelingQuality,
   checkModelingBatchQuality,
   checkProposalModelingQuality,
+  prepareEntityCompileArtifact,
+  preparePhenotypeCompileArtifact,
   preparePhenotypeGeneration,
+  prepareSpeciesCompileArtifact,
   type ApplicationImpactSummary
 } from "@dna/application";
 import {
   compareStyleDistance,
-  compilePhenotypeGeneration,
-  compileSpeciesSnapshot,
   createDefaultAsset,
   createDefaultLibraryRoutingPolicy,
   createDefaultOutputReference,
@@ -252,6 +253,56 @@ function formatImportBatchJson(result: ImportBatchCliResult, includeIds: boolean
     warning: result.warning,
     next: nextImportBatchCommand(result)
   };
+}
+
+function parseOutputFormat(value: string | undefined): "text" | "json" | undefined {
+  if (value === undefined) return undefined;
+  if (value === "text" || value === "json") return value;
+  throw new Error(`unknown output format: ${value}`);
+}
+
+function compileArtifactLabel(artifact: { compileTarget: string; targetLevel?: string }) {
+  if (artifact.compileTarget === "entity-layer") return artifact.targetLevel ?? "entity";
+  if (artifact.compileTarget === "species-snapshot") return "species";
+  return "phenotype-generation";
+}
+
+function formatLayeredCompileText(artifact: {
+  compileTarget: string;
+  targetLevel?: string;
+  frames: Array<{ level: string; target: { objectId: string; label?: string } }>;
+  conflictReport: unknown[];
+  openQuestions?: string[];
+  feedback?: unknown[];
+}) {
+  const lines = [`Layered compile: ${compileArtifactLabel(artifact)}`];
+  artifact.frames.forEach((frame, index) => {
+    const label = frame.level === "phenotype" ? (frame.target.label ?? frame.target.objectId) : frame.target.objectId;
+    lines.push(`${index + 1}. ${frame.level}: ${label}`);
+  });
+  lines.push(`Conflicts: ${artifact.conflictReport.length}`);
+  lines.push(`Open questions: ${artifact.openQuestions?.length ?? 0}`);
+  lines.push(`Feedback: ${artifact.feedback?.length ?? 0}`);
+  return `${lines.join("\n")}\n`;
+}
+
+function printCompileArtifact(
+  artifact: {
+    compileTarget: string;
+    targetLevel?: string;
+    frames: Array<{ level: string; target: { objectId: string; label?: string } }>;
+    conflictReport: unknown[];
+    openQuestions?: string[];
+    feedback?: unknown[];
+  },
+  format: "text" | "json" | undefined,
+  defaultText: boolean
+) {
+  if (format === "json" || (!format && !defaultText)) {
+    console.log(JSON.stringify(artifact, null, 2));
+    return;
+  }
+  process.stdout.write(formatLayeredCompileText(artifact));
 }
 
 function formatModelingQualityReport(report: ModelingQualityReport) {
@@ -1235,14 +1286,139 @@ context
   });
 
 const compile = program.command("compile").description("Create and inspect compile artifacts");
+const compileAtlasCommand = compile.command("atlas").description("Compile or inspect an atlas layered artifact");
+compileAtlasCommand
+  .argument("[action]", "optional action: show")
+  .option("--id <atlasOrArtifactId>", "atlas id, or artifact id when action is show")
+  .option("--artifact-id <artifactId>", "entity compile artifact id")
+  .option("--format <format>", "output format: text|json")
+  .option("--persist", "persist the compile artifact")
+  .action((action, options, command) => {
+    const store = openStore(command);
+    const format = parseOutputFormat(options.format);
+    if (action === "show") {
+      const artifactId = requiredOption(options.id, "--id");
+      const artifact = store.entityCompileArtifacts.get(artifactId);
+      if (!artifact) {
+        store.close();
+        throw new Error(`entity compile artifact not found: ${artifactId}`);
+      }
+      console.log(JSON.stringify(artifact, null, 2));
+      store.close();
+      return;
+    }
+    if (action) {
+      store.close();
+      throw new Error(`unknown compile atlas action: ${action}`);
+    }
+    const artifact = prepareEntityCompileArtifact(store, {
+      artifactId: options.artifactId ?? makeId("eca"),
+      targetLevel: "atlas",
+      atlasId: requiredOption(options.id, "--id")
+    });
+    if (options.persist || shouldApply(command)) {
+      store.entityCompileArtifacts.create(artifact);
+      console.log(JSON.stringify(artifact, null, 2));
+    } else {
+      printCompileArtifact(artifact, format, true);
+    }
+    store.close();
+  });
+
+const compileGraphCommand = compile.command("graph").description("Compile or inspect a graph layered artifact");
+compileGraphCommand
+  .argument("[action]", "optional action: show")
+  .option("--id <graphOrArtifactId>", "graph id, or artifact id when action is show")
+  .option("--artifact-id <artifactId>", "entity compile artifact id")
+  .option("--format <format>", "output format: text|json")
+  .option("--persist", "persist the compile artifact")
+  .action((action, options, command) => {
+    const store = openStore(command);
+    const format = parseOutputFormat(options.format);
+    if (action === "show") {
+      const artifactId = requiredOption(options.id, "--id");
+      const artifact = store.entityCompileArtifacts.get(artifactId);
+      if (!artifact) {
+        store.close();
+        throw new Error(`entity compile artifact not found: ${artifactId}`);
+      }
+      console.log(JSON.stringify(artifact, null, 2));
+      store.close();
+      return;
+    }
+    if (action) {
+      store.close();
+      throw new Error(`unknown compile graph action: ${action}`);
+    }
+    const graphId = requiredOption(options.id, "--id");
+    const artifact = prepareEntityCompileArtifact(store, {
+      artifactId: options.artifactId ?? makeId("eca"),
+      targetLevel: "graph",
+      graphId
+    });
+    if (options.persist || shouldApply(command)) {
+      store.entityCompileArtifacts.create(artifact);
+      console.log(JSON.stringify(artifact, null, 2));
+    } else {
+      printCompileArtifact(artifact, format, true);
+    }
+    store.close();
+  });
+
+const compileGroupCommand = compile.command("group").description("Compile or inspect a species-group layered artifact");
+compileGroupCommand
+  .argument("[action]", "optional action: show")
+  .option("--graph <graphId>", "graph id")
+  .option("--group <groupId>", "species group id")
+  .option("--id <artifactId>", "artifact id when action is show")
+  .option("--artifact-id <artifactId>", "entity compile artifact id")
+  .option("--format <format>", "output format: text|json")
+  .option("--persist", "persist the compile artifact")
+  .action((action, options, command) => {
+    const store = openStore(command);
+    const format = parseOutputFormat(options.format);
+    if (action === "show") {
+      const artifactId = requiredOption(options.id, "--id");
+      const artifact = store.entityCompileArtifacts.get(artifactId);
+      if (!artifact) {
+        store.close();
+        throw new Error(`entity compile artifact not found: ${artifactId}`);
+      }
+      console.log(JSON.stringify(artifact, null, 2));
+      store.close();
+      return;
+    }
+    if (action) {
+      store.close();
+      throw new Error(`unknown compile group action: ${action}`);
+    }
+    const artifact = prepareEntityCompileArtifact(store, {
+      artifactId: options.artifactId ?? makeId("eca"),
+      targetLevel: "species-group",
+      graphId: requiredOption(options.graph, "--graph"),
+      groupId: requiredOption(options.group, "--group")
+    });
+    if (options.persist || shouldApply(command)) {
+      store.entityCompileArtifacts.create(artifact);
+      console.log(JSON.stringify(artifact, null, 2));
+    } else {
+      printCompileArtifact(artifact, format, true);
+    }
+    store.close();
+  });
+
 const compileSpeciesCommand = compile.command("species").description("Compile or inspect a stable species gene snapshot artifact");
 compileSpeciesCommand
   .argument("[action]", "optional action: show")
   .option("--graph <graphId>", "graph id")
   .option("--node <nodeId>", "species node id")
   .option("--id <artifactId>", "species compile artifact id")
+  .option("--artifact-id <artifactId>", "species compile artifact id")
+  .option("--format <format>", "output format: text|json")
+  .option("--persist", "persist the compile artifact")
   .action((action, options, command) => {
     const store = openStore(command);
+    const format = parseOutputFormat(options.format);
     if (action === "show") {
       const artifactId = requiredOption(options.id, "--id");
       const artifact = store.speciesCompileArtifacts.get(artifactId);
@@ -1259,12 +1435,14 @@ compileSpeciesCommand
       throw new Error(`unknown compile species action: ${action}`);
     }
     if (!options.graph || !options.node) throw new Error("--graph and --node are required");
-    const artifact = compileSpeciesSnapshot({
-      artifactId: options.id ?? makeId("sca"),
-      ...buildSpeciesCompileInput(store, { graphId: options.graph, nodeId: options.node })
+    const artifact = prepareSpeciesCompileArtifact(store, {
+      artifactId: options.artifactId ?? options.id ?? makeId("sca"),
+      graphId: options.graph,
+      nodeId: options.node
     });
-    if (!shouldApply(command)) {
+    if (!(options.persist || shouldApply(command))) {
       store.close();
+      if (format) return printCompileArtifact(artifact, format, true);
       return preview(command, `compile species ${artifact.speciesNodeId}`, artifact);
     }
     store.speciesCompileArtifacts.create(artifact);
@@ -1280,11 +1458,15 @@ compilePhenotypeCommand
   .option("--type <phenotypeType>", "phenotype type")
   .option("--brief <taskBrief>", "task brief")
   .option("--id <artifactId>", "phenotype compile artifact id")
+  .option("--artifact-id <artifactId>", "phenotype compile artifact id")
   .option("--species-artifact <artifactId>", "species compile artifact id")
   .option("--reference <referenceId>", "context reference id", collect, [])
   .option("--rubric <rubricId>", "context review rubric id", collect, [])
+  .option("--format <format>", "output format: text|json")
+  .option("--persist", "persist the compile artifact")
   .action((action, options, command) => {
     const store = openStore(command);
+    const format = parseOutputFormat(options.format);
     if (action === "show") {
       const artifactId = requiredOption(options.id, "--id");
       const artifact = store.phenotypeCompileArtifacts.get(artifactId);
@@ -1303,45 +1485,24 @@ compilePhenotypeCommand
     if (!options.graph || !options.node || !options.type || !options.brief) {
       throw new Error("--graph, --node, --type, and --brief are required");
     }
-    const { graph, node, nodeVersionId, contextReferences, contextReviewRubrics } = buildSpeciesCompileInput(store, {
-      graphId: options.graph,
-      nodeId: options.node
-    });
-    const speciesArtifact =
-      (options.speciesArtifact ? store.speciesCompileArtifacts.get(options.speciesArtifact) : undefined) ??
-      store.speciesCompileArtifacts.listByNode(options.node).at(-1);
+    const speciesArtifact = options.speciesArtifact
+      ? store.speciesCompileArtifacts.get(options.speciesArtifact)
+      : store.speciesCompileArtifacts.listByNode(options.node).at(-1);
     if (options.speciesArtifact && !speciesArtifact) {
       store.close();
       throw new Error(`species compile artifact not found: ${options.speciesArtifact}`);
     }
-    const selectedReferences = options.reference.length
-      ? options.reference.map((referenceId: string) => {
-          const reference = store.contextReferences.get(referenceId);
-          if (!reference) throw new Error(`context reference not found: ${referenceId}`);
-          return reference;
-        })
-      : contextReferences;
-    const selectedRubrics = options.rubric.length
-      ? options.rubric.map((rubricId: string) => {
-          const rubric = store.contextReviewRubrics.get(rubricId);
-          if (!rubric) throw new Error(`context review rubric not found: ${rubricId}`);
-          return rubric;
-        })
-      : contextReviewRubrics;
-    const artifact = compilePhenotypeGeneration({
-      artifactId: options.id ?? makeId("pca"),
-      graph,
-      node,
-      nodeVersionId,
+    const artifact = preparePhenotypeCompileArtifact(store, {
+      artifactId: options.artifactId ?? options.id ?? makeId("pca"),
+      graphId: options.graph,
+      nodeId: options.node,
       phenotypeType: options.type,
       taskBrief: options.brief,
-      speciesArtifact,
-      contextReferences: selectedReferences,
-      contextReviewRubrics: selectedRubrics
+      speciesArtifact
     });
-    if (!shouldApply(command)) {
+    if (!(options.persist || shouldApply(command))) {
       store.close();
-      return preview(command, `compile phenotype ${artifact.speciesNodeId} ${artifact.phenotypeType}`, artifact);
+      return printCompileArtifact(artifact, format, true);
     }
     store.phenotypeCompileArtifacts.create(artifact);
     console.log(JSON.stringify(artifact, null, 2));
@@ -1359,6 +1520,7 @@ phenotype
   .option("--phenotype-id <phenotypeId>", "existing or explicit phenotype id")
   .option("--species-artifact <artifactId>", "existing species compile artifact id")
   .option("--phenotype-artifact <artifactId>", "existing phenotype compile artifact id")
+  .option("--replay-historical", "allow stale compile artifacts for deterministic historical replay")
   .option("--tool <tool>", "tool", "manual")
   .option("--apply", "persist generated artifacts, phenotype version, and generation job")
   .action((options, command) => {
@@ -1372,6 +1534,7 @@ phenotype
       phenotypeId: options.phenotypeId,
       speciesArtifactId: options.speciesArtifact,
       phenotypeArtifactId: options.phenotypeArtifact,
+      replayHistorical: Boolean(options.replayHistorical),
       tool: options.tool
     });
     const response = {

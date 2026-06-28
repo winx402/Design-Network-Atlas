@@ -29,7 +29,7 @@ For Chinese responses, keep these review anchors when useful: `直接生效`, `�
 | Which design-language relationship spans groups or graphs at the same level? | DesignRelationship |
 | What planned or concrete generated/curated output is needed? | planned Phenotype, PhenotypeVersion |
 | Where will generated results or files be registered? | PhenotypeLibrary, StorageMount, OutputReference, AssetIndex |
-| What compiled package should generation/review consume? | SpeciesCompileArtifact, PhenotypeCompileArtifact |
+| What compiled package should generation/review consume? | CompileFrame, EntityCompileArtifact, SpeciesCompileArtifact, PhenotypeCompileArtifact |
 
 Use "phenotype library" as the plain-language connector for `PhenotypeLibrary` when discussing generated-result storage.
 
@@ -56,7 +56,7 @@ Run these gates in order. If a gate cannot be answered, mark it as a blocking or
 5. species gate: create SpeciesNode only for stable design objects that can pass phenotype readiness and produce multiple outputs.
 6. relationship contract gate: create DesignRelationship only when there is a meaningful design-language contract, such as derivation, translation, alignment, divergence, reference, or constraint.
 7. facet gate: define facets only for reusable dimensions with a value strategy, not one-off notes.
-8. compile gate: decide whether species should compile through system rules, fixed snapshots, Agent-assisted conflict review, or a hybrid policy.
+8. compile gate: decide whether atlas, graph, group, species, and phenotype layers should compile through system rules, fixed snapshots, manual/Agent decision patches, or a hybrid policy. Compile feedback can seed review questions or proposals, but it must not rewrite upstream graph/context/facet/template facts.
 9. clarity gate: separate assumptions, blockingQuestions, nonBlockingQuestions, draftFields, and confidence.
 10. execution gate: choose preview-confirm, change-set review, local proposal package, draft-write, or direct audit write for generated trace/output/audit records.
 
@@ -117,6 +117,15 @@ Use these nine modules before listing SpeciesNode candidates. Each module contri
 - Positive pattern: a reviewOutline lists atlas -> graphs -> groups -> species nodes, DesignRelationship endpoints, and a note that independent roots are intentionally flat.
 - Counterexample: a lineage tree that hides groups or makes fake parent relationships for readability is misleading.
 - Output contribution: reviewOutline.
+
+### Layered Compile Shape Check
+
+- Check question: Will the proposed model produce meaningful atlas -> graph -> species-group -> species-node -> phenotype compile frames?
+- Evidence to inspect: graph boundaries, group shared facts, same-level DesignRelationship contracts, context attachments and policies, facet assignments, template dimensions, planned phenotype surfaces, and task briefs.
+- Decision boundary: if a lower layer reveals a missing upper-layer rule, record compile feedback or proposal seed instead of silently mutating the upper layer. LLM/Agent help may only enter as bounded decision requests and replayable decision patches.
+- Positive pattern: a graph frame owns global visual rules, group frames own shared family constraints, species frames own drawable object constraints, and phenotype frames own task-specific prompt/review output.
+- Counterexample: a prompt-only note with no graph/group/species evidence should not become a fake species just to satisfy compile.
+- Output contribution: compilePlan, feedbackQuestions, and reviewOutline sections that say which frames should exist and which dependencies can become stale.
 
 ## First Slice Strategy
 

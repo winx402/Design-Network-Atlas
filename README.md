@@ -136,7 +136,9 @@ Generation providers should receive compiled constraints and prompts, then retur
 
 v0.4 and later include the provider contract, mock provider execution, and a generic HTTP provider primitive. Runtime credentials and sensitive parameters are sanitized from generation jobs and export snapshots.
 
-Formal `dna phenotype generate` uses compile artifacts as the provenance path. The command accepts optional `--species-artifact <id>` and `--phenotype-artifact <id>` for deterministic replay; when they are omitted it prepares a new `SpeciesCompileArtifact` and `PhenotypeCompileArtifact` automatically. Preview returns artifacts, phenotype, phenotype version, generation job, and prompt without persistence. `--apply` persists the new artifacts, phenotype/version, and generation job in one transaction, and the generated `PhenotypeVersion` records `speciesCompileArtifactId`, `phenotypeCompileArtifactId`, and a bounded `compileArtifactSnapshot`.
+Formal compile is layered. `dna compile atlas|graph|group|species|phenotype` produces compile frames, dependency vectors, feedback, conflicts, and open questions without mutating graph facts. Atlas/graph/group frames can be stored as `EntityCompileArtifact`; species and phenotype generation keep using `SpeciesCompileArtifact` and `PhenotypeCompileArtifact` with the same layered frame model.
+
+Formal `dna phenotype generate` uses layered compile artifacts as the provenance path. The command accepts optional `--species-artifact <id>` and `--phenotype-artifact <id>` for deterministic replay; when they are omitted it prepares a new layered `SpeciesCompileArtifact` and `PhenotypeCompileArtifact` automatically. Supplied artifacts must match the graph, node, phenotype type, task brief, species link, frame shape, and dependency vector; stale artifacts require explicit historical replay. Preview returns artifacts, phenotype, phenotype version, generation job, and prompt without persistence. `--apply` persists the new artifacts, phenotype/version, and generation job in one transaction, and the generated `PhenotypeVersion` records `speciesCompileArtifactId`, `phenotypeCompileArtifactId`, and a bounded `compileArtifactSnapshot` with frame, conflict, decision, feedback, and validity summaries.
 
 ### Local HTTP API And Web Workbench
 
@@ -194,9 +196,9 @@ pnpm install
 pnpm dna --help
 ```
 
-The CLI includes `dna graph tree --id <graph_id>` for a readable species tree, `dna graph tree --include-groups` for reviewer-visible group overlays, and `dna graph tree --include-phenotypes` for planned phenotype coverage. It also includes `dna facet definition/schema/assignment ...` for facet write paths, `dna modeling check` for reusable modeling-quality review, `dna changeset list/show/review/apply/discard` for preview review, `dna proposal import-batch --in <file>` for `dna.modeling-batch.v1` initial modeling drafts, `dna sync export/import` for explicit directory exchange, and `dna serve` for the local HTTP API. Root CLI version discovery uses `dna --cli-version` or `dna -V`, while subcommands may own their domain `--version` options. Web page access remains off unless `dna serve --web` is used; when enabled, it is a read-only local workbench baseline.
+The CLI includes `dna graph tree --id <graph_id>` for a readable species tree, `dna graph tree --include-groups` for reviewer-visible group overlays, and `dna graph tree --include-phenotypes` for planned phenotype coverage. It also includes `dna compile atlas|graph|group|species|phenotype` for layered compile previews/persisted artifacts, `dna facet definition/schema/assignment ...` for facet write paths, `dna modeling check` for reusable modeling-quality review, `dna changeset list/show/review/apply/discard` for preview review, `dna proposal import-batch --in <file>` for `dna.modeling-batch.v1` initial modeling drafts, `dna sync export/import` for explicit directory exchange, and `dna serve` for the local HTTP API. Root CLI version discovery uses `dna --cli-version` or `dna -V`, while subcommands may own their domain `--version` options. Web page access remains off unless `dna serve --web` is used; when enabled, it is a read-only local workbench baseline.
 `dna.modeling-batch.v1` can declare graphs, species groups, design relationships, facets, and `phenotypePlans`. Default import mode creates a proposal with preview change-sets and a compact review report. Explicit `--mode draft-write` writes local seed objects through the service boundary and reports that it skips proposal review.
-For formal generation, `dna phenotype generate --graph <id> --node <id> --type <type> --name <name> --brief <brief>` compiles or reuses species and phenotype compile artifacts; add `--apply` to persist the generated artifacts, phenotype version, and generation job.
+For formal generation, `dna phenotype generate --graph <id> --node <id> --type <type> --name <name> --brief <brief>` compiles or reuses layered species and phenotype artifacts; add `--apply` to persist the generated artifacts, phenotype version, and generation job. Stale supplied artifacts require explicit historical replay.
 
 The root `package.json` currently uses `private: true` to prevent accidental npm publishing from the monorepo. The GitHub source is open under the MIT license.
 
@@ -372,7 +374,9 @@ DNA 把标准化元数据和外部系统元数据隔离。
 
 v0.4 及后续版本已包含 provider contract、mock provider 执行和通用 HTTP provider 基础能力。运行时凭据和敏感参数会从 generation job 与导出快照中清理掉。
 
-正式 `dna phenotype generate` 以编译产物作为 provenance 路径。命令支持可选 `--species-artifact <id>` 和 `--phenotype-artifact <id>` 做确定性 replay；省略时会自动准备新的 `SpeciesCompileArtifact` 与 `PhenotypeCompileArtifact`。Preview 会返回 artifacts、phenotype、phenotype version、generation job 和 prompt，但不持久化；`--apply` 在一个 transaction 中持久化新 artifacts、phenotype/version 和 generation job，并让 `PhenotypeVersion` 记录 `speciesCompileArtifactId`、`phenotypeCompileArtifactId` 与有界 `compileArtifactSnapshot`。
+正式 compile 是 layered pipeline。`dna compile atlas|graph|group|species|phenotype` 会生成 compile frames、dependency vectors、feedback、conflicts 和 open questions，但不修改图谱事实。atlas/graph/group frames 可持久化为 `EntityCompileArtifact`；species 和 phenotype generation 继续使用带同一 layered frame 模型的 `SpeciesCompileArtifact` 与 `PhenotypeCompileArtifact`。
+
+正式 `dna phenotype generate` 以 layered compile artifacts 作为 provenance 路径。命令支持可选 `--species-artifact <id>` 和 `--phenotype-artifact <id>` 做确定性 replay；省略时会自动准备新的 layered `SpeciesCompileArtifact` 与 `PhenotypeCompileArtifact`。传入 artifact 必须校验 graph、node、phenotype type、task brief、species link、frame shape 和 dependency vector；stale artifact 需要显式 historical replay。Preview 会返回 artifacts、phenotype、phenotype version、generation job 和 prompt，但不持久化；`--apply` 在一个 transaction 中持久化新 artifacts、phenotype/version 和 generation job，并让 `PhenotypeVersion` 记录 `speciesCompileArtifactId`、`phenotypeCompileArtifactId` 与包含 frame、conflict、decision、feedback、validity 摘要的有界 `compileArtifactSnapshot`。
 
 ### 本地 HTTP API 与 Web 工作台
 
@@ -430,9 +434,9 @@ pnpm install
 pnpm dna --help
 ```
 
-CLI 提供 `dna graph tree --id <graph_id>` 输出可读物种树，`dna graph tree --include-groups` 可显示 group overlay，`dna graph tree --include-phenotypes` 可显示 planned phenotype 覆盖；提供 `dna facet definition/schema/assignment ...` 做 facet 写入路径；提供 `dna modeling check` 做可复用建模质量检查；提供 `dna changeset list/show/review/apply/discard` 做 preview 审阅确认；提供 `dna proposal import-batch --in <file>` 导入 `dna.modeling-batch.v1` 初始建模草案；提供 `dna sync export/import` 做显式目录交换，也提供 `dna serve` 启动本地 HTTP API。根 CLI 版本使用 `dna --cli-version` 或 `dna -V` 查看，子命令可继续拥有自己的领域 `--version` 参数。网页访问默认关闭；使用 `dna serve --web` 开启后，它是只读本地工作台基线。
+CLI 提供 `dna graph tree --id <graph_id>` 输出可读物种树，`dna graph tree --include-groups` 可显示 group overlay，`dna graph tree --include-phenotypes` 可显示 planned phenotype 覆盖；提供 `dna compile atlas|graph|group|species|phenotype` 做 layered compile preview/persisted artifacts；提供 `dna facet definition/schema/assignment ...` 做 facet 写入路径；提供 `dna modeling check` 做可复用建模质量检查；提供 `dna changeset list/show/review/apply/discard` 做 preview 审阅确认；提供 `dna proposal import-batch --in <file>` 导入 `dna.modeling-batch.v1` 初始建模草案；提供 `dna sync export/import` 做显式目录交换，也提供 `dna serve` 启动本地 HTTP API。根 CLI 版本使用 `dna --cli-version` 或 `dna -V` 查看，子命令可继续拥有自己的领域 `--version` 参数。网页访问默认关闭；使用 `dna serve --web` 开启后，它是只读本地工作台基线。
 `dna.modeling-batch.v1` 可声明 graphs、species groups、DesignRelationship、facets 与 `phenotypePlans`。默认导入会创建 proposal + preview change-sets，并输出紧凑审阅报告；显式 `--mode draft-write` 通过 service boundary 写入本地 seed objects，并说明它跳过 proposal review。
-正式生成使用 `dna phenotype generate --graph <id> --node <id> --type <type> --name <name> --brief <brief>`，该命令会编译或复用 species/phenotype compile artifacts；加 `--apply` 才会持久化生成 artifacts、phenotype version 和 generation job。
+正式生成使用 `dna phenotype generate --graph <id> --node <id> --type <type> --name <name> --brief <brief>`，该命令会编译或复用 layered species/phenotype artifacts；加 `--apply` 才会持久化生成 artifacts、phenotype version 和 generation job。传入 stale artifact 时需要显式 historical replay。
 
 根目录 `package.json` 目前使用 `private: true`，用于避免 monorepo 被误发到 npm。GitHub 源码按 MIT License 开源。
 

@@ -203,9 +203,11 @@ Generated trace/output/audit records 和 external pointers 可以通过 applicat
 
 本地核心阶段只生成 prompt / brief / review checklist 等生产说明，不直接调用外部模型。
 
-正式 `phenotype generate` 不再直接走 legacy `compileSpecies` prompt helper；它必须基于 `PhenotypeCompileArtifact`。CLI 可以自动创建缺失的 `SpeciesCompileArtifact` 和 `PhenotypeCompileArtifact`，也可以通过 `--species-artifact` 或 `--phenotype-artifact` 复用既有 artifact。传入 `--phenotype-artifact` 时，必须校验 graph、node、phenotype type 和 task brief 与请求一致。
+正式 `phenotype generate` 不再直接走 legacy `compileSpecies` prompt helper；它必须基于 layered compile artifacts。CLI 可以自动创建缺失的 `SpeciesCompileArtifact` 和 `PhenotypeCompileArtifact`，也可以通过 `--species-artifact` 或 `--phenotype-artifact` 复用既有 artifact。传入 `--phenotype-artifact` 时，必须校验 graph、node、phenotype type、task brief、species artifact link、layered frames 和 dependency version vector。stale artifact 默认不能作为 current input 使用，除非用户显式选择 historical replay。
 
-Preview 模式返回 artifacts、Phenotype、PhenotypeVersion、GenerationJob 和 prompt，不持久化 artifacts、versions、jobs、assets 或 references。`--apply` 通过 application service 和 repository transaction 写入新的 artifacts、phenotype/version 和 generation job。`PhenotypeVersion` 必须记录 `speciesCompileArtifactId`、`phenotypeCompileArtifactId` 和有界 `compileArtifactSnapshot`；`GenerationJob.inputSnapshot` 必须记录 graph、node、task brief、phenotype type 以及 artifact IDs。
+Layered compile 按 atlas -> graph -> species-group -> species-node -> phenotype 的顺序生成 `CompileFrame`。Graph/group/node/relationship/context/facet/template 等正式事实只被读取；低层冲突只能形成 feedback、open question、impact/proposal seed，不能由 compile 自动改写上游事实。LLM/Agent-assisted compile 只能产生 bounded `CompileDecisionRequest` 和 replayable `CompileDecisionPatch`，不调用 provider，也不保存 credentials 或 raw provider payload。
+
+Preview 模式返回 artifacts、Phenotype、PhenotypeVersion、GenerationJob 和 prompt，不持久化 artifacts、versions、jobs、assets 或 references。`--apply` 通过 application service 和 repository transaction 写入新的 layered artifacts、phenotype/version 和 generation job。`PhenotypeVersion` 必须记录 `speciesCompileArtifactId`、`phenotypeCompileArtifactId` 和有界 `compileArtifactSnapshot`，包含 frame/conflict/decision/feedback counts 与 artifact validity；`GenerationJob.inputSnapshot` 必须记录 graph、node、task brief、phenotype type、compile mode/current-or-historical 状态以及 artifact IDs。
 
 `dna.modeling-batch.v1` 可以声明 `phenotypePlans`，但它们只是输入概念；proposal apply 或显式 `draft-write` 后会创建 `status: "planned"` 的 `Phenotype` 容器，不创建 `PhenotypeVersion`、`GenerationJob`、`AssetIndex` 或 `OutputReference`。后续正式 `phenotype generate --phenotype-id <id>` 会复用这个 planned phenotype 容器，生成版本默认仍是 `pending-confirmation`。
 
@@ -306,12 +308,15 @@ libraries/<library_id>/bindings/
 libraries/<library_id>/mappings/
 libraries/<library_id>/routing-policies/
 atlases/<atlas_id>/atlas.json
+atlases/<atlas_id>/compile/
 graphs/<graph_id>/graph.json
 graphs/<graph_id>/groups/
 graphs/<graph_id>/group-memberships/
 graphs/<graph_id>/nodes/
 relationships/<relationship_id>.json
 graphs/<graph_id>/phenotypes/
+graphs/<graph_id>/compile/graph/
+graphs/<graph_id>/compile/groups/
 graphs/<graph_id>/compile/species/
 graphs/<graph_id>/compile/phenotypes/
 graphs/<graph_id>/assets/

@@ -15,10 +15,10 @@ Use `docs/design/write-boundary-matrix.md` for write strategy vocabulary: compil
 ## Source Objects
 
 - SpeciesNode and NodeVersion define the stable design target.
-- SpeciesCompileArtifact provides resolved genes, traces, conflicts, and open questions.
+- SpeciesCompileArtifact provides atlas/graph/group/species-node compile frames, resolved genes, dependency vector, traces, conflicts, feedback, and open questions.
 - Phenotype type defines the output shape: image, UI icon, concept brief, model brief, animation brief, runtime export, document, dataset, or custom type.
 - ContextReference and ContextReviewRubric provide examples, badcases, review questions, and acceptance criteria.
-- PhenotypeCompileArtifact provides the bounded prompt, negative prompt, art brief, generation constraints, and review checklist.
+- PhenotypeCompileArtifact provides inherited species frames plus a phenotype frame, bounded prompt, negative prompt, art brief, generation constraints, dependency vector, feedback, and review checklist.
 - GenerationJob records the selected model/tool workflow without storing credentials or complete private links.
 - PhenotypeVersion records the accepted or pending generated result snapshot.
 - OutputReference, AssetIndex, PhenotypeLibrary, StorageMount, and LibraryRoutingPolicy record where result files or external objects live.
@@ -26,8 +26,10 @@ Use `docs/design/write-boundary-matrix.md` for write strategy vocabulary: compil
 ## Decision Gates
 
 1. target gate: confirm graph id, SpeciesNode, NodeVersion, and phenotype type.
-2. artifact gate: prefer existing SpeciesCompileArtifact and PhenotypeCompileArtifact; if there is a missing compile artifact or an outdated artifact, plan a refresh before generation.
-   - Formal `phenotype generate` must use a PhenotypeCompileArtifact. It may auto-create species and phenotype artifacts, reuse `--species-artifact`, or replay `--phenotype-artifact` only after graph/node/type/brief validation.
+2. artifact gate: prefer current layered SpeciesCompileArtifact and PhenotypeCompileArtifact; if there is a missing, stale, invalid, or historical artifact, plan a refresh or explicitly mark historical replay before generation.
+   - Formal generation must use a layered PhenotypeCompileArtifact. It may auto-create species and phenotype artifacts, reuse a species artifact, or replay a phenotype artifact only after graph/node/type/brief/species-link/frame/dependency-vector validation.
+   - Treat a missing compile artifact as a blocking artifact-readiness gap unless the workflow explicitly creates a fresh layered artifact before provider execution.
+   - Review frame order and dependency-vector status before provider execution: atlas -> graph -> species-group -> species-node -> phenotype.
 3. conflict gate: if compile conflicts or blocking open questions change the visual result, ask a blocking question before using a model or external tool.
 4. context gate: include ContextReference and ContextReviewRubric only as traceable guidance; do not invent references.
 5. prompt gate: produce prompt, negative prompt, art brief, and review checklist from existing graph facts and compile artifacts.
@@ -42,10 +44,11 @@ Use `docs/design/write-boundary-matrix.md` for write strategy vocabulary: compil
    - If the user supplies only a broad scenario, stop and recommend graph modeling.
 
 2. Prepare compile artifacts.
-   - Use or create a SpeciesCompileArtifact for resolved genes and trace.
-   - Use or create a PhenotypeCompileArtifact for prompt, negative prompt, art brief, generation constraints, and review checklist.
-   - Registration must carry speciesCompileArtifactId, phenotypeCompileArtifactId, and compileArtifactSnapshot into PhenotypeVersion, and artifact IDs into GenerationJob.inputSnapshot.
-   - Record compileMode, compiledBy, assistantContributionSummary, inputSummary, and trace priority/overridability where relevant.
+   - Use or create a layered SpeciesCompileArtifact for resolved genes, frame trace, dependency vector, feedback, and open questions.
+   - Use or create a layered PhenotypeCompileArtifact for prompt, negative prompt, art brief, generation constraints, review checklist, dependency vector, and phenotype frame.
+   - Registration must carry speciesCompileArtifactId, phenotypeCompileArtifactId, and compileArtifactSnapshot into PhenotypeVersion, and artifact IDs plus current/historical compile mode into GenerationJob.inputSnapshot.
+   - Record compileMode, compiledBy, assistantContributionSummary, inputSummary, frame counts, conflict counts, decision counts, feedback counts, dependency-vector validity, and trace priority/overridability where relevant.
+   - LLM/Agent-assisted compile is allowed only as bounded decision requests and replayable decision patches; do not call providers or store credentials during compile.
 
 3. Decide generation execution.
    - manual: user or artist creates the result from brief/checklist.
@@ -68,7 +71,7 @@ Use `docs/design/write-boundary-matrix.md` for write strategy vocabulary: compil
 Return a generationPlan with these fields:
 
 - selectedTarget: graph id, species node id, node version id, phenotype type, and task brief.
-- artifactReadiness: existing or required SpeciesCompileArtifact and PhenotypeCompileArtifact, with outdated/conflict status.
+- artifactReadiness: existing or required layered SpeciesCompileArtifact and PhenotypeCompileArtifact, with current/stale/historical/invalid status, frame coverage, dependency-vector status, conflicts, feedback, and blocking open questions.
 - blockingQuestions: questions that must be answered before generation or registration.
 - nonBlockingQuestions: questions that can be resolved after a draft output exists.
 - promptPackage: prompt, negative prompt, art brief, generation constraints, and review checklist.

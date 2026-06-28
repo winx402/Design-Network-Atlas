@@ -16,6 +16,7 @@ import {
   DesignContext,
   DesignPrinciple,
   DesignRelationship,
+  EntityCompileArtifact,
   ExternalLibraryMapping,
   FacetAssignment,
   FacetDefinition,
@@ -55,6 +56,7 @@ import {
   DesignContextRepository,
   DesignPrincipleRepository,
   DesignRelationshipRepository,
+  EntityCompileArtifactRepository,
   ExternalLibraryMappingRepository,
   FacetAssignmentRepository,
   FacetDefinitionRepository,
@@ -115,6 +117,7 @@ export const RUNTIME_SQLITE_TABLES = [
   "phenotypes",
   "phenotype_versions",
   "phenotype_version_assets",
+  "entity_compile_artifacts",
   "species_compile_artifacts",
   "phenotype_compile_artifacts",
   "assets",
@@ -277,6 +280,7 @@ export class SqliteDnaStore implements StorageEngine {
   readonly nodeVersions: NodeVersionRepository;
   readonly phenotypes: PhenotypeRepository;
   readonly phenotypeVersions: PhenotypeVersionRepository;
+  readonly entityCompileArtifacts: EntityCompileArtifactRepository;
   readonly speciesCompileArtifacts: SpeciesCompileArtifactRepository;
   readonly phenotypeCompileArtifacts: PhenotypeCompileArtifactRepository;
   readonly assets: AssetRepository;
@@ -318,6 +322,7 @@ export class SqliteDnaStore implements StorageEngine {
     this.nodeVersions = new SqliteNodeVersionRepository(this);
     this.phenotypes = new SqlitePhenotypeRepository(this);
     this.phenotypeVersions = new SqlitePhenotypeVersionRepository(this);
+    this.entityCompileArtifacts = new SqliteEntityCompileArtifactRepository(this);
     this.speciesCompileArtifacts = new SqliteSpeciesCompileArtifactRepository(this);
     this.phenotypeCompileArtifacts = new SqlitePhenotypeCompileArtifactRepository(this);
     this.assets = new SqliteAssetRepository(this);
@@ -558,6 +563,14 @@ export class SqliteDnaStore implements StorageEngine {
         payload TEXT NOT NULL,
         PRIMARY KEY (phenotype_version_id, asset_id)
       );
+      CREATE TABLE IF NOT EXISTS entity_compile_artifacts (
+        artifact_id TEXT PRIMARY KEY,
+        target_level TEXT NOT NULL,
+        target_object_id TEXT NOT NULL,
+        graph_id TEXT,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS species_compile_artifacts (
         artifact_id TEXT PRIMARY KEY,
         graph_id TEXT NOT NULL,
@@ -753,6 +766,7 @@ function summarizeSqliteGraphReset(store: SqliteDnaStore, graphId: string): Grap
       designRelationships: ids.relationshipIds.size,
       speciesGroups: ids.groupIds.size,
       speciesGroupMemberships: ids.membershipIds.size,
+      entityCompileArtifacts: ids.entityArtifactIds.size,
       speciesCompileArtifacts: ids.speciesArtifactIds.size,
       phenotypeCompileArtifacts: ids.phenotypeArtifactIds.size,
       phenotypes: ids.phenotypeIds.size,
@@ -792,6 +806,7 @@ function applySqliteGraphReset(store: SqliteDnaStore, graphId: string) {
   deleteRowsByIds(store, "impact_records", "impact_record_id", ids.impactRecordIds);
   deleteRowsByIds(store, "phenotype_versions", "phenotype_version_id", ids.phenotypeVersionIds);
   deleteRowsByIds(store, "phenotypes", "phenotype_id", ids.phenotypeIds);
+  deleteRowsByIds(store, "entity_compile_artifacts", "artifact_id", ids.entityArtifactIds);
   deleteRowsByIds(store, "species_compile_artifacts", "artifact_id", ids.speciesArtifactIds);
   deleteRowsByIds(store, "phenotype_compile_artifacts", "artifact_id", ids.phenotypeArtifactIds);
   deleteRowsByIds(store, "node_versions", "node_version_id", ids.nodeVersionIds);
@@ -828,6 +843,7 @@ function collectSqliteGraphResetIds(store: SqliteDnaStore, graphId: string) {
     )
   );
   const speciesArtifactIds = new Set(store.speciesCompileArtifacts.listByGraph(graphId).map((artifact) => artifact.artifactId));
+  const entityArtifactIds = new Set(store.entityCompileArtifacts.listByGraph(graphId).map((artifact) => artifact.artifactId));
   const phenotypeArtifactIds = new Set(store.phenotypeCompileArtifacts.listByGraph(graphId).map((artifact) => artifact.artifactId));
   const phenotypeIds = new Set(store.phenotypes.listByGraph(graphId).map((phenotype) => phenotype.phenotypeId));
   const phenotypeVersionRows = parseRows<PhenotypeVersion>(
@@ -854,6 +870,7 @@ function collectSqliteGraphResetIds(store: SqliteDnaStore, graphId: string) {
     ...membershipIds,
     ...phenotypeIds,
     ...phenotypeVersionIds,
+    ...entityArtifactIds,
     ...speciesArtifactIds,
     ...phenotypeArtifactIds,
     ...generationJobIds
@@ -881,6 +898,7 @@ function collectSqliteGraphResetIds(store: SqliteDnaStore, graphId: string) {
     groupIds,
     membershipIds,
     nodeVersionIds,
+    entityArtifactIds,
     speciesArtifactIds,
     phenotypeArtifactIds,
     phenotypeIds,
@@ -1535,6 +1553,45 @@ class SqlitePhenotypeVersionRepository implements PhenotypeVersionRepository {
   }
 }
 
+class SqliteEntityCompileArtifactRepository implements EntityCompileArtifactRepository {
+  constructor(private readonly store: SqliteDnaStore) {}
+  create(artifact: EntityCompileArtifact) {
+    this.store.db
+      .prepare(
+        "INSERT INTO entity_compile_artifacts (artifact_id, target_level, target_object_id, graph_id, payload, created_at) VALUES (?, ?, ?, ?, ?, ?)"
+      )
+      .run(
+        artifact.artifactId,
+        artifact.targetLevel,
+        artifact.target.objectId,
+        artifact.graphId ?? null,
+        JSON.stringify(artifact),
+        artifact.createdAt
+      );
+  }
+  get(artifactId: string) {
+    return parsePayload<EntityCompileArtifact>(
+      this.store.db.prepare("SELECT payload FROM entity_compile_artifacts WHERE artifact_id = ?").get(artifactId) as Row | undefined
+    );
+  }
+  listByGraph(graphId: string) {
+    return parseRows<EntityCompileArtifact>(
+      this.store.db
+        .prepare("SELECT payload FROM entity_compile_artifacts WHERE graph_id = ? ORDER BY created_at, artifact_id")
+        .all(graphId) as Row[]
+    );
+  }
+  listByTarget(targetLevel: EntityCompileArtifact["targetLevel"], objectId: string) {
+    return parseRows<EntityCompileArtifact>(
+      this.store.db
+        .prepare(
+          "SELECT payload FROM entity_compile_artifacts WHERE target_level = ? AND target_object_id = ? ORDER BY created_at, artifact_id"
+        )
+        .all(targetLevel, objectId) as Row[]
+    );
+  }
+}
+
 class SqliteSpeciesCompileArtifactRepository implements SpeciesCompileArtifactRepository {
   constructor(private readonly store: SqliteDnaStore) {}
   create(artifact: SpeciesCompileArtifact) {
@@ -2135,6 +2192,9 @@ export function exportProject(store: SqliteDnaStore, outDir: string, options: Ex
   for (const atlas of store.atlases.list()) {
     const atlasDir = join(outDir, "atlases", atlas.atlasId);
     writeJson(join(atlasDir, "atlas.json"), atlas);
+    for (const artifact of store.entityCompileArtifacts.listByTarget("atlas", atlas.atlasId)) {
+      writeJson(join(atlasDir, "compile", `${artifact.artifactId}.json`), artifact);
+    }
   }
   for (const relationship of store.designRelationships.list()) {
     writeJson(join(outDir, "relationships", `${relationship.relationshipId}.json`), relationship);
@@ -2153,6 +2213,14 @@ export function exportProject(store: SqliteDnaStore, outDir: string, options: Ex
     for (const phenotype of store.phenotypes.listByGraph(graph.graphId)) {
       for (const version of store.phenotypeVersions.listByPhenotype(phenotype.phenotypeId)) {
         writeJson(join(graphDir, "phenotypes", `${version.phenotypeVersionId}.version.json`), version);
+      }
+    }
+    for (const artifact of store.entityCompileArtifacts.listByTarget("graph", graph.graphId)) {
+      writeJson(join(graphDir, "compile", "graph", `${artifact.artifactId}.json`), artifact);
+    }
+    for (const group of store.speciesGroups.listByGraph(graph.graphId)) {
+      for (const artifact of store.entityCompileArtifacts.listByTarget("species-group", group.groupId)) {
+        writeJson(join(graphDir, "compile", "groups", `${artifact.artifactId}.json`), artifact);
       }
     }
     for (const artifact of store.speciesCompileArtifacts.listByGraph(graph.graphId)) {
@@ -2247,6 +2315,12 @@ export function importProject(store: SqliteDnaStore, inDir: string): void {
       if ("phenotypeVersionId" in value) store.phenotypeVersions.create(value);
       else store.phenotypes.create(value);
     }
+    for (const file of listJsonFiles(join(graphDir, "compile", "graph"))) {
+      store.entityCompileArtifacts.create(JSON.parse(readFileSync(file, "utf8")));
+    }
+    for (const file of listJsonFiles(join(graphDir, "compile", "groups"))) {
+      store.entityCompileArtifacts.create(JSON.parse(readFileSync(file, "utf8")));
+    }
     for (const file of listJsonFiles(join(graphDir, "compile", "species"))) {
       store.speciesCompileArtifacts.create(JSON.parse(readFileSync(file, "utf8")));
     }
@@ -2264,6 +2338,9 @@ export function importProject(store: SqliteDnaStore, inDir: string): void {
   for (const atlasDir of safeReadDirs(join(inDir, "atlases"))) {
     const atlas = readJsonIfExists<Atlas>(join(atlasDir, "atlas.json"));
     if (atlas) store.atlases.create(atlas);
+    for (const file of listJsonFiles(join(atlasDir, "compile"))) {
+      store.entityCompileArtifacts.create(JSON.parse(readFileSync(file, "utf8")));
+    }
   }
   for (const file of listJsonFiles(join(inDir, "relationships"))) store.designRelationships.create(JSON.parse(readFileSync(file, "utf8")));
 }

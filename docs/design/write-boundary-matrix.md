@@ -25,7 +25,7 @@ Web remains read-only in the current product baseline. It must not expose graph,
 | Formal graph facts | `Graph`, `SpeciesNode`, `NodeVersion`, `SpeciesGroup`, memberships, atlases, `DesignRelationship` | preview/change-set | application/service change-set |
 | Formal design context facts | `DesignContext`, facts, principles, motifs, references, rubrics, attachments, policies | preview/change-set | application/service change-set |
 | Facet taxonomy and assignments | `FacetDefinition`, `FacetSchema`, `FacetAssignment` | preview/change-set for user-authored taxonomy; direct only for imported fixtures | application/service change-set |
-| Generated trace artifacts | `SpeciesCompileArtifact`, `PhenotypeCompileArtifact` | preview for standalone compile; direct audit write during formal generation apply | application service |
+| Generated trace artifacts | `EntityCompileArtifact`, `SpeciesCompileArtifact`, `PhenotypeCompileArtifact`, `CompileFrame` payloads | preview for standalone compile; direct audit write during explicit persisted compile or formal generation apply | application service |
 | Generated outputs | planned `Phenotype`, `PhenotypeVersion`, `GenerationJob` | planned containers through proposal/change-set or draft-write; generated versions/jobs through direct audit write | application service |
 | External pointers | `AssetIndex`, `OutputReference`, libraries, mounts, routing policies, graph bindings | direct audit write through CLI/application service | application/service |
 | Governance records | `ReviewRecord`, `ImpactRecord`, change-set review results | direct audit write | application/service |
@@ -36,12 +36,13 @@ Web remains read-only in the current product baseline. It must not expose graph,
 1. LLM-inferred formal graph, context, design, and facet facts default to `preview/change-set`.
 2. A user must explicitly apply formal facts through the accepted CLI/application service boundary before they become durable graph truth.
 3. Generated trace artifacts and generated outputs may use `direct audit write` during formal generation apply because they are provenance records, not unconfirmed graph facts.
-4. Standalone compile commands default to preview. Persisting compile artifacts requires explicit apply mode.
-5. `phenotype generate --apply` may persist compile artifacts, phenotype/version records, and a generation job in one transaction. When `--phenotype-id` points to an existing planned phenotype, generation reuses that container and creates a pending version/job instead of duplicating the phenotype.
-6. `proposal import-batch` defaults to proposal + preview change-sets for `dna.modeling-batch.v1`; explicit `draft-write` is a local seed path that skips proposal review and must say so in output. Batch `phenotypePlans` become planned `Phenotype` containers only after apply/draft-write and must not create versions, jobs, assets, or output references.
-7. Direct audit commands must name the object type they persist and must not imply they changed graph identity.
-8. Provider credentials, raw provider errors, complete private links, and secrets may not be stored in generated artifacts, jobs, exports, logs, or fixtures.
-9. Web remains read-only until a future accepted PRD adds service-backed writes.
+4. Standalone layered compile commands default to preview. Persisting compile artifacts requires explicit apply/persist mode and writes generated trace artifacts only; compile never mutates graph, context, facet, relationship, template, or phenotype facts.
+5. `phenotype generate --apply` may persist layered compile artifacts, phenotype/version records, and a generation job in one transaction. When `--phenotype-id` points to an existing planned phenotype, generation reuses that container and creates a pending version/job instead of duplicating the phenotype.
+6. Persisted compile artifacts carry dependency version vectors. Upstream writes make them stale or historical by comparison; DNA must not auto-recompile downstream artifacts or silently treat stale artifacts as current.
+7. `proposal import-batch` defaults to proposal + preview change-sets for `dna.modeling-batch.v1`; explicit `draft-write` is a local seed path that skips proposal review and must say so in output. Batch `phenotypePlans` become planned `Phenotype` containers only after apply/draft-write and must not create versions, jobs, assets, or output references.
+8. Direct audit commands must name the object type they persist and must not imply they changed graph identity.
+9. Provider credentials, raw provider errors, complete private links, and secrets may not be stored in generated artifacts, jobs, exports, logs, or fixtures.
+10. Web remains read-only until a future accepted PRD adds service-backed writes.
 
 ## CLI And Skill Language
 

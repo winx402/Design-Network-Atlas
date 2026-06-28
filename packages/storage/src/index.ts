@@ -11,6 +11,7 @@ import {
   DesignContext,
   DesignRelationship,
   DesignPrinciple,
+  EntityCompileArtifact,
   ExternalLibraryMapping,
   FacetAssignment,
   FacetDefinition,
@@ -213,6 +214,13 @@ export interface SpeciesCompileArtifactRepository {
   get(artifactId: string): SpeciesCompileArtifact | undefined;
   listByGraph(graphId: string): SpeciesCompileArtifact[];
   listByNode(nodeId: string): SpeciesCompileArtifact[];
+}
+
+export interface EntityCompileArtifactRepository {
+  create(artifact: EntityCompileArtifact): void;
+  get(artifactId: string): EntityCompileArtifact | undefined;
+  listByGraph(graphId: string): EntityCompileArtifact[];
+  listByTarget(targetLevel: EntityCompileArtifact["targetLevel"], objectId: string): EntityCompileArtifact[];
 }
 
 export interface PhenotypeCompileArtifactRepository {
