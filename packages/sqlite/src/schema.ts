@@ -330,6 +330,41 @@ export const libraryRoutingPolicies = sqliteTable("library_routing_policies", {
   updatedAt: text("updated_at").notNull()
 });
 
+export const generationJobs = sqliteTable("generation_jobs", {
+  generationJobId: text("generation_job_id").primaryKey(),
+  graphId: text("graph_id").notNull(),
+  nodeId: text("node_id").notNull(),
+  status: text("status").notNull(),
+  payload: text("payload", { mode: "json" }).notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull()
+});
+
+export const phenotypeGenerationPlans = sqliteTable("phenotype_generation_plans", {
+  planId: text("plan_id").primaryKey(),
+  graphId: text("graph_id"),
+  scopeType: text("scope_type").notNull(),
+  scopeId: text("scope_id").notNull(),
+  status: text("status").notNull(),
+  priority: integer("priority").notNull(),
+  payload: text("payload", { mode: "json" }).notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull()
+});
+
+export const phenotypeGenerationTasks = sqliteTable("phenotype_generation_tasks", {
+  taskId: text("task_id").primaryKey(),
+  planId: text("plan_id"),
+  graphId: text("graph_id").notNull(),
+  nodeId: text("node_id"),
+  phenotypeId: text("phenotype_id"),
+  status: text("status").notNull(),
+  priority: integer("priority").notNull(),
+  payload: text("payload", { mode: "json" }).notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull()
+});
+
 export const reviewRecords = sqliteTable("review_records", {
   reviewRecordId: text("review_record_id").primaryKey(),
   graphId: text("graph_id").notNull(),

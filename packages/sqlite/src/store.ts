@@ -29,6 +29,8 @@ import {
   NodeVersion,
   OutputReference,
   Phenotype,
+  PhenotypeGenerationPlan,
+  PhenotypeGenerationTask,
   PhenotypeCompileArtifact,
   PhenotypeLibrary,
   PhenotypeLibraryGraphBinding,
@@ -69,6 +71,8 @@ import {
   LineageRepository,
   NodeVersionRepository,
   OutputReferenceRepository,
+  PhenotypeGenerationPlanRepository,
+  PhenotypeGenerationTaskRepository,
   PhenotypeRepository,
   PhenotypeCompileArtifactRepository,
   PhenotypeLibraryGraphBindingRepository,
@@ -128,6 +132,8 @@ export const RUNTIME_SQLITE_TABLES = [
   "external_library_mappings",
   "library_routing_policies",
   "generation_jobs",
+  "phenotype_generation_plans",
+  "phenotype_generation_tasks",
   "review_records",
   "impact_records",
   "tags",
@@ -148,6 +154,7 @@ const EXCHANGE_CAPABILITIES = [
   "species-groups",
   "compile-artifacts",
   "generation-jobs",
+  "generation-planning",
   "output-references",
   "reviews",
   "impacts"
@@ -291,6 +298,8 @@ export class SqliteDnaStore implements StorageEngine {
   readonly externalLibraryMappings: ExternalLibraryMappingRepository;
   readonly libraryRoutingPolicies: LibraryRoutingPolicyRepository;
   readonly generationJobs: GenerationJobRepository;
+  readonly generationPlans: PhenotypeGenerationPlanRepository;
+  readonly generationTasks: PhenotypeGenerationTaskRepository;
   readonly reviews: ReviewRepository;
   readonly impacts: ImpactRepository;
   readonly search: SearchRepository;
@@ -333,6 +342,8 @@ export class SqliteDnaStore implements StorageEngine {
     this.externalLibraryMappings = new SqliteExternalLibraryMappingRepository(this);
     this.libraryRoutingPolicies = new SqliteLibraryRoutingPolicyRepository(this);
     this.generationJobs = new SqliteGenerationJobRepository(this);
+    this.generationPlans = new SqlitePhenotypeGenerationPlanRepository(this);
+    this.generationTasks = new SqlitePhenotypeGenerationTaskRepository(this);
     this.reviews = new SqliteReviewRepository(this);
     this.impacts = new SqliteImpactRepository(this);
     this.search = { assets: (filter) => this.assets.search(filter) };
@@ -669,6 +680,29 @@ export class SqliteDnaStore implements StorageEngine {
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS phenotype_generation_plans (
+        plan_id TEXT PRIMARY KEY,
+        graph_id TEXT,
+        scope_type TEXT NOT NULL,
+        scope_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        priority INTEGER NOT NULL,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS phenotype_generation_tasks (
+        task_id TEXT PRIMARY KEY,
+        plan_id TEXT,
+        graph_id TEXT NOT NULL,
+        node_id TEXT,
+        phenotype_id TEXT,
+        status TEXT NOT NULL,
+        priority INTEGER NOT NULL,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS review_records (
         review_record_id TEXT PRIMARY KEY,
         graph_id TEXT NOT NULL,
@@ -774,6 +808,8 @@ function summarizeSqliteGraphReset(store: SqliteDnaStore, graphId: string): Grap
       phenotypeVersionAssets: ids.phenotypeVersionAssetLinks,
       assets: ids.assetIds.size,
       generationJobs: ids.generationJobIds.size,
+      generationPlans: ids.generationPlanIds.size,
+      generationTasks: ids.generationTaskIds.size,
       outputReferences: ids.outputReferenceIds.size,
       reviewRecords: ids.reviewRecordIds.size,
       impactRecords: ids.impactRecordIds.size,
@@ -801,6 +837,8 @@ function applySqliteGraphReset(store: SqliteDnaStore, graphId: string) {
   deleteRowsByIds(store, "phenotype_version_assets", "asset_id", ids.assetIds);
   deleteRowsByIds(store, "assets", "asset_id", ids.assetIds);
   deleteRowsByIds(store, "output_references", "output_reference_id", ids.outputReferenceIds);
+  deleteRowsByIds(store, "phenotype_generation_tasks", "task_id", ids.generationTaskIds);
+  deleteRowsByIds(store, "phenotype_generation_plans", "plan_id", ids.generationPlanIds);
   deleteRowsByIds(store, "generation_jobs", "generation_job_id", ids.generationJobIds);
   deleteRowsByIds(store, "review_records", "review_record_id", ids.reviewRecordIds);
   deleteRowsByIds(store, "impact_records", "impact_record_id", ids.impactRecordIds);
@@ -856,6 +894,8 @@ function collectSqliteGraphResetIds(store: SqliteDnaStore, graphId: string) {
       .get(...[...phenotypeVersionIds])?.count ?? 0
   );
   const generationJobIds = new Set(store.generationJobs.listByGraph(graphId).map((job) => job.generationJobId));
+  const generationPlanIds = new Set(store.generationPlans.listByGraph(graphId).map((plan) => plan.planId));
+  const generationTaskIds = new Set(store.generationTasks.listByGraph(graphId).map((task) => task.taskId));
   const outputReferenceIds = new Set(store.outputReferences.listByGraph(graphId).map((reference) => reference.outputReferenceId));
   const reviewRecordIds = new Set(store.reviews.listByGraph(graphId).map((review) => review.reviewRecordId));
   const impactRecordIds = new Set(store.impacts.listByGraph(graphId).map((impact) => impact.impactRecordId));
@@ -873,7 +913,9 @@ function collectSqliteGraphResetIds(store: SqliteDnaStore, graphId: string) {
     ...entityArtifactIds,
     ...speciesArtifactIds,
     ...phenotypeArtifactIds,
-    ...generationJobIds
+    ...generationJobIds,
+    ...generationPlanIds,
+    ...generationTaskIds
   ]);
   const allAssets = parseRows<AssetIndex>(store.db.prepare("SELECT payload FROM assets ORDER BY created_at, asset_id").all() as Row[]);
   const assetIds = new Set(allAssets.filter((asset) => deletedObjectIds.has(asset.linkedObjectId)).map((asset) => asset.assetId));
@@ -905,6 +947,8 @@ function collectSqliteGraphResetIds(store: SqliteDnaStore, graphId: string) {
     phenotypeVersionIds,
     phenotypeVersionAssetLinks,
     generationJobIds,
+    generationPlanIds,
+    generationTaskIds,
     outputReferenceIds,
     reviewRecordIds,
     impactRecordIds,
@@ -2000,6 +2044,131 @@ class SqliteGenerationJobRepository implements GenerationJobRepository {
   }
 }
 
+class SqlitePhenotypeGenerationPlanRepository implements PhenotypeGenerationPlanRepository {
+  constructor(private readonly store: SqliteDnaStore) {}
+  create(plan: PhenotypeGenerationPlan) {
+    this.store.db
+      .prepare(
+        "INSERT INTO phenotype_generation_plans (plan_id, graph_id, scope_type, scope_id, status, priority, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      )
+      .run(
+        plan.planId,
+        plan.graphId ?? null,
+        plan.scopeType,
+        plan.scopeId,
+        plan.status,
+        plan.priority,
+        JSON.stringify(plan),
+        plan.createdAt,
+        plan.updatedAt
+      );
+  }
+  update(plan: PhenotypeGenerationPlan) {
+    this.store.db
+      .prepare(
+        "UPDATE phenotype_generation_plans SET graph_id = ?, scope_type = ?, scope_id = ?, status = ?, priority = ?, payload = ?, updated_at = ? WHERE plan_id = ?"
+      )
+      .run(plan.graphId ?? null, plan.scopeType, plan.scopeId, plan.status, plan.priority, JSON.stringify(plan), plan.updatedAt, plan.planId);
+  }
+  get(planId: string) {
+    return parsePayload<PhenotypeGenerationPlan>(
+      this.store.db.prepare("SELECT payload FROM phenotype_generation_plans WHERE plan_id = ?").get(planId) as Row | undefined
+    );
+  }
+  list() {
+    return parseRows<PhenotypeGenerationPlan>(
+      this.store.db.prepare("SELECT payload FROM phenotype_generation_plans ORDER BY created_at, plan_id").all() as Row[]
+    );
+  }
+  listByGraph(graphId: string) {
+    return parseRows<PhenotypeGenerationPlan>(
+      this.store.db
+        .prepare(
+          "SELECT payload FROM phenotype_generation_plans WHERE graph_id = ? OR (scope_type = 'graph' AND scope_id = ?) ORDER BY created_at, plan_id"
+        )
+        .all(graphId, graphId) as Row[]
+    );
+  }
+  listByScope(scopeType: PhenotypeGenerationPlan["scopeType"], scopeId: string) {
+    return parseRows<PhenotypeGenerationPlan>(
+      this.store.db
+        .prepare("SELECT payload FROM phenotype_generation_plans WHERE scope_type = ? AND scope_id = ? ORDER BY created_at, plan_id")
+        .all(scopeType, scopeId) as Row[]
+    );
+  }
+}
+
+class SqlitePhenotypeGenerationTaskRepository implements PhenotypeGenerationTaskRepository {
+  constructor(private readonly store: SqliteDnaStore) {}
+  create(task: PhenotypeGenerationTask) {
+    this.store.db
+      .prepare(
+        "INSERT INTO phenotype_generation_tasks (task_id, plan_id, graph_id, node_id, phenotype_id, status, priority, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      )
+      .run(
+        task.taskId,
+        task.planId ?? null,
+        task.graphId,
+        task.nodeId ?? null,
+        task.phenotypeId ?? null,
+        task.status,
+        task.priority,
+        JSON.stringify(task),
+        task.createdAt,
+        task.updatedAt
+      );
+  }
+  update(task: PhenotypeGenerationTask) {
+    this.store.db
+      .prepare(
+        "UPDATE phenotype_generation_tasks SET plan_id = ?, graph_id = ?, node_id = ?, phenotype_id = ?, status = ?, priority = ?, payload = ?, updated_at = ? WHERE task_id = ?"
+      )
+      .run(
+        task.planId ?? null,
+        task.graphId,
+        task.nodeId ?? null,
+        task.phenotypeId ?? null,
+        task.status,
+        task.priority,
+        JSON.stringify(task),
+        task.updatedAt,
+        task.taskId
+      );
+  }
+  get(taskId: string) {
+    return parsePayload<PhenotypeGenerationTask>(
+      this.store.db.prepare("SELECT payload FROM phenotype_generation_tasks WHERE task_id = ?").get(taskId) as Row | undefined
+    );
+  }
+  list() {
+    return parseRows<PhenotypeGenerationTask>(
+      this.store.db.prepare("SELECT payload FROM phenotype_generation_tasks ORDER BY created_at, task_id").all() as Row[]
+    );
+  }
+  listByGraph(graphId: string) {
+    return parseRows<PhenotypeGenerationTask>(
+      this.store.db.prepare("SELECT payload FROM phenotype_generation_tasks WHERE graph_id = ? ORDER BY created_at, task_id").all(graphId) as Row[]
+    );
+  }
+  listByPlan(planId: string) {
+    return parseRows<PhenotypeGenerationTask>(
+      this.store.db.prepare("SELECT payload FROM phenotype_generation_tasks WHERE plan_id = ? ORDER BY created_at, task_id").all(planId) as Row[]
+    );
+  }
+  listByNode(nodeId: string) {
+    return parseRows<PhenotypeGenerationTask>(
+      this.store.db.prepare("SELECT payload FROM phenotype_generation_tasks WHERE node_id = ? ORDER BY created_at, task_id").all(nodeId) as Row[]
+    );
+  }
+  listByPhenotype(phenotypeId: string) {
+    return parseRows<PhenotypeGenerationTask>(
+      this.store.db
+        .prepare("SELECT payload FROM phenotype_generation_tasks WHERE phenotype_id = ? ORDER BY created_at, task_id")
+        .all(phenotypeId) as Row[]
+    );
+  }
+}
+
 class SqliteReviewRepository implements ReviewRepository {
   constructor(private readonly store: SqliteDnaStore) {}
   create(review: ReviewRecord) {
@@ -2233,6 +2402,12 @@ export function exportProject(store: SqliteDnaStore, outDir: string, options: Ex
     for (const job of store.generationJobs.listByGraph(graph.graphId)) {
       writeJson(join(graphDir, "generation-jobs", `${job.generationJobId}.json`), job);
     }
+    for (const plan of store.generationPlans.listByGraph(graph.graphId)) {
+      writeJson(join(graphDir, "generation-plans", `${plan.planId}.json`), plan);
+    }
+    for (const task of store.generationTasks.listByGraph(graph.graphId)) {
+      writeJson(join(graphDir, "generation-tasks", `${task.taskId}.json`), task);
+    }
     for (const reference of store.outputReferences.listByGraph(graph.graphId)) {
       writeJson(join(graphDir, "output-references", `${reference.outputReferenceId}.json`), reference);
     }
@@ -2329,6 +2504,8 @@ export function importProject(store: SqliteDnaStore, inDir: string): void {
     }
     for (const file of listJsonFiles(join(graphDir, "assets"))) store.assets.create(JSON.parse(readFileSync(file, "utf8")));
     for (const file of listJsonFiles(join(graphDir, "generation-jobs"))) store.generationJobs.create(JSON.parse(readFileSync(file, "utf8")));
+    for (const file of listJsonFiles(join(graphDir, "generation-plans"))) store.generationPlans.create(JSON.parse(readFileSync(file, "utf8")));
+    for (const file of listJsonFiles(join(graphDir, "generation-tasks"))) store.generationTasks.create(JSON.parse(readFileSync(file, "utf8")));
     for (const file of listJsonFiles(join(graphDir, "output-references"))) {
       store.outputReferences.create(JSON.parse(readFileSync(file, "utf8")));
     }

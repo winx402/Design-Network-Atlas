@@ -25,6 +25,8 @@ import {
   NodeVersion,
   OutputReference,
   Phenotype,
+  PhenotypeGenerationPlan,
+  PhenotypeGenerationTask,
   PhenotypeCompileArtifact,
   PhenotypeLibrary,
   PhenotypeLibraryGraphBinding,
@@ -64,6 +66,8 @@ import {
   LineageRepository,
   NodeVersionRepository,
   OutputReferenceRepository,
+  PhenotypeGenerationPlanRepository,
+  PhenotypeGenerationTaskRepository,
   PhenotypeRepository,
   PhenotypeLibraryGraphBindingRepository,
   PhenotypeLibraryRepository,
@@ -113,6 +117,8 @@ export interface DnaServiceStore extends StorageEngine {
   externalLibraryMappings: ExternalLibraryMappingRepository;
   libraryRoutingPolicies: LibraryRoutingPolicyRepository;
   generationJobs: GenerationJobRepository;
+  generationPlans: PhenotypeGenerationPlanRepository;
+  generationTasks: PhenotypeGenerationTaskRepository;
   reviews: ReviewRepository;
   impacts: ImpactRepository;
   search: SearchRepository;
@@ -160,6 +166,8 @@ interface MemoryState {
   externalLibraryMappings: Map<string, ExternalLibraryMapping>;
   libraryRoutingPolicies: Map<string, LibraryRoutingPolicy>;
   generationJobs: Map<string, GenerationJob>;
+  generationPlans: Map<string, PhenotypeGenerationPlan>;
+  generationTasks: Map<string, PhenotypeGenerationTask>;
   reviews: Map<string, ReviewRecord>;
   impacts: Map<string, ImpactRecord>;
   changeSets: Map<string, ChangeSet>;
@@ -200,6 +208,8 @@ export class InMemoryDnaStore implements DnaServiceStore {
   readonly externalLibraryMappings: ExternalLibraryMappingRepository;
   readonly libraryRoutingPolicies: LibraryRoutingPolicyRepository;
   readonly generationJobs: GenerationJobRepository;
+  readonly generationPlans: PhenotypeGenerationPlanRepository;
+  readonly generationTasks: PhenotypeGenerationTaskRepository;
   readonly reviews: ReviewRepository;
   readonly impacts: ImpactRepository;
   readonly search: SearchRepository;
@@ -476,6 +486,44 @@ export class InMemoryDnaStore implements DnaServiceStore {
           .filter((job) => job.graphId === graphId)
           .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.generationJobId.localeCompare(right.generationJobId))
     };
+    this.generationPlans = {
+      create: (plan) => this.state.generationPlans.set(plan.planId, plan),
+      update: (plan) => this.state.generationPlans.set(plan.planId, plan),
+      get: (planId) => this.state.generationPlans.get(planId),
+      list: () =>
+        [...this.state.generationPlans.values()].sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.planId.localeCompare(right.planId)),
+      listByGraph: (graphId) =>
+        [...this.state.generationPlans.values()]
+          .filter((plan) => plan.graphId === graphId || (plan.scopeType === "graph" && plan.scopeId === graphId))
+          .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.planId.localeCompare(right.planId)),
+      listByScope: (scopeType, scopeId) =>
+        [...this.state.generationPlans.values()]
+          .filter((plan) => plan.scopeType === scopeType && plan.scopeId === scopeId)
+          .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.planId.localeCompare(right.planId))
+    };
+    this.generationTasks = {
+      create: (task) => this.state.generationTasks.set(task.taskId, task),
+      update: (task) => this.state.generationTasks.set(task.taskId, task),
+      get: (taskId) => this.state.generationTasks.get(taskId),
+      list: () =>
+        [...this.state.generationTasks.values()].sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.taskId.localeCompare(right.taskId)),
+      listByGraph: (graphId) =>
+        [...this.state.generationTasks.values()]
+          .filter((task) => task.graphId === graphId)
+          .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.taskId.localeCompare(right.taskId)),
+      listByPlan: (planId) =>
+        [...this.state.generationTasks.values()]
+          .filter((task) => task.planId === planId)
+          .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.taskId.localeCompare(right.taskId)),
+      listByNode: (nodeId) =>
+        [...this.state.generationTasks.values()]
+          .filter((task) => task.nodeId === nodeId)
+          .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.taskId.localeCompare(right.taskId)),
+      listByPhenotype: (phenotypeId) =>
+        [...this.state.generationTasks.values()]
+          .filter((task) => task.phenotypeId === phenotypeId)
+          .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.taskId.localeCompare(right.taskId))
+    };
     this.reviews = {
       create: (review) => this.state.reviews.set(review.reviewRecordId, review),
       get: (reviewRecordId) => this.state.reviews.get(reviewRecordId),
@@ -572,6 +620,8 @@ function createState(): MemoryState {
     externalLibraryMappings: new Map(),
     libraryRoutingPolicies: new Map(),
     generationJobs: new Map(),
+    generationPlans: new Map(),
+    generationTasks: new Map(),
     reviews: new Map(),
     impacts: new Map(),
     changeSets: new Map(),
@@ -614,6 +664,8 @@ function cloneState(state: MemoryState): MemoryState {
     externalLibraryMappings: new Map(state.externalLibraryMappings),
     libraryRoutingPolicies: new Map(state.libraryRoutingPolicies),
     generationJobs: new Map(state.generationJobs),
+    generationPlans: new Map(state.generationPlans),
+    generationTasks: new Map(state.generationTasks),
     reviews: new Map(state.reviews),
     impacts: new Map(state.impacts),
     changeSets: new Map(state.changeSets),
@@ -648,6 +700,8 @@ function summarizeMemoryGraphReset(state: MemoryState, graphId: string): GraphRe
     phenotypeVersionAssets: ids.phenotypeVersionAssetLinks,
     assets: ids.assetIds.size,
     generationJobs: ids.generationJobIds.size,
+    generationPlans: ids.generationPlanIds.size,
+    generationTasks: ids.generationTaskIds.size,
     outputReferences: ids.outputReferenceIds.size,
     reviewRecords: ids.reviewRecordIds.size,
     impactRecords: ids.impactRecordIds.size,
@@ -668,6 +722,8 @@ function applyMemoryGraphReset(state: MemoryState, graphId: string) {
   for (const id of ids.changeSetIds) state.changeSets.delete(id);
   for (const id of ids.assetIds) state.assets.delete(id);
   for (const id of ids.outputReferenceIds) state.outputReferences.delete(id);
+  for (const id of ids.generationTaskIds) state.generationTasks.delete(id);
+  for (const id of ids.generationPlanIds) state.generationPlans.delete(id);
   for (const id of ids.generationJobIds) state.generationJobs.delete(id);
   for (const id of ids.reviewRecordIds) state.reviews.delete(id);
   for (const id of ids.impactRecordIds) state.impacts.delete(id);
@@ -725,6 +781,12 @@ function collectMemoryGraphResetIds(state: MemoryState, graphId: string) {
     [...state.phenotypeCompileArtifacts.values()].filter((artifact) => artifact.graphId === graphId).map((artifact) => artifact.artifactId)
   );
   const generationJobIds = new Set([...state.generationJobs.values()].filter((job) => job.graphId === graphId).map((job) => job.generationJobId));
+  const generationPlanIds = new Set(
+    [...state.generationPlans.values()]
+      .filter((plan) => plan.graphId === graphId || (plan.scopeType === "graph" && plan.scopeId === graphId))
+      .map((plan) => plan.planId)
+  );
+  const generationTaskIds = new Set([...state.generationTasks.values()].filter((task) => task.graphId === graphId).map((task) => task.taskId));
   const outputReferenceIds = new Set(
     [...state.outputReferences.values()].filter((reference) => reference.graphId === graphId).map((reference) => reference.outputReferenceId)
   );
@@ -746,7 +808,9 @@ function collectMemoryGraphResetIds(state: MemoryState, graphId: string) {
     ...entityArtifactIds,
     ...speciesArtifactIds,
     ...phenotypeArtifactIds,
-    ...generationJobIds
+    ...generationJobIds,
+    ...generationPlanIds,
+    ...generationTaskIds
   ]);
   const assetIds = new Set([...state.assets.values()].filter((asset) => deletedObjectIds.has(asset.linkedObjectId)).map((asset) => asset.assetId));
   const contextAttachmentIds = new Set(
@@ -779,6 +843,8 @@ function collectMemoryGraphResetIds(state: MemoryState, graphId: string) {
     phenotypeVersionAssetLinks,
     assetIds,
     generationJobIds,
+    generationPlanIds,
+    generationTaskIds,
     outputReferenceIds,
     reviewRecordIds,
     impactRecordIds,

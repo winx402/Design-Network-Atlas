@@ -4,6 +4,7 @@ import {
   getSelectedVersion,
   loadWorkbenchPhenotypes,
   loadWorkbenchPhenotypesForApp,
+  loadWorkbenchSnapshot,
   samplePhenotypes
 } from "../src/workbench-data";
 
@@ -59,6 +60,46 @@ describe("Phase 9 asset workbench state model", () => {
     expect(phenotypes[0].id).toBe("ph-api");
   });
 
+  test("loads read-only generation planning snapshot data from the local HTTP API", async () => {
+    const snapshot = await loadWorkbenchSnapshot({
+      baseUrl: "http://dna.local",
+      graphId: "graph-ui",
+      fetcher: async () =>
+        new Response(
+          JSON.stringify({
+            phenotypes: [],
+            generationPlans: [
+              {
+                planId: "plan-ui",
+                graphId: "graph-ui",
+                scopeType: "graph",
+                scopeId: "graph-ui",
+                priority: 1,
+                description: "UI pass",
+                status: "expanded",
+                taskCount: 2
+              }
+            ],
+            generationTasks: [
+              {
+                taskId: "task-ui",
+                graphId: "graph-ui",
+                phenotypeType: "icon",
+                taskBrief: "warning icon",
+                priority: 1,
+                status: "blocked",
+                blockingReason: "waiting for review",
+                links: { generationJobIds: [], phenotypeVersionIds: [] }
+              }
+            ]
+          })
+        )
+    });
+
+    expect(snapshot.generationPlans[0]).toMatchObject({ planId: "plan-ui", taskCount: 2 });
+    expect(snapshot.generationTasks[0]).toMatchObject({ taskId: "task-ui", blockingReason: "waiting for review" });
+  });
+
   test("uses API data by default and demo fixtures only when explicitly requested", async () => {
     const apiResult = await loadWorkbenchPhenotypesForApp({
       baseUrl: "http://dna.local",
@@ -91,6 +132,7 @@ describe("Phase 9 asset workbench state model", () => {
 
     expect(apiResult.status).toBe("ready");
     expect(apiResult.phenotypes.map((phenotype) => phenotype.id)).toEqual(["ph-live"]);
+    if (apiResult.status === "ready") expect(apiResult.generationTasks).toEqual([]);
     expect(demoResult.status).toBe("ready");
     expect(demoResult.phenotypes).toBe(samplePhenotypes);
   });

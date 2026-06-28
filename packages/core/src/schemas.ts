@@ -26,6 +26,27 @@ export const PhenotypeVersionStatusSchema = z.enum([
   "superseded",
   "archived"
 ]);
+export const PhenotypeGenerationPlanStatusSchema = z.enum([
+  "draft",
+  "ready",
+  "expanded",
+  "in-progress",
+  "completed",
+  "paused",
+  "discarded"
+]);
+export const PhenotypeGenerationTaskStatusSchema = z.enum([
+  "planned",
+  "ready",
+  "blocked",
+  "running",
+  "generated",
+  "completed",
+  "cancelled",
+  "failed"
+]);
+export const PhenotypeGenerationScopeTypeSchema = z.enum(["graph", "species-group", "species-node", "phenotype"]);
+export const GenerationVersionBindingModeSchema = z.enum(["latest-at-execution", "pinned"]);
 export const AssetStatusSchema = z.enum(["active", "pending", "rejected", "deleted", "archived"]);
 export const AssetTypeSchema = z.enum(["image", "video", "svg", "pdf", "prompt", "text", "model-output", "other"]);
 export const StorageTypeSchema = z.enum([
@@ -687,6 +708,83 @@ export const PhenotypeVersionSchema = z.object({
   createdAt: IsoDateSchema
 });
 
+export const GenerationVersionBindingSchema = z
+  .object({
+    mode: GenerationVersionBindingModeSchema.default("latest-at-execution"),
+    nodeVersionId: z.string().min(1).optional(),
+    speciesCompileArtifactId: z.string().min(1).optional(),
+    phenotypeCompileArtifactId: z.string().min(1).optional(),
+    replayHistorical: z.boolean().default(false)
+  })
+  .superRefine((binding, ctx) => {
+    if (
+      binding.mode === "pinned" &&
+      !binding.nodeVersionId &&
+      !binding.speciesCompileArtifactId &&
+      !binding.phenotypeCompileArtifactId
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["mode"],
+        message: "pinned versionBinding requires nodeVersionId, speciesCompileArtifactId, or phenotypeCompileArtifactId"
+      });
+    }
+  });
+
+export const PhenotypeGenerationPlanSchema = z.object({
+  planId: z.string().min(1),
+  scopeType: PhenotypeGenerationScopeTypeSchema,
+  scopeId: z.string().min(1),
+  graphId: z.string().min(1).optional(),
+  priority: z.number().int(),
+  description: z.string().min(1),
+  status: PhenotypeGenerationPlanStatusSchema,
+  phenotypeType: z.string().min(1).optional(),
+  taskBrief: z.string().optional(),
+  modelPreference: z.string().optional(),
+  providerPreference: z.string().optional(),
+  toolPreference: z.string().optional(),
+  requirements: JsonRecordSchema,
+  llmInstructions: z.string().optional(),
+  operatorNotes: z.string().optional(),
+  versionBinding: GenerationVersionBindingSchema.default({ mode: "latest-at-execution" }),
+  createdBy: z.string().optional(),
+  tags: z.array(z.string()).default([]),
+  metadata: JsonRecordSchema,
+  extensions: JsonRecordSchema,
+  createdAt: IsoDateSchema,
+  updatedAt: IsoDateSchema
+});
+
+export const PhenotypeGenerationTaskSchema = z.object({
+  taskId: z.string().min(1),
+  graphId: z.string().min(1),
+  phenotypeType: z.string().min(1),
+  taskBrief: z.string().min(1),
+  priority: z.number().int(),
+  status: PhenotypeGenerationTaskStatusSchema,
+  versionBinding: GenerationVersionBindingSchema.default({ mode: "latest-at-execution" }),
+  planId: z.string().min(1).optional(),
+  nodeId: z.string().min(1).optional(),
+  phenotypeId: z.string().min(1).optional(),
+  speciesCompileArtifactId: z.string().min(1).optional(),
+  phenotypeCompileArtifactId: z.string().min(1).optional(),
+  generationJobIds: z.array(z.string().min(1)).default([]),
+  phenotypeVersionIds: z.array(z.string().min(1)).default([]),
+  modelPreference: z.string().optional(),
+  providerPreference: z.string().optional(),
+  toolPreference: z.string().optional(),
+  requirements: JsonRecordSchema,
+  llmInstructions: z.string().optional(),
+  operatorNotes: z.string().optional(),
+  blockingReason: z.string().optional(),
+  tags: z.array(z.string()).default([]),
+  metadata: JsonRecordSchema,
+  extensions: JsonRecordSchema,
+  createdAt: IsoDateSchema,
+  updatedAt: IsoDateSchema
+});
+
 export const CompileScopeSchema = z.object({
   includeDirectAttachments: z.boolean().default(true),
   includeInheritedContext: z.boolean().default(true),
@@ -1163,6 +1261,9 @@ export type AssetType = z.infer<typeof AssetTypeSchema>;
 export type PhenotypeOutputPlan = z.infer<typeof PhenotypeOutputPlanSchema>;
 export type Phenotype = z.infer<typeof PhenotypeSchema>;
 export type PhenotypeVersion = z.infer<typeof PhenotypeVersionSchema>;
+export type GenerationVersionBinding = z.infer<typeof GenerationVersionBindingSchema>;
+export type PhenotypeGenerationPlan = z.infer<typeof PhenotypeGenerationPlanSchema>;
+export type PhenotypeGenerationTask = z.infer<typeof PhenotypeGenerationTaskSchema>;
 export type CompileScope = z.infer<typeof CompileScopeSchema>;
 export type CompileMode = z.infer<typeof CompileModeSchema>;
 export type CompileFrameLevel = z.infer<typeof CompileFrameLevelSchema>;

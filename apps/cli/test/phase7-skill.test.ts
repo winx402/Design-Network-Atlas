@@ -109,4 +109,29 @@ describe("Phase 7 Codex scenario skills", () => {
     expect(content).not.toMatch(/\bsqlite3\b|better-sqlite3|INSERT INTO|UPDATE\s+\w+|direct SQLite/i);
     expect(content).not.toMatch(/OPENAI_API_KEY\s*=|sk-(?:proj-)?[A-Za-z0-9_-]{16,}|password\s*=|Bearer\s+[A-Za-z0-9._-]+/i);
   });
+
+  test("phenotype generation skill covers generation planning without becoming CLI help", () => {
+    const content = readSkill("dna-phenotype-generation");
+
+    expectFrontmatter(content, "dna-phenotype-generation");
+    for (const phrase of [
+      "PhenotypeGenerationPlan",
+      "PhenotypeGenerationTask",
+      "planning gate",
+      "planningMode",
+      "planOrTaskProposal",
+      "latest-at-execution",
+      "versionBinding",
+      "historical replay",
+      "llmInstructions",
+      "operatorNotes",
+      "GenerationJob.inputSnapshot",
+      "provider credentials"
+    ]) {
+      expect(content).toContain(phrase);
+    }
+    expect(content).not.toMatch(/```(?:bash|sh|shell|sql)[\s\S]*```/i);
+    expect(content).not.toMatch(/\bsqlite3\b|better-sqlite3|INSERT INTO|UPDATE\s+\w+|direct SQLite/i);
+    expect(content).not.toMatch(/OPENAI_API_KEY\s*=|sk-(?:proj-)?[A-Za-z0-9_-]{16,}|password\s*=|Bearer\s+[A-Za-z0-9._-]+/i);
+  });
 });

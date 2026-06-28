@@ -49,6 +49,7 @@
 | Phase 15 | HTTP API + sync + provider baseline | API 可读本地数据，网页默认关闭，routing fallback/metadata 生效，generation jobs 可导入导出 |
 | Phase 16 | change-set/proposal review CLI E2E | preview change-set 可 list/show/review/apply/discard；proposal 可批量导入建模草案；export profile 可区分 full、review-current 和 proposal-review |
 | Phase 24 | modeling intake quality + facet closure + planned phenotype CLI E2E | `context create --version` 不被 root version 截获；facet definition/schema/assignment 有 service/change-set 写入路径；`dna.modeling-batch.v1` 支持 facets 与 `phenotypePlans`；import report 紧凑且显式 review stage；`modeling check` 对 batch/graph/proposal 输出稳定 findings |
+| Phase 26 | generation planning orchestration | `PhenotypeGenerationPlan`/`PhenotypeGenerationTask` schema、service expansion、CLI preview/apply、task-linked generation、export/import、read-only API/workbench 和 secret redaction |
 
 ## 4. 关键测试数据
 
@@ -149,7 +150,7 @@
 - 不保留浅层 `dna` 路由/CLI 说明 skill；CLI 命令说明由 `dna --help` 和子命令 help 承担。
 - `dna-graph-modeling` 能把新场景映射到 SpeciesNode、DesignRelationship、facets、Phenotype、phenotype library 和生效策略。
 - `dna-graph-editing` 能对已有图谱变更输出合理性、影响分析、风险等级、outdated 风险、替代方案和推荐写入路径。
-- `dna-phenotype-generation` 是正式 MVP 场景 skill，覆盖 missing compile artifact、blocking open questions、generationPlan、registrationPlan 和 writeStrategy。
+- `dna-phenotype-generation` 是正式 MVP 场景 skill，覆盖 missing compile artifact、blocking open questions、generationPlan、planningMode、planOrTaskProposal、versionBinding、registrationPlan 和 writeStrategy。
 - Layered compile golden tests 覆盖 atlas、graph、species-group、species-node、phenotype frame 顺序，dependency vector，staleness/current/historical 判断，decision request/patch replay，以及 compile feedback 不改写上游 graph/context/facet/template facts。
 - Skill 不建议保存 provider credentials、完整私密链接或 raw Agent host responses。
 - Skill 不把未经确认的 LLM 推断写入正式图谱，也不直接写数据库内部结构、导出目录或外部素材库。
@@ -217,13 +218,14 @@
 
 - local HTTP API `GET /api/health` 返回版本和 SQLite 状态。
 - local HTTP API 能返回 graph tree 和 workbench generated-result snapshot。
+- local HTTP API 能返回 generation plan/task 只读摘要，workbench snapshot 包含 generationPlans 和 generationTasks。
 - HTTP web page access 默认关闭，访问 `/` 返回 404。
 - 显式开启 `webEnabled` 或 `dna serve --web` 后才返回只读 DNA workbench HTML 页面。
 - `provider run-mock` 能生成 sanitized generation job。
 - generic HTTP provider 通过注入 fetcher 调用外部 endpoint，runtime headers 不进入 job。
 - `sync export/import` 能重放 graph、generation job 和相关引用。
 - `dna.project.json` manifest 包含 projectVersion、exchangeVersion 和 capabilities；不支持的 exchangeVersion 必须明确失败。
-- `sync export/import` 能重放 facets、contexts、atlases、groups、group memberships/relations、entity/species/phenotype compile artifacts、dependency vectors、generation jobs、output references、reviews、impacts 和 change-sets。
+- `sync export/import` 能重放 facets、contexts、atlases、groups、group memberships/relations、entity/species/phenotype compile artifacts、dependency vectors、generation plans、generation tasks、generation jobs、output references、reviews、impacts 和 change-sets。
 - `library bind-graph` 后导出的 `library.json.graphIds` 与 binding 保持一致。
 - 旧库已经存在 binding 但 `library.graphIds` 为空时，重新执行 SQLite migration 后会自动回填，并且导出的 `library.json.graphIds` 不为空。
 

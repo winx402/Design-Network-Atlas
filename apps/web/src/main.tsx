@@ -5,6 +5,8 @@ import {
   filterPhenotypes,
   getSelectedVersion,
   loadWorkbenchPhenotypesForApp,
+  WorkbenchGenerationPlan,
+  WorkbenchGenerationTask,
   WorkbenchPhenotype,
   WorkbenchVersion,
   WorkbenchVersionStatus,
@@ -22,7 +24,12 @@ const statusOptions: Array<WorkbenchVersionStatus | "all"> = [
 ];
 
 function AssetWorkbench() {
-  const [loadState, setLoadState] = useState<WorkbenchAppLoadState>({ status: "loading", phenotypes: [] });
+  const [loadState, setLoadState] = useState<WorkbenchAppLoadState>({
+    status: "loading",
+    phenotypes: [],
+    generationPlans: [],
+    generationTasks: []
+  });
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<WorkbenchVersionStatus | "all">("all");
   const [tag, setTag] = useState<string | "all">("all");
@@ -40,6 +47,7 @@ function AssetWorkbench() {
   const selectedVersion = selectedPhenotype ? getSelectedVersion(selectedPhenotype, selectedVersionId) : undefined;
   const pendingCount = phenotypes.filter((phenotype) => getSelectedVersion(phenotype)?.status === "pending-confirmation").length;
   const outdatedCount = phenotypes.filter((phenotype) => phenotype.outdated).length;
+  const openTaskCount = loadState.generationTasks.filter((task) => task.status !== "completed" && task.status !== "cancelled").length;
 
   useEffect(() => {
     let cancelled = false;
@@ -72,6 +80,7 @@ function AssetWorkbench() {
           <Metric label="Phenotypes" value={phenotypes.length} />
           <Metric label="Pending" value={pendingCount} />
           <Metric label="Outdated" value={outdatedCount} />
+          <Metric label="Tasks" value={openTaskCount} />
         </dl>
       </header>
 
@@ -119,6 +128,8 @@ function AssetWorkbench() {
           <span>Outdated only</span>
         </label>
       </section>
+
+      <PlanningStrip plans={loadState.generationPlans} tasks={loadState.generationTasks} />
 
       <section className="workspace" aria-label="Asset workbench">
         <aside className="phenotype-list" aria-label="Phenotypes">
@@ -169,6 +180,50 @@ function AssetWorkbench() {
         )}
       </section>
     </main>
+  );
+}
+
+function PlanningStrip(props: { plans: WorkbenchGenerationPlan[]; tasks: WorkbenchGenerationTask[] }) {
+  const visibleTasks = props.tasks.slice(0, 3);
+  const visiblePlans = props.plans.slice(0, 2);
+  return (
+    <section className="planning-strip" aria-label="Generation planning">
+      <div>
+        <h3>Generation Plans</h3>
+        {visiblePlans.length ? (
+          visiblePlans.map((plan) => (
+            <p key={plan.planId}>
+              <strong>{plan.planId}</strong>
+              <span>{plan.status} · {plan.scopeType}:{plan.scopeId} · {plan.taskCount} tasks</span>
+            </p>
+          ))
+        ) : (
+          <p>
+            <strong>No plans</strong>
+            <span>0 tasks</span>
+          </p>
+        )}
+      </div>
+      <div>
+        <h3>Generation Tasks</h3>
+        {visibleTasks.length ? (
+          visibleTasks.map((task) => (
+            <p key={task.taskId}>
+              <strong>{task.taskId}</strong>
+              <span>
+                {task.status} · {task.phenotypeType}
+                {task.blockingReason ? ` · ${task.blockingReason}` : ""}
+              </span>
+            </p>
+          ))
+        ) : (
+          <p>
+            <strong>No tasks</strong>
+            <span>0 linked jobs</span>
+          </p>
+        )}
+      </div>
+    </section>
   );
 }
 

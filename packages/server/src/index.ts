@@ -80,7 +80,13 @@ export function createDnaHttpHandler(store: SqliteDnaStore, options: DnaHttpHand
       );
     }
     if (url.pathname === "/api/workbench/phenotypes") {
-      return jsonResponse({ phenotypes: createWorkbenchPhenotypes(store, url.searchParams.get("graphId") ?? undefined) });
+      return jsonResponse(createWorkbenchSnapshot(store, url.searchParams.get("graphId") ?? undefined));
+    }
+    if (url.pathname === "/api/generation-plans") {
+      return jsonResponse({ plans: createGenerationPlanSummaries(store, url.searchParams.get("graphId") ?? undefined) });
+    }
+    if (url.pathname === "/api/generation-tasks") {
+      return jsonResponse({ tasks: createGenerationTaskSummaries(store, url.searchParams.get("graphId") ?? undefined) });
     }
     return jsonResponse({ error: "not found" }, 404);
   };
@@ -183,6 +189,14 @@ function isDurableWrite(options: WriteOptions) {
   return options.apply === true || options.mode === "draft-write" || options.mode === "changeset-apply";
 }
 
+function createWorkbenchSnapshot(store: SqliteDnaStore, graphId: string | undefined) {
+  return {
+    phenotypes: createWorkbenchPhenotypes(store, graphId),
+    generationPlans: createGenerationPlanSummaries(store, graphId),
+    generationTasks: createGenerationTaskSummaries(store, graphId)
+  };
+}
+
 function createWorkbenchPhenotypes(store: SqliteDnaStore, graphId: string | undefined) {
   const graphs = graphId ? [store.graphs.get(graphId)].filter((graph): graph is Graph => Boolean(graph)) : store.graphs.list();
   return graphs.flatMap((graph) =>
@@ -231,6 +245,51 @@ function createWorkbenchPhenotypes(store: SqliteDnaStore, graphId: string | unde
       };
     })
   );
+}
+
+function createGenerationPlanSummaries(store: SqliteDnaStore, graphId: string | undefined) {
+  const plans = graphId ? store.generationPlans.listByGraph(graphId) : store.generationPlans.list();
+  return plans.map((plan) => ({
+    planId: plan.planId,
+    graphId: plan.graphId,
+    scopeType: plan.scopeType,
+    scopeId: plan.scopeId,
+    priority: plan.priority,
+    description: plan.description,
+    status: plan.status,
+    versionBinding: plan.versionBinding,
+    toolPreference: plan.toolPreference,
+    taskCount: store.generationTasks.listByPlan(plan.planId).length,
+    createdAt: plan.createdAt,
+    updatedAt: plan.updatedAt
+  }));
+}
+
+function createGenerationTaskSummaries(store: SqliteDnaStore, graphId: string | undefined) {
+  const tasks = graphId ? store.generationTasks.listByGraph(graphId) : store.generationTasks.list();
+  return tasks.map((task) => ({
+    taskId: task.taskId,
+    planId: task.planId,
+    graphId: task.graphId,
+    nodeId: task.nodeId,
+    phenotypeId: task.phenotypeId,
+    phenotypeType: task.phenotypeType,
+    taskBrief: task.taskBrief,
+    priority: task.priority,
+    status: task.status,
+    blockingReason: task.blockingReason,
+    versionBinding: task.versionBinding,
+    toolPreference: task.toolPreference,
+    links: {
+      planId: task.planId,
+      speciesCompileArtifactId: task.speciesCompileArtifactId,
+      phenotypeCompileArtifactId: task.phenotypeCompileArtifactId,
+      generationJobIds: task.generationJobIds,
+      phenotypeVersionIds: task.phenotypeVersionIds
+    },
+    createdAt: task.createdAt,
+    updatedAt: task.updatedAt
+  }));
 }
 
 function jsonResponse(value: unknown, status = 200) {

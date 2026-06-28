@@ -13,7 +13,12 @@ import {
   prepareEntityCompileArtifact,
   preparePhenotypeCompileArtifact,
   preparePhenotypeGeneration,
+  preparePhenotypeGenerationForTask,
   prepareSpeciesCompileArtifact,
+  createGenerationPlan,
+  createGenerationTask,
+  expandGenerationPlan,
+  persistPhenotypeGeneration,
   type ApplicationImpactSummary
 } from "@dna/application";
 import {
@@ -39,6 +44,9 @@ import {
   OutputReferenceRoleSchema,
   OutputReferenceTypeSchema,
   PROJECT_VERSION,
+  type GenerationVersionBinding,
+  type PhenotypeGenerationPlan,
+  type PhenotypeGenerationTask,
   type ModelingQualityReport,
   resolveLibraryRoutingPolicy,
   runGenerationProvider,
@@ -269,6 +277,106 @@ function parseOutputFormat(value: string | undefined): "text" | "json" | undefin
   if (value === undefined) return undefined;
   if (value === "text" || value === "json") return value;
   throw new Error(`unknown output format: ${value}`);
+}
+
+function parseVersionBinding(options: {
+  versionBinding?: string;
+  nodeVersion?: string;
+  speciesArtifact?: string;
+  phenotypeArtifact?: string;
+  replayHistorical?: boolean;
+}): GenerationVersionBinding {
+  const hasPinnedInput = Boolean(options.nodeVersion || options.speciesArtifact || options.phenotypeArtifact);
+  const mode = options.versionBinding ?? (hasPinnedInput ? "pinned" : "latest-at-execution");
+  if (mode !== "latest-at-execution" && mode !== "pinned") throw new Error(`unknown version binding mode: ${mode}`);
+  return mode === "latest-at-execution"
+    ? { mode, replayHistorical: false }
+    : {
+        mode,
+        nodeVersionId: options.nodeVersion,
+        speciesCompileArtifactId: options.speciesArtifact,
+        phenotypeCompileArtifactId: options.phenotypeArtifact,
+        replayHistorical: Boolean(options.replayHistorical)
+      };
+}
+
+function printJsonOrText(format: "text" | "json" | undefined, jsonValue: unknown, textValue: string) {
+  if (format === "json") console.log(JSON.stringify(jsonValue, null, 2));
+  else console.log(textValue);
+}
+
+function formatGenerationPlan(plan: PhenotypeGenerationPlan, taskCount?: number) {
+  const lines = [
+    `Generation plan: ${plan.planId}`,
+    `Status: ${plan.status}`,
+    `Scope: ${plan.scopeType} ${plan.scopeId}`,
+    `Graph: ${plan.graphId ?? "n/a"}`,
+    `Priority: ${plan.priority}`,
+    `Description: ${plan.description}`,
+    `Version binding: ${plan.versionBinding.mode}`
+  ];
+  if (plan.toolPreference) lines.push(`Tool preference: ${plan.toolPreference}`);
+  if (taskCount !== undefined) lines.push(`Tasks: ${taskCount}`);
+  return `${lines.join("\n")}\n`;
+}
+
+function formatGenerationTask(task: PhenotypeGenerationTask) {
+  const lines = [
+    `Generation task: ${task.taskId}`,
+    `Status: ${task.status}`,
+    `Graph: ${task.graphId}`,
+    `Plan: ${task.planId ?? "none"}`,
+    `Node: ${task.nodeId ?? "none"}`,
+    `Phenotype: ${task.phenotypeId ?? "none"}`,
+    `Type: ${task.phenotypeType}`,
+    `Priority: ${task.priority}`,
+    `Version binding: ${task.versionBinding.mode}`,
+    `Brief: ${task.taskBrief}`,
+    `Species artifact: ${task.speciesCompileArtifactId ?? "none"}`,
+    `Phenotype artifact: ${task.phenotypeCompileArtifactId ?? "none"}`,
+    `Generation jobs: ${task.generationJobIds.length ? task.generationJobIds.join(", ") : "none"}`,
+    `Phenotype versions: ${task.phenotypeVersionIds.length ? task.phenotypeVersionIds.join(", ") : "none"}`
+  ];
+  if (task.blockingReason) lines.push(`Blocked: ${task.blockingReason}`);
+  return `${lines.join("\n")}\n`;
+}
+
+function formatGenerationExpansion(result: {
+  persisted: boolean;
+  createdTasks: PhenotypeGenerationTask[];
+  skippedExistingTaskIds: string[];
+  warnings: string[];
+}) {
+  const lines = [
+    result.persisted ? "Created generation tasks" : "Preview generation tasks",
+    `planned: ${result.createdTasks.length + result.skippedExistingTaskIds.length}`,
+    `created: ${result.createdTasks.length}`,
+    `skipped-existing: ${result.skippedExistingTaskIds.length}`,
+    "warnings:",
+    ...(result.warnings.length ? result.warnings.map((warning) => `  - ${warning}`) : ["  - none"])
+  ];
+  if (!result.persisted) lines.push("Re-run with --apply or --yes to persist tasks.");
+  return `${lines.join("\n")}\n`;
+}
+
+function generationResponse(prepared: {
+  artifacts: { species: unknown; phenotype: unknown };
+  speciesArtifact: unknown;
+  phenotypeArtifact: unknown;
+  phenotype: unknown;
+  phenotypeVersion: unknown;
+  job: unknown;
+  prompt: string;
+}) {
+  return {
+    artifacts: prepared.artifacts,
+    speciesArtifact: prepared.speciesArtifact,
+    phenotypeArtifact: prepared.phenotypeArtifact,
+    phenotype: prepared.phenotype,
+    phenotypeVersion: prepared.phenotypeVersion,
+    job: prepared.job,
+    prompt: prepared.prompt
+  };
 }
 
 function compileArtifactLabel(artifact: { compileTarget: string; targetLevel?: string }) {
@@ -1516,14 +1624,271 @@ compilePhenotypeCommand
     store.close();
   });
 
+const generationPlan = program.command("generation-plan").description("Plan phenotype generation work across graph, group, node, or phenotype scopes");
+generationPlan
+  .command("create")
+  .requiredOption("--id <planId>", "generation plan id")
+  .requiredOption("--scope <scopeType>", "scope type: graph|species-group|species-node|phenotype")
+  .requiredOption("--scope-id <scopeId>", "scope object id")
+  .requiredOption("--priority <number>", "numeric priority; lower runs first", parseInteger)
+  .requiredOption("--description <text>", "plan description")
+  .option("--graph <graphId>", "graph id for disambiguation")
+  .option("--type <phenotypeType>", "explicit phenotype type when no planned phenotype exists")
+  .option("--brief <taskBrief>", "explicit task brief when no planned phenotype exists")
+  .option("--model <text>", "model preference")
+  .option("--provider <text>", "provider preference; never store credentials here")
+  .option("--tool <text>", "tool preference")
+  .option("--llm-instructions <text>", "LLM-readable non-sensitive instructions")
+  .option("--operator-notes <text>", "operator notes")
+  .option("--requirement <key=value>", "requirement metadata", collect, [])
+  .option("--metadata <key=value>", "metadata", collect, [])
+  .option("--extension <key=value>", "extension metadata", collect, [])
+  .option("--tag <tag>", "tag", collect, [])
+  .option("--version-binding <mode>", "version binding: latest-at-execution|pinned")
+  .option("--node-version <nodeVersionId>", "pinned node version id")
+  .option("--species-artifact <artifactId>", "pinned species compile artifact id")
+  .option("--phenotype-artifact <artifactId>", "pinned phenotype compile artifact id")
+  .option("--replay-historical", "allow historical replay for pinned artifacts")
+  .option("--apply", "persist the generation plan")
+  .option("--format <format>", "output format: text|json")
+  .action((options, command) => {
+    const store = openStore(command);
+    const apply = Boolean(options.apply || shouldApply(command));
+    const result = createGenerationPlan(
+      store,
+      {
+        planId: options.id,
+        scopeType: options.scope,
+        scopeId: options.scopeId,
+        graphId: options.graph,
+        priority: options.priority,
+        description: options.description,
+        phenotypeType: options.type,
+        taskBrief: options.brief,
+        modelPreference: options.model,
+        providerPreference: options.provider,
+        toolPreference: options.tool,
+        llmInstructions: options.llmInstructions,
+        operatorNotes: options.operatorNotes,
+        requirements: parseKeyValue(options.requirement),
+        metadata: parseKeyValue(options.metadata),
+        extensions: parseKeyValue(options.extension),
+        tags: options.tag,
+        versionBinding: parseVersionBinding(options)
+      },
+      { apply }
+    );
+    const format = parseOutputFormat(options.format);
+    if (format === "json") console.log(JSON.stringify(result, null, 2));
+    else {
+      console.log(`${apply ? "Created generation plan" : "Preview generation plan"}\n${formatGenerationPlan(result.plan)}`);
+      if (!apply) console.log("Re-run with --apply or --yes to persist the generation plan.");
+    }
+    store.close();
+  });
+generationPlan
+  .command("list")
+  .option("--graph <graphId>", "filter by graph id")
+  .option("--format <format>", "output format: text|json")
+  .action((options, command) => {
+    const store = openStore(command);
+    const plans = options.graph ? store.generationPlans.listByGraph(options.graph) : store.generationPlans.list();
+    const rows = plans.map((plan) => ({ ...plan, taskCount: store.generationTasks.listByPlan(plan.planId).length }));
+    if (parseOutputFormat(options.format) === "json") console.log(JSON.stringify(rows, null, 2));
+    else {
+      const lines = ["Generation plans:"];
+      if (!rows.length) lines.push("- none");
+      for (const plan of rows) {
+        lines.push(`- ${plan.planId} [${plan.status}] ${plan.scopeType}:${plan.scopeId} priority=${plan.priority} tasks=${plan.taskCount}`);
+      }
+      console.log(`${lines.join("\n")}\n`);
+    }
+    store.close();
+  });
+generationPlan
+  .command("show")
+  .requiredOption("--id <planId>", "generation plan id")
+  .option("--format <format>", "output format: text|json")
+  .action((options, command) => {
+    const store = openStore(command);
+    const plan = store.generationPlans.get(options.id);
+    if (!plan) {
+      store.close();
+      throw new Error(`generation plan not found: ${options.id}`);
+    }
+    const taskCount = store.generationTasks.listByPlan(plan.planId).length;
+    printJsonOrText(parseOutputFormat(options.format), { ...plan, taskCount }, formatGenerationPlan(plan, taskCount));
+    store.close();
+  });
+generationPlan
+  .command("expand")
+  .requiredOption("--id <planId>", "generation plan id")
+  .option("--priority <number>", "override task priority", parseInteger)
+  .option("--apply", "persist generated tasks")
+  .option("--format <format>", "output format: text|json")
+  .action((options, command) => {
+    const store = openStore(command);
+    const result = expandGenerationPlan(
+      store,
+      {
+        planId: options.id,
+        taskOverrides: options.priority !== undefined ? { priority: options.priority } : undefined
+      },
+      { apply: Boolean(options.apply || shouldApply(command)) }
+    );
+    printJsonOrText(parseOutputFormat(options.format), result, formatGenerationExpansion(result));
+    store.close();
+  });
+
+const generationTask = program.command("generation-task").description("Create, inspect, and run phenotype generation tasks");
+generationTask
+  .command("create")
+  .requiredOption("--id <taskId>", "generation task id")
+  .requiredOption("--graph <graphId>", "graph id")
+  .requiredOption("--type <phenotypeType>", "phenotype type")
+  .requiredOption("--brief <taskBrief>", "task brief")
+  .requiredOption("--priority <number>", "numeric priority; lower runs first", parseInteger)
+  .option("--plan <planId>", "optional generation plan id")
+  .option("--node <nodeId>", "species node id")
+  .option("--phenotype <phenotypeId>", "planned phenotype id")
+  .option("--model <text>", "model preference")
+  .option("--provider <text>", "provider preference; never store credentials here")
+  .option("--tool <text>", "tool preference")
+  .option("--llm-instructions <text>", "LLM-readable non-sensitive instructions")
+  .option("--operator-notes <text>", "operator notes")
+  .option("--requirement <key=value>", "requirement metadata", collect, [])
+  .option("--metadata <key=value>", "metadata", collect, [])
+  .option("--extension <key=value>", "extension metadata", collect, [])
+  .option("--tag <tag>", "tag", collect, [])
+  .option("--version-binding <mode>", "version binding: latest-at-execution|pinned")
+  .option("--node-version <nodeVersionId>", "pinned node version id")
+  .option("--species-artifact <artifactId>", "pinned species compile artifact id")
+  .option("--phenotype-artifact <artifactId>", "pinned phenotype compile artifact id")
+  .option("--replay-historical", "allow historical replay for pinned artifacts")
+  .option("--apply", "persist the generation task")
+  .option("--format <format>", "output format: text|json")
+  .action((options, command) => {
+    const store = openStore(command);
+    const result = createGenerationTask(
+      store,
+      {
+        taskId: options.id,
+        graphId: options.graph,
+        planId: options.plan,
+        nodeId: options.node,
+        phenotypeId: options.phenotype,
+        phenotypeType: options.type,
+        taskBrief: options.brief,
+        priority: options.priority,
+        modelPreference: options.model,
+        providerPreference: options.provider,
+        toolPreference: options.tool,
+        llmInstructions: options.llmInstructions,
+        operatorNotes: options.operatorNotes,
+        requirements: parseKeyValue(options.requirement),
+        metadata: parseKeyValue(options.metadata),
+        extensions: parseKeyValue(options.extension),
+        tags: options.tag,
+        versionBinding: parseVersionBinding(options)
+      },
+      { apply: Boolean(options.apply || shouldApply(command)) }
+    );
+    if (parseOutputFormat(options.format) === "json") console.log(JSON.stringify(result, null, 2));
+    else {
+      console.log(`${result.persisted ? "Created generation task" : "Preview generation task"}\n${formatGenerationTask(result.task)}`);
+      if (!result.persisted) console.log("Re-run with --apply or --yes to persist the generation task.");
+    }
+    store.close();
+  });
+generationTask
+  .command("list")
+  .option("--graph <graphId>", "filter by graph id")
+  .option("--plan <planId>", "filter by generation plan id")
+  .option("--format <format>", "output format: text|json")
+  .action((options, command) => {
+    const store = openStore(command);
+    const tasks = options.plan ? store.generationTasks.listByPlan(options.plan) : options.graph ? store.generationTasks.listByGraph(options.graph) : store.generationTasks.list();
+    if (parseOutputFormat(options.format) === "json") console.log(JSON.stringify(tasks, null, 2));
+    else {
+      const lines = ["Generation tasks:"];
+      if (!tasks.length) lines.push("- none");
+      for (const task of tasks) {
+        lines.push(`- ${task.taskId} [${task.status}] ${task.phenotypeId ?? task.nodeId ?? "unbound"} ${task.phenotypeType} priority=${task.priority}`);
+      }
+      console.log(`${lines.join("\n")}\n`);
+    }
+    store.close();
+  });
+generationTask
+  .command("show")
+  .requiredOption("--id <taskId>", "generation task id")
+  .option("--format <format>", "output format: text|json")
+  .action((options, command) => {
+    const store = openStore(command);
+    const task = store.generationTasks.get(options.id);
+    if (!task) {
+      store.close();
+      throw new Error(`generation task not found: ${options.id}`);
+    }
+    printJsonOrText(parseOutputFormat(options.format), task, formatGenerationTask(task));
+    store.close();
+  });
+generationTask
+  .command("run-mock")
+  .requiredOption("--id <taskId>", "generation task id")
+  .option("--apply", "persist generated artifacts, phenotype version, generation job, and task links")
+  .option("--format <format>", "output format: text|json")
+  .action((options, command) => {
+    const store = openStore(command);
+    const prepared = preparePhenotypeGenerationForTask(store, { taskId: options.id, tool: "mock" });
+    const response = generationResponse(prepared);
+    if (!(options.apply || shouldApply(command))) {
+      store.close();
+      return preview(command, `run generation task ${options.id}`, response);
+    }
+    persistPhenotypeGeneration(store, prepared, { taskId: options.id });
+    printJsonOrText(parseOutputFormat(options.format), response, JSON.stringify(response, null, 2));
+    store.close();
+  });
+generationTask
+  .command("link-result")
+  .requiredOption("--id <taskId>", "generation task id")
+  .option("--job <generationJobId>", "generation job id", collect, [])
+  .option("--version <phenotypeVersionId>", "phenotype version id", collect, [])
+  .option("--species-artifact <artifactId>", "species compile artifact id")
+  .option("--phenotype-artifact <artifactId>", "phenotype compile artifact id")
+  .option("--status <status>", "task status after linking", "generated")
+  .option("--format <format>", "output format: text|json")
+  .action((options, command) => {
+    const store = openStore(command);
+    const task = store.generationTasks.get(options.id);
+    if (!task) {
+      store.close();
+      throw new Error(`generation task not found: ${options.id}`);
+    }
+    const linked = {
+      ...task,
+      status: options.status,
+      speciesCompileArtifactId: options.speciesArtifact ?? task.speciesCompileArtifactId,
+      phenotypeCompileArtifactId: options.phenotypeArtifact ?? task.phenotypeCompileArtifactId,
+      generationJobIds: [...new Set([...task.generationJobIds, ...options.job])],
+      phenotypeVersionIds: [...new Set([...task.phenotypeVersionIds, ...options.version])],
+      updatedAt: new Date().toISOString()
+    };
+    store.generationTasks.update(linked);
+    printJsonOrText(parseOutputFormat(options.format), linked, formatGenerationTask(linked));
+    store.close();
+  });
+
 const phenotype = program.command("phenotype").description("Generate and manage phenotypes");
 phenotype
   .command("generate")
-  .requiredOption("--graph <graphId>", "graph id")
-  .requiredOption("--node <nodeId>", "node id")
-  .requiredOption("--type <phenotypeType>", "phenotype type")
-  .requiredOption("--name <name>", "phenotype name")
-  .requiredOption("--brief <brief>", "task brief")
+  .option("--task <taskId>", "generation task id")
+  .option("--graph <graphId>", "graph id")
+  .option("--node <nodeId>", "node id")
+  .option("--type <phenotypeType>", "phenotype type")
+  .option("--name <name>", "phenotype name")
+  .option("--brief <brief>", "task brief")
   .option("--phenotype-id <phenotypeId>", "existing or explicit phenotype id")
   .option("--species-artifact <artifactId>", "existing species compile artifact id")
   .option("--phenotype-artifact <artifactId>", "existing phenotype compile artifact id")
@@ -1532,36 +1897,32 @@ phenotype
   .option("--apply", "persist generated artifacts, phenotype version, and generation job")
   .action((options, command) => {
     const store = openStore(command);
-    const prepared = preparePhenotypeGeneration(store, {
-      graphId: options.graph,
-      nodeId: options.node,
-      phenotypeType: options.type,
-      name: options.name,
-      taskBrief: options.brief,
-      phenotypeId: options.phenotypeId,
-      speciesArtifactId: options.speciesArtifact,
-      phenotypeArtifactId: options.phenotypeArtifact,
-      replayHistorical: Boolean(options.replayHistorical),
-      tool: options.tool
-    });
+    const prepared = options.task
+      ? preparePhenotypeGenerationForTask(store, { taskId: options.task, tool: options.tool, name: options.name })
+      : preparePhenotypeGeneration(store, {
+          graphId: requiredOption(options.graph, "--graph"),
+          nodeId: requiredOption(options.node, "--node"),
+          phenotypeType: requiredOption(options.type, "--type"),
+          name: requiredOption(options.name, "--name"),
+          taskBrief: requiredOption(options.brief, "--brief"),
+          phenotypeId: options.phenotypeId,
+          speciesArtifactId: options.speciesArtifact,
+          phenotypeArtifactId: options.phenotypeArtifact,
+          replayHistorical: Boolean(options.replayHistorical),
+          tool: options.tool
+        });
     const response = {
-      artifacts: prepared.artifacts,
-      phenotype: prepared.phenotype,
-      phenotypeVersion: prepared.phenotypeVersion,
-      job: prepared.job,
-      prompt: prepared.prompt
+      ...generationResponse(prepared),
+      nextAction:
+        !options.task && prepared.phenotype.status === "planned"
+          ? `Create a generation task to track orchestration for planned phenotype ${prepared.phenotype.phenotypeId}.`
+          : undefined
     };
     if (!options.apply && !shouldApply(command)) {
       store.close();
       return preview(command, `generate phenotype ${prepared.phenotype.phenotypeId}`, response);
     }
-    store.transaction(() => {
-      if (prepared.createdSpeciesArtifact) store.speciesCompileArtifacts.create(prepared.speciesArtifact);
-      if (prepared.createdPhenotypeArtifact) store.phenotypeCompileArtifacts.create(prepared.phenotypeArtifact);
-      if (prepared.createdPhenotype) store.phenotypes.create(prepared.phenotype);
-      store.phenotypeVersions.create(prepared.phenotypeVersion);
-      store.generationJobs.create(prepared.job);
-    });
+    persistPhenotypeGeneration(store, prepared, { taskId: options.task });
     console.log(JSON.stringify(response, null, 2));
     store.close();
   });

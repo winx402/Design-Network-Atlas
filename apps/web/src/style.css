@@ -79,7 +79,7 @@ h3 {
 
 .metrics {
   display: grid;
-  grid-template-columns: repeat(3, minmax(88px, 1fr));
+  grid-template-columns: repeat(4, minmax(88px, 1fr));
   gap: 10px;
   margin: 0;
 }
@@ -143,6 +143,41 @@ h3 {
 .toggle input {
   width: 16px;
   height: 16px;
+}
+
+.planning-strip {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0 0 18px;
+}
+
+.planning-strip > div {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid #d5dde3;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.planning-strip p {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  margin: 0;
+}
+
+.planning-strip strong,
+.planning-strip span {
+  overflow-wrap: anywhere;
+}
+
+.planning-strip span {
+  color: #657888;
+  font-size: 13px;
+  line-height: 1.35;
 }
 
 .system-state {
@@ -443,6 +478,7 @@ pre {
   }
 
   .topbar,
+  .planning-strip,
   .workspace,
   .two-column {
     grid-template-columns: 1fr;
@@ -468,7 +504,8 @@ pre {
   }
 
   .filters,
-  .metrics {
+  .metrics,
+  .planning-strip {
     grid-template-columns: 1fr;
   }
 

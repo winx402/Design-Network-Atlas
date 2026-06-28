@@ -5,16 +5,22 @@ import {
   compilePhenotypeGeneration,
   compileSpeciesSnapshot,
   createDefaultPhenotype,
+  createDefaultPhenotypeGenerationPlan,
+  createDefaultPhenotypeGenerationTask,
   createDefaultPhenotypeVersion,
   createGenerationJob,
   makeId,
+  nowIso,
   type EntityCompileArtifact,
   type ContextAttachment,
   type DesignRelationship,
   type DesignContext,
   type GenerationJob,
+  type GenerationVersionBinding,
   type Graph,
   type Phenotype,
+  type PhenotypeGenerationPlan,
+  type PhenotypeGenerationTask,
   type PhenotypeCompileArtifact,
   type SpeciesNode,
   type PhenotypeVersion,
@@ -36,10 +42,13 @@ import type {
   FacetAssignmentRepository,
   FacetDefinitionRepository,
   FacetSchemaRepository,
+  GenerationJobRepository,
   GraphRepository,
   LineageRepository,
   NodeVersionRepository,
   PhenotypeCompileArtifactRepository,
+  PhenotypeGenerationPlanRepository,
+  PhenotypeGenerationTaskRepository,
   PhenotypeRepository,
   PhenotypeVersionRepository,
   SpeciesCompileArtifactRepository,
@@ -60,7 +69,7 @@ export type ApplicationImpactSummary = {
 export interface SpeciesCompileInputRepositories {
   graphs: Pick<GraphRepository, "get">;
   nodes: Pick<LineageRepository, "get">;
-  nodeVersions: Pick<NodeVersionRepository, "listByNode">;
+  nodeVersions: Pick<NodeVersionRepository, "get" | "listByNode">;
   designRelationships: Pick<DesignRelationshipRepository, "listByGraph">;
   speciesGroups: Pick<SpeciesGroupRepository, "get">;
   speciesGroupMemberships: Pick<SpeciesGroupMembershipRepository, "listByNode">;
@@ -89,6 +98,26 @@ export interface PhenotypeGenerationRepositories extends LayeredCompileRepositor
   phenotypeCompileArtifacts: Pick<PhenotypeCompileArtifactRepository, "get">;
 }
 
+export interface PhenotypeGenerationPersistRepositories extends PhenotypeGenerationRepositories {
+  transaction<T>(fn: () => T): T;
+  phenotypes: Pick<PhenotypeRepository, "get" | "create">;
+  phenotypeVersions: Pick<PhenotypeVersionRepository, "create">;
+  speciesCompileArtifacts: Pick<SpeciesCompileArtifactRepository, "get" | "create">;
+  phenotypeCompileArtifacts: Pick<PhenotypeCompileArtifactRepository, "get" | "create">;
+  generationJobs: Pick<GenerationJobRepository, "create">;
+  generationTasks: Pick<PhenotypeGenerationTaskRepository, "get" | "update">;
+}
+
+export interface GenerationPlanningRepositories extends PhenotypeGenerationRepositories {
+  transaction<T>(fn: () => T): T;
+  nodes: Pick<LineageRepository, "get" | "listByGraph">;
+  phenotypes: Pick<PhenotypeRepository, "get" | "listByGraph">;
+  speciesGroups: Pick<SpeciesGroupRepository, "get">;
+  speciesGroupMemberships: Pick<SpeciesGroupMembershipRepository, "listByGroup" | "listByNode">;
+  generationPlans: PhenotypeGenerationPlanRepository;
+  generationTasks: PhenotypeGenerationTaskRepository;
+}
+
 export interface ImpactRepositories {
   nodes: Pick<LineageRepository, "get" | "listByGraph">;
   designRelationships: Pick<DesignRelationshipRepository, "get" | "listByGraph">;
@@ -102,6 +131,7 @@ export interface ImpactRepositories {
 export interface BuildSpeciesCompileInputOptions {
   graphId: string;
   nodeId: string;
+  nodeVersionId?: string;
 }
 
 export interface PreparePhenotypeGenerationOptions {
@@ -114,6 +144,9 @@ export interface PreparePhenotypeGenerationOptions {
   speciesArtifactId?: string;
   phenotypeArtifactId?: string;
   replayHistorical?: boolean;
+  generationTaskId?: string;
+  generationPlanId?: string;
+  versionBinding?: GenerationVersionBinding;
   tool?: string;
   ids?: {
     speciesArtifactId?: string;
@@ -137,6 +170,7 @@ export interface PrepareSpeciesCompileArtifactOptions {
   artifactId?: string;
   graphId: string;
   nodeId: string;
+  nodeVersionId?: string;
   upstreamArtifacts?: EntityCompileArtifact[];
 }
 
@@ -146,6 +180,7 @@ export interface PreparePhenotypeCompileArtifactOptions {
   nodeId: string;
   phenotypeType: string;
   taskBrief: string;
+  nodeVersionId?: string;
   speciesArtifact?: SpeciesCompileArtifact;
   speciesArtifactId?: string;
 }
@@ -170,7 +205,12 @@ export function buildSpeciesCompileInput(store: SpeciesCompileInputRepositories,
   const graph = store.graphs.get(options.graphId);
   const node = store.nodes.get(options.nodeId);
   if (!graph || !node) throw new Error("graph or node not found");
-  const nodeVersionId = store.nodeVersions.listByNode(options.nodeId).at(-1)?.nodeVersionId ?? `${node.nodeId}@${node.currentVersion}`;
+  const nodeVersions = store.nodeVersions.listByNode(options.nodeId);
+  const pinnedNodeVersion = options.nodeVersionId ? store.nodeVersions.get(options.nodeVersionId) : undefined;
+  if (options.nodeVersionId && (!pinnedNodeVersion || pinnedNodeVersion.graphId !== options.graphId || pinnedNodeVersion.nodeId !== options.nodeId)) {
+    throw new Error(`node version not found for task input: ${options.nodeVersionId}`);
+  }
+  const nodeVersionId = pinnedNodeVersion?.nodeVersionId ?? nodeVersions.at(-1)?.nodeVersionId ?? `${node.nodeId}@${node.currentVersion}`;
   const parentSnapshots = node.parentNodes
     .map((parentNodeId) => {
       const version = store.nodeVersions.listByNode(parentNodeId).at(-1);
@@ -297,7 +337,7 @@ export function prepareSpeciesCompileArtifact(
 ): SpeciesCompileArtifact {
   return compileSpeciesSnapshot({
     artifactId: options.artifactId ?? makeId("sca"),
-    ...buildSpeciesCompileInput(store, { graphId: options.graphId, nodeId: options.nodeId }),
+    ...buildSpeciesCompileInput(store, { graphId: options.graphId, nodeId: options.nodeId, nodeVersionId: options.nodeVersionId }),
     upstreamArtifacts: options.upstreamArtifacts,
     ...compileExtras(store)
   });
@@ -307,11 +347,15 @@ export function preparePhenotypeCompileArtifact(
   store: LayeredCompileRepositories & { speciesCompileArtifacts?: Pick<SpeciesCompileArtifactRepository, "get"> },
   options: PreparePhenotypeCompileArtifactOptions
 ): PhenotypeCompileArtifact {
-  const compileInput = buildSpeciesCompileInput(store, { graphId: options.graphId, nodeId: options.nodeId });
+  const compileInput = buildSpeciesCompileInput(store, {
+    graphId: options.graphId,
+    nodeId: options.nodeId,
+    nodeVersionId: options.nodeVersionId
+  });
   const speciesArtifact =
     options.speciesArtifact ??
     (options.speciesArtifactId && store.speciesCompileArtifacts ? store.speciesCompileArtifacts.get(options.speciesArtifactId) : undefined) ??
-    prepareSpeciesCompileArtifact(store, { graphId: options.graphId, nodeId: options.nodeId });
+    prepareSpeciesCompileArtifact(store, { graphId: options.graphId, nodeId: options.nodeId, nodeVersionId: options.nodeVersionId });
   if (options.speciesArtifactId && speciesArtifact.artifactId !== options.speciesArtifactId) {
     throw new Error(`species compile artifact not found: ${options.speciesArtifactId}`);
   }
@@ -363,7 +407,8 @@ export function preparePhenotypeGeneration(
       speciesArtifact = prepareSpeciesCompileArtifact(store, {
         artifactId: options.ids?.speciesArtifactId ?? makeId("sca"),
         graphId: options.graphId,
-        nodeId: options.nodeId
+        nodeId: options.nodeId,
+        nodeVersionId: options.versionBinding?.nodeVersionId
       });
       createdSpeciesArtifact = true;
     }
@@ -371,6 +416,7 @@ export function preparePhenotypeGeneration(
       artifactId: options.ids?.phenotypeArtifactId ?? makeId("pca"),
       graphId: options.graphId,
       nodeId: options.nodeId,
+      nodeVersionId: options.versionBinding?.nodeVersionId,
       phenotypeType: options.phenotypeType,
       taskBrief: options.taskBrief,
       speciesArtifact
@@ -416,7 +462,10 @@ export function preparePhenotypeGeneration(
       conflictReport: phenotypeArtifact.conflictReport,
       speciesCompileArtifactId: speciesArtifact.artifactId,
       phenotypeCompileArtifactId: phenotypeArtifact.artifactId,
-      jobId: generationJobId
+      jobId: generationJobId,
+      generationTaskId: options.generationTaskId,
+      generationPlanId: options.generationPlanId,
+      versionBinding: options.versionBinding
     },
     generationBrief: options.taskBrief,
     promptSnapshot: phenotypeArtifact.prompt,
@@ -442,7 +491,10 @@ export function preparePhenotypeGeneration(
       phenotypeType: options.phenotypeType,
       compileMode: options.replayHistorical ? "historical-replay" : "current",
       speciesCompileArtifactId: speciesArtifact.artifactId,
-      phenotypeCompileArtifactId: phenotypeArtifact.artifactId
+      phenotypeCompileArtifactId: phenotypeArtifact.artifactId,
+      generationTaskId: options.generationTaskId,
+      generationPlanId: options.generationPlanId,
+      versionBinding: options.versionBinding
     },
     outputSnapshot: {
       prompt: phenotypeArtifact.prompt,
@@ -466,6 +518,266 @@ export function preparePhenotypeGeneration(
     createdPhenotypeArtifact,
     createdPhenotype: !existingPhenotype
   };
+}
+
+export function createGenerationPlan(
+  store: GenerationPlanningRepositories,
+  input: Partial<PhenotypeGenerationPlan> &
+    Pick<PhenotypeGenerationPlan, "planId" | "scopeType" | "scopeId" | "priority" | "description">,
+  options: { apply?: boolean } = {}
+) {
+  if (store.generationPlans.get(input.planId)) throw new Error(`generation plan already exists: ${input.planId}`);
+  const graphId = resolvePlanGraphId(store, input);
+  const plan = createDefaultPhenotypeGenerationPlan({ ...input, graphId });
+  if (!options.apply) return { plan, persisted: false };
+  store.transaction(() => store.generationPlans.create(plan));
+  return { plan, persisted: true };
+}
+
+export function createGenerationTask(
+  store: GenerationPlanningRepositories,
+  input: Partial<PhenotypeGenerationTask> &
+    Pick<PhenotypeGenerationTask, "taskId" | "graphId" | "phenotypeType" | "taskBrief" | "priority">,
+  options: { apply?: boolean } = {}
+) {
+  if (store.generationTasks.get(input.taskId)) throw new Error(`generation task already exists: ${input.taskId}`);
+  const task = normalizeGenerationTaskInput(store, input);
+  if (!options.apply) return { task, persisted: false };
+  store.transaction(() => store.generationTasks.create(task));
+  return { task, persisted: true };
+}
+
+export function expandGenerationPlan(
+  store: GenerationPlanningRepositories,
+  input: { planId: string; taskOverrides?: Partial<PhenotypeGenerationTask> },
+  options: { apply?: boolean } = {}
+) {
+  const plan = store.generationPlans.get(input.planId);
+  if (!plan) throw new Error(`generation plan not found: ${input.planId}`);
+  const warnings: string[] = [];
+  const targets = generationPlanTargets(store, plan);
+  const existing = store.generationTasks.listByPlan(plan.planId);
+  const createdTasks: PhenotypeGenerationTask[] = [];
+  const skippedExistingTaskIds: string[] = [];
+
+  for (const target of targets) {
+    const taskBrief = input.taskOverrides?.taskBrief ?? target.taskBrief;
+    const duplicate = existing.find((task) => task.phenotypeId === target.phenotypeId && task.taskBrief === taskBrief);
+    if (duplicate) {
+      skippedExistingTaskIds.push(duplicate.taskId);
+      continue;
+    }
+    createdTasks.push(
+      createDefaultPhenotypeGenerationTask({
+        taskId: input.taskOverrides?.taskId ?? makeGenerationTaskId(plan.planId, target.phenotypeId ?? target.nodeId ?? target.phenotypeType),
+        graphId: target.graphId,
+        planId: plan.planId,
+        nodeId: target.nodeId,
+        phenotypeId: target.phenotypeId,
+        phenotypeType: input.taskOverrides?.phenotypeType ?? target.phenotypeType,
+        taskBrief,
+        priority: input.taskOverrides?.priority ?? plan.priority,
+        versionBinding: input.taskOverrides?.versionBinding ?? plan.versionBinding,
+        modelPreference: input.taskOverrides?.modelPreference ?? plan.modelPreference,
+        providerPreference: input.taskOverrides?.providerPreference ?? plan.providerPreference,
+        toolPreference: input.taskOverrides?.toolPreference ?? plan.toolPreference,
+        requirements: input.taskOverrides?.requirements ?? plan.requirements,
+        llmInstructions: input.taskOverrides?.llmInstructions ?? plan.llmInstructions,
+        operatorNotes: input.taskOverrides?.operatorNotes ?? plan.operatorNotes,
+        tags: input.taskOverrides?.tags ?? plan.tags,
+        metadata: input.taskOverrides?.metadata ?? plan.metadata,
+        extensions: input.taskOverrides?.extensions ?? plan.extensions
+      })
+    );
+  }
+
+  if (targets.length === 0) {
+    warnings.push(`generation plan ${plan.planId} has no planned phenotype targets`);
+  }
+
+  if (!options.apply) return { plan, createdTasks, skippedExistingTaskIds, warnings, persisted: false };
+  store.transaction(() => {
+    for (const task of createdTasks) store.generationTasks.create(task);
+    if (createdTasks.length > 0 && plan.status !== "expanded") {
+      store.generationPlans.update({ ...plan, status: "expanded", updatedAt: nowIso() });
+    }
+  });
+  return { plan: store.generationPlans.get(plan.planId) ?? plan, createdTasks, skippedExistingTaskIds, warnings, persisted: true };
+}
+
+export function preparePhenotypeGenerationForTask(
+  store: GenerationPlanningRepositories,
+  input: { taskId: string; tool?: string; name?: string }
+): PreparedPhenotypeGeneration {
+  const task = store.generationTasks.get(input.taskId);
+  if (!task) throw new Error(`generation task not found: ${input.taskId}`);
+  if (!task.nodeId && !task.phenotypeId) throw new Error(`generation task ${task.taskId} is missing nodeId or phenotypeId`);
+  const phenotype = task.phenotypeId ? store.phenotypes.get(task.phenotypeId) : undefined;
+  const nodeId = task.nodeId ?? phenotype?.nodeId;
+  if (!nodeId) throw new Error(`generation task ${task.taskId} cannot resolve nodeId`);
+  const planId = task.planId;
+  const speciesArtifactId = task.versionBinding.mode === "pinned" ? task.versionBinding.speciesCompileArtifactId : undefined;
+  const phenotypeArtifactId = task.versionBinding.mode === "pinned" ? task.versionBinding.phenotypeCompileArtifactId : undefined;
+  return preparePhenotypeGeneration(store, {
+    graphId: task.graphId,
+    nodeId,
+    phenotypeId: task.phenotypeId,
+    phenotypeType: task.phenotypeType,
+    name: input.name ?? phenotype?.name ?? task.phenotypeType,
+    taskBrief: task.taskBrief,
+    speciesArtifactId,
+    phenotypeArtifactId,
+    replayHistorical: task.versionBinding.replayHistorical,
+    generationTaskId: task.taskId,
+    generationPlanId: planId,
+    versionBinding: task.versionBinding,
+    tool: input.tool ?? task.toolPreference ?? "manual"
+  });
+}
+
+export function persistPhenotypeGeneration(
+  store: PhenotypeGenerationPersistRepositories,
+  prepared: PreparedPhenotypeGeneration,
+  options: { taskId?: string } = {}
+) {
+  return store.transaction(() => {
+    if (prepared.createdSpeciesArtifact && !store.speciesCompileArtifacts.get(prepared.speciesArtifact.artifactId)) {
+      store.speciesCompileArtifacts.create(prepared.speciesArtifact);
+    }
+    if (prepared.createdPhenotypeArtifact && !store.phenotypeCompileArtifacts.get(prepared.phenotypeArtifact.artifactId)) {
+      store.phenotypeCompileArtifacts.create(prepared.phenotypeArtifact);
+    }
+    if (prepared.createdPhenotype && !store.phenotypes.get(prepared.phenotype.phenotypeId)) {
+      store.phenotypes.create(prepared.phenotype);
+    }
+    store.phenotypeVersions.create(prepared.phenotypeVersion);
+    store.generationJobs.create(prepared.job);
+    if (options.taskId) {
+      const task = store.generationTasks.get(options.taskId);
+      if (!task) throw new Error(`generation task not found: ${options.taskId}`);
+      store.generationTasks.update({
+        ...task,
+        status: "generated",
+        speciesCompileArtifactId: prepared.speciesArtifact.artifactId,
+        phenotypeCompileArtifactId: prepared.phenotypeArtifact.artifactId,
+        generationJobIds: unique([...task.generationJobIds, prepared.job.generationJobId]),
+        phenotypeVersionIds: unique([...task.phenotypeVersionIds, prepared.phenotypeVersion.phenotypeVersionId]),
+        updatedAt: nowIso()
+      });
+    }
+    return prepared;
+  });
+}
+
+function resolvePlanGraphId(
+  store: GenerationPlanningRepositories,
+  input: Pick<PhenotypeGenerationPlan, "scopeType" | "scopeId"> & Partial<PhenotypeGenerationPlan>
+) {
+  if (input.scopeType === "graph") {
+    const graph = store.graphs.get(input.scopeId);
+    if (!graph) throw new Error(`graph not found: ${input.scopeId}`);
+    return input.scopeId;
+  }
+  if (input.scopeType === "species-group") {
+    const group = store.speciesGroups.get(input.scopeId);
+    if (!group) throw new Error(`species group not found: ${input.scopeId}`);
+    if (input.graphId && group.graphId !== input.graphId) throw new Error(`species group ${input.scopeId} does not belong to graph ${input.graphId}`);
+    return group.graphId;
+  }
+  if (input.scopeType === "species-node") {
+    const node = store.nodes.get(input.scopeId);
+    if (!node) throw new Error(`species node not found: ${input.scopeId}`);
+    if (input.graphId && node.graphId !== input.graphId) throw new Error(`species node ${input.scopeId} does not belong to graph ${input.graphId}`);
+    return node.graphId;
+  }
+  const phenotype = store.phenotypes.get(input.scopeId);
+  if (!phenotype) throw new Error(`phenotype not found: ${input.scopeId}`);
+  if (input.graphId && phenotype.graphId !== input.graphId) throw new Error(`phenotype ${input.scopeId} does not belong to graph ${input.graphId}`);
+  return phenotype.graphId;
+}
+
+function normalizeGenerationTaskInput(
+  store: GenerationPlanningRepositories,
+  input: Partial<PhenotypeGenerationTask> &
+    Pick<PhenotypeGenerationTask, "taskId" | "graphId" | "phenotypeType" | "taskBrief" | "priority">
+) {
+  const graph = store.graphs.get(input.graphId);
+  if (!graph) throw new Error(`graph not found: ${input.graphId}`);
+  if (!input.nodeId && !input.phenotypeId) throw new Error("generation task requires nodeId or phenotypeId");
+  const phenotype = input.phenotypeId ? store.phenotypes.get(input.phenotypeId) : undefined;
+  if (input.phenotypeId && !phenotype) throw new Error(`phenotype not found: ${input.phenotypeId}`);
+  const nodeId = input.nodeId ?? phenotype?.nodeId;
+  const node = nodeId ? store.nodes.get(nodeId) : undefined;
+  if (nodeId && (!node || node.graphId !== input.graphId)) throw new Error(`species node not found in graph ${input.graphId}: ${nodeId}`);
+  if (phenotype && phenotype.graphId !== input.graphId) throw new Error(`phenotype ${phenotype.phenotypeId} does not belong to graph ${input.graphId}`);
+  return createDefaultPhenotypeGenerationTask({
+    ...input,
+    nodeId,
+    phenotypeType: input.phenotypeType ?? phenotype?.phenotypeType ?? "image-prompt",
+    taskBrief: input.taskBrief ?? phenotype?.objectBrief ?? "",
+    generationJobIds: input.generationJobIds ?? [],
+    phenotypeVersionIds: input.phenotypeVersionIds ?? []
+  });
+}
+
+function generationPlanTargets(store: GenerationPlanningRepositories, plan: PhenotypeGenerationPlan) {
+  const plannedByGraph = (graphId: string) =>
+    store.phenotypes
+      .listByGraph(graphId)
+      .filter((phenotype) => phenotype.status === "planned")
+      .sort((left, right) => left.nodeId.localeCompare(right.nodeId) || left.phenotypeId.localeCompare(right.phenotypeId))
+      .map(phenotypeTarget);
+
+  if (plan.scopeType === "graph") {
+    const targets = plannedByGraph(plan.scopeId);
+    return targets.length > 0 ? targets : explicitPlanTarget(store, plan);
+  }
+  if (plan.scopeType === "species-group") {
+    const membershipNodeIds = new Set(store.speciesGroupMemberships.listByGroup(plan.scopeId).map((membership) => membership.nodeId));
+    const graphId = plan.graphId ?? resolvePlanGraphId(store, plan);
+    const targets = plannedByGraph(graphId).filter((target) => target.nodeId && membershipNodeIds.has(target.nodeId));
+    return targets.length > 0 ? targets : explicitPlanTarget(store, plan);
+  }
+  if (plan.scopeType === "species-node") {
+    const graphId = plan.graphId ?? resolvePlanGraphId(store, plan);
+    const targets = plannedByGraph(graphId).filter((target) => target.nodeId === plan.scopeId);
+    return targets.length > 0 ? targets : explicitPlanTarget(store, plan);
+  }
+  const phenotype = store.phenotypes.get(plan.scopeId);
+  return phenotype ? [phenotypeTarget(phenotype)] : explicitPlanTarget(store, plan);
+}
+
+function phenotypeTarget(phenotype: Phenotype) {
+  return {
+    graphId: phenotype.graphId,
+    nodeId: phenotype.nodeId,
+    phenotypeId: phenotype.phenotypeId,
+    phenotypeType: phenotype.phenotypeType,
+    taskBrief: phenotype.objectBrief || phenotype.name
+  };
+}
+
+function explicitPlanTarget(store: GenerationPlanningRepositories, plan: PhenotypeGenerationPlan) {
+  if (!plan.phenotypeType || !plan.taskBrief) return [];
+  if (plan.scopeType !== "species-node") return [];
+  const graphId = plan.graphId ?? resolvePlanGraphId(store, plan);
+  return [
+    {
+      graphId,
+      nodeId: plan.scopeId,
+      phenotypeId: undefined,
+      phenotypeType: plan.phenotypeType,
+      taskBrief: plan.taskBrief
+    }
+  ];
+}
+
+function makeGenerationTaskId(planId: string, targetId: string) {
+  return `task-${sanitizeIdPart(planId)}-${sanitizeIdPart(targetId)}`.slice(0, 120);
+}
+
+function sanitizeIdPart(value: string) {
+  return value.replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "target";
 }
 
 export function collectLineageImpact(

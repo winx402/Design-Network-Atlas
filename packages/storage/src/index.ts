@@ -24,6 +24,8 @@ import {
   NodeVersion,
   OutputReference,
   Phenotype,
+  PhenotypeGenerationPlan,
+  PhenotypeGenerationTask,
   PhenotypeCompileArtifact,
   PhenotypeLibrary,
   PhenotypeLibraryGraphBinding,
@@ -288,6 +290,26 @@ export interface GenerationJobRepository {
   update(job: GenerationJob): void;
   get(generationJobId: string): GenerationJob | undefined;
   listByGraph(graphId: string): GenerationJob[];
+}
+
+export interface PhenotypeGenerationPlanRepository {
+  create(plan: PhenotypeGenerationPlan): void;
+  update(plan: PhenotypeGenerationPlan): void;
+  get(planId: string): PhenotypeGenerationPlan | undefined;
+  list(): PhenotypeGenerationPlan[];
+  listByGraph(graphId: string): PhenotypeGenerationPlan[];
+  listByScope(scopeType: PhenotypeGenerationPlan["scopeType"], scopeId: string): PhenotypeGenerationPlan[];
+}
+
+export interface PhenotypeGenerationTaskRepository {
+  create(task: PhenotypeGenerationTask): void;
+  update(task: PhenotypeGenerationTask): void;
+  get(taskId: string): PhenotypeGenerationTask | undefined;
+  list(): PhenotypeGenerationTask[];
+  listByGraph(graphId: string): PhenotypeGenerationTask[];
+  listByPlan(planId: string): PhenotypeGenerationTask[];
+  listByNode(nodeId: string): PhenotypeGenerationTask[];
+  listByPhenotype(phenotypeId: string): PhenotypeGenerationTask[];
 }
 
 export interface ReviewRepository {

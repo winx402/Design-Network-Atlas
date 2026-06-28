@@ -46,6 +46,44 @@ export interface WorkbenchPhenotype {
   versions: WorkbenchVersion[];
 }
 
+export interface WorkbenchGenerationPlan {
+  planId: string;
+  graphId?: string;
+  scopeType: "graph" | "species-group" | "species-node" | "phenotype";
+  scopeId: string;
+  priority: number;
+  description: string;
+  status: string;
+  taskCount: number;
+  toolPreference?: string;
+}
+
+export interface WorkbenchGenerationTask {
+  taskId: string;
+  planId?: string;
+  graphId: string;
+  nodeId?: string;
+  phenotypeId?: string;
+  phenotypeType: string;
+  taskBrief: string;
+  priority: number;
+  status: string;
+  blockingReason?: string;
+  links: {
+    planId?: string;
+    speciesCompileArtifactId?: string;
+    phenotypeCompileArtifactId?: string;
+    generationJobIds: string[];
+    phenotypeVersionIds: string[];
+  };
+}
+
+export interface WorkbenchSnapshot {
+  phenotypes: WorkbenchPhenotype[];
+  generationPlans: WorkbenchGenerationPlan[];
+  generationTasks: WorkbenchGenerationTask[];
+}
+
 export interface PhenotypeFilter {
   query: string;
   status: WorkbenchVersionStatus | "all";
@@ -64,9 +102,9 @@ export interface WorkbenchAppLoadOptions extends WorkbenchLoadOptions {
 }
 
 export type WorkbenchAppLoadState =
-  | { status: "loading"; phenotypes: [] }
-  | { status: "ready"; phenotypes: WorkbenchPhenotype[] }
-  | { status: "error"; phenotypes: []; error: string };
+  | { status: "loading"; phenotypes: []; generationPlans: []; generationTasks: [] }
+  | { status: "ready"; phenotypes: WorkbenchPhenotype[]; generationPlans: WorkbenchGenerationPlan[]; generationTasks: WorkbenchGenerationTask[] }
+  | { status: "error"; phenotypes: []; generationPlans: []; generationTasks: []; error: string };
 
 export const samplePhenotypes: WorkbenchPhenotype[] = [
   {
@@ -249,26 +287,37 @@ export function allTags(phenotypes: WorkbenchPhenotype[]): string[] {
 }
 
 export async function loadWorkbenchPhenotypes(options: WorkbenchLoadOptions): Promise<WorkbenchPhenotype[]> {
+  return (await loadWorkbenchSnapshot(options)).phenotypes;
+}
+
+export async function loadWorkbenchSnapshot(options: WorkbenchLoadOptions): Promise<WorkbenchSnapshot> {
   const fetcher = options.fetcher ?? fetch;
   const url = new URL("/api/workbench/phenotypes", options.baseUrl);
   if (options.graphId) url.searchParams.set("graphId", options.graphId);
   const response = await fetcher(url.toString());
   if (response.ok === false) throw new Error(`failed to load workbench phenotypes: ${response.status ?? "unknown"}`);
-  const body = (await response.json()) as { phenotypes?: WorkbenchPhenotype[] };
-  return body.phenotypes ?? [];
+  const body = (await response.json()) as Partial<WorkbenchSnapshot>;
+  return {
+    phenotypes: body.phenotypes ?? [],
+    generationPlans: body.generationPlans ?? [],
+    generationTasks: body.generationTasks ?? []
+  };
 }
 
 export async function loadWorkbenchPhenotypesForApp(options: WorkbenchAppLoadOptions): Promise<WorkbenchAppLoadState> {
-  if (options.demo === true) return { status: "ready", phenotypes: samplePhenotypes };
+  if (options.demo === true) return { status: "ready", phenotypes: samplePhenotypes, generationPlans: [], generationTasks: [] };
   try {
+    const snapshot = await loadWorkbenchSnapshot(options);
     return {
       status: "ready",
-      phenotypes: await loadWorkbenchPhenotypes(options)
+      ...snapshot
     };
   } catch (error) {
     return {
       status: "error",
       phenotypes: [],
+      generationPlans: [],
+      generationTasks: [],
       error: error instanceof Error ? error.message : String(error)
     };
   }

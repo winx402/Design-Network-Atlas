@@ -190,6 +190,8 @@ Phase 0-16 已完成并由测试覆盖。本文件保留为历史执行计划、
 - `phenotype_version_assets`
 - `assets`
 - `generation_jobs`
+- `phenotype_generation_plans`
+- `phenotype_generation_tasks`
 - `review_records`
 - `tags`
 - `object_tags`
@@ -533,11 +535,12 @@ E2E 场景：
 - `LibraryRoutingPolicy` 的 `fallbackMountId`、`metadataDefaults`、`requiredMetadata` 在 resolver 和 `output-ref add` 中实际生效。
 - `library bind-graph` 后同步更新 `PhenotypeLibrary.graphIds`，避免 binding 表和 library export 出现双源状态歧义。
 - `GenerationJobRepository.listByGraph`，并把 generation jobs 纳入 Git 目录导入导出。
+- `PhenotypeGenerationPlan` / `PhenotypeGenerationTask` repositories、CLI preview/apply、task-linked generation 回写、Git 目录导入导出和只读 API/workbench snapshot。
 - SQLite migration 自动修复旧库：根据既有 `phenotype_library_graph_bindings` 回填 `PhenotypeLibrary.graphIds`。
 - `provider run-mock` 与 `provider job show`，用于本地 provider job 验证和敏感参数清理。
 - generic HTTP provider primitive，供后续真实模型 adapter 复用，不保存 API key。
 - `sync export/import`，作为显式项目目录交换命令。
-- 本地 HTTP API handler 和 `dna serve`，提供 health、graph tree、workbench generated-result snapshot。
+- 本地 HTTP API handler 和 `dna serve`，提供 health、graph tree、workbench generated-result 和 generation plan/task snapshot。
 - DNA 网页 HTTP 访问可开关，默认关闭；只有 `dna serve --web` 或 handler `webEnabled: true` 才返回只读工作台页面。
 - Web workbench 数据加载函数可以从本地 HTTP API 读取，而不是只使用静态样例。
 
@@ -547,9 +550,9 @@ E2E 场景：
 - CLI E2E 覆盖 metadata defaults 自动补齐、显式 metadata 覆盖默认值、required metadata 缺失时报错。
 - CLI E2E 覆盖 `library bind-graph` 后导出 `library.json.graphIds`。
 - provider security 覆盖 runtime API key / secret 不进入 job、DB 或导出。
-- sync E2E 覆盖 generation jobs 随项目目录导出和导入。
+- sync E2E 覆盖 generation plans、generation tasks 和 generation jobs 随项目目录导出和导入。
 - migration test 覆盖旧库已有 binding、library.graphIds 为空、重新 migrate 后导出 graphIds 不为空。
-- HTTP API test 覆盖 health、graph tree、workbench snapshots。
+- HTTP API test 覆盖 health、graph tree、workbench snapshots 和 generation plan/task summaries。
 - HTTP web access test 覆盖默认 `/` 为 404，显式开启后返回 HTML。
 
 验收：

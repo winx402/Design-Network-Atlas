@@ -17,11 +17,14 @@ import {
   GeneTemplate,
   GenerationJob,
   Graph,
+  GenerationVersionBinding,
   ImpactRecord,
   LibraryRoutingPolicy,
   NodeVersion,
   OutputReference,
   Phenotype,
+  PhenotypeGenerationPlan,
+  PhenotypeGenerationTask,
   PhenotypeLibrary,
   PhenotypeLibraryGraphBinding,
   PhenotypeVersion,
@@ -39,6 +42,53 @@ export function nowIso() {
 
 export function makeId(prefix: string) {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+const SENSITIVE_KEY_PATTERN = /api[_-]?key|authorization|bearer|credential|password|private[_-]?key|secret|token|signed[_-]?url/i;
+const SENSITIVE_STRING_PATTERNS = [
+  /OPENAI_API_KEY\s*=\s*\S+/gi,
+  /sk-[A-Za-z0-9_-]+/g,
+  /Bearer\s+[A-Za-z0-9._~+/=-]+/gi,
+  /password\s*=\s*\S+/gi,
+  /private[_-]?key\s*=\s*\S+/gi,
+  /https?:\/\/[^\s"'<>]*(?:[?&](?:token|signature|sig|X-Amz-Signature|se|sp|sv)=)[^\s"'<>]*/gi,
+  /https?:\/\/private\.[^\s"'<>]+/gi
+];
+
+export function sanitizePlanningText(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  return SENSITIVE_STRING_PATTERNS.reduce((current, pattern) => current.replace(pattern, "[redacted]"), value);
+}
+
+export function sanitizePlanningJson(value: Record<string, unknown> | undefined): Record<string, unknown> {
+  return sanitizePlanningRecord(value ?? {});
+}
+
+function normalizeVersionBinding(value: Partial<GenerationVersionBinding> | undefined): GenerationVersionBinding {
+  return {
+    mode: value?.mode ?? "latest-at-execution",
+    nodeVersionId: value?.nodeVersionId,
+    speciesCompileArtifactId: value?.speciesCompileArtifactId,
+    phenotypeCompileArtifactId: value?.phenotypeCompileArtifactId,
+    replayHistorical: value?.replayHistorical ?? false
+  };
+}
+
+function sanitizePlanningRecord(value: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (SENSITIVE_KEY_PATTERN.test(key)) continue;
+    const sanitized = sanitizePlanningValue(entry);
+    if (sanitized !== undefined) result[key] = sanitized;
+  }
+  return result;
+}
+
+function sanitizePlanningValue(value: unknown): unknown {
+  if (typeof value === "string") return sanitizePlanningText(value);
+  if (Array.isArray(value)) return value.map((entry) => sanitizePlanningValue(entry)).filter((entry) => entry !== undefined);
+  if (value && typeof value === "object") return sanitizePlanningRecord(value as Record<string, unknown>);
+  return value;
 }
 
 export function createDefaultProposal(
@@ -502,6 +552,72 @@ export function createDefaultPhenotypeVersion(
     reviewRecords: input.reviewRecords ?? [],
     facets: input.facets ?? {},
     createdAt: input.createdAt ?? nowIso()
+  };
+}
+
+export function createDefaultPhenotypeGenerationPlan(
+  input: Partial<PhenotypeGenerationPlan> &
+    Pick<PhenotypeGenerationPlan, "planId" | "scopeType" | "scopeId" | "priority" | "description">
+): PhenotypeGenerationPlan {
+  const timestamp = nowIso();
+  return {
+    planId: input.planId,
+    scopeType: input.scopeType,
+    scopeId: input.scopeId,
+    graphId: input.graphId,
+    priority: input.priority,
+    description: sanitizePlanningText(input.description) ?? "",
+    status: input.status ?? "draft",
+    phenotypeType: sanitizePlanningText(input.phenotypeType),
+    taskBrief: sanitizePlanningText(input.taskBrief),
+    modelPreference: sanitizePlanningText(input.modelPreference),
+    providerPreference: sanitizePlanningText(input.providerPreference),
+    toolPreference: sanitizePlanningText(input.toolPreference),
+    requirements: sanitizePlanningJson(input.requirements),
+    llmInstructions: sanitizePlanningText(input.llmInstructions),
+    operatorNotes: sanitizePlanningText(input.operatorNotes),
+    versionBinding: normalizeVersionBinding(input.versionBinding),
+    createdBy: sanitizePlanningText(input.createdBy),
+    tags: input.tags ?? [],
+    metadata: sanitizePlanningJson(input.metadata),
+    extensions: sanitizePlanningJson(input.extensions),
+    createdAt: input.createdAt ?? timestamp,
+    updatedAt: input.updatedAt ?? timestamp
+  };
+}
+
+export function createDefaultPhenotypeGenerationTask(
+  input: Partial<PhenotypeGenerationTask> &
+    Pick<PhenotypeGenerationTask, "taskId" | "graphId" | "phenotypeType" | "taskBrief" | "priority">
+): PhenotypeGenerationTask {
+  const timestamp = nowIso();
+  return {
+    taskId: input.taskId,
+    graphId: input.graphId,
+    phenotypeType: sanitizePlanningText(input.phenotypeType) ?? input.phenotypeType,
+    taskBrief: sanitizePlanningText(input.taskBrief) ?? "",
+    priority: input.priority,
+    status: input.status ?? "planned",
+    versionBinding: normalizeVersionBinding(input.versionBinding),
+    planId: input.planId,
+    nodeId: input.nodeId,
+    phenotypeId: input.phenotypeId,
+    speciesCompileArtifactId: input.speciesCompileArtifactId,
+    phenotypeCompileArtifactId: input.phenotypeCompileArtifactId,
+    generationJobIds: input.generationJobIds ?? [],
+    phenotypeVersionIds: input.phenotypeVersionIds ?? [],
+    modelPreference: sanitizePlanningText(input.modelPreference),
+    providerPreference: sanitizePlanningText(input.providerPreference),
+    toolPreference: sanitizePlanningText(input.toolPreference),
+    requirements: sanitizePlanningJson(input.requirements),
+    llmInstructions: sanitizePlanningText(input.llmInstructions),
+    operatorNotes: sanitizePlanningText(input.operatorNotes),
+    blockingReason: sanitizePlanningText(input.blockingReason),
+    tags: input.tags ?? [],
+    metadata: sanitizePlanningJson(input.metadata),
+    extensions: sanitizePlanningJson(input.extensions),
+    createdAt: input.createdAt ?? timestamp,
+    updatedAt: input.updatedAt ?? timestamp
   };
 }
 
