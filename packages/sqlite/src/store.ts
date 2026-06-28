@@ -165,15 +165,36 @@ interface ExchangeManifest {
   projectVersion: string;
   exchangeVersion: string;
   capabilities: string[];
+  exportProfile: ExportProfile;
+  proposalId?: string;
+  omitted?: {
+    sections: string[];
+    changeSetCount: number;
+    proposalCount: number;
+  };
 }
 
-function createExchangeManifest(): ExchangeManifest {
+export type ExportProfile = "full" | "review-current" | "proposal-review";
+
+export interface ExportProjectOptions {
+  profile?: ExportProfile;
+  proposalId?: string;
+}
+
+function createExchangeManifest(options: {
+  profile: ExportProfile;
+  proposalId?: string;
+  omitted?: ExchangeManifest["omitted"];
+}): ExchangeManifest {
   return {
     format: "dna.git-directory",
     version: PROJECT_VERSION,
     projectVersion: PROJECT_VERSION,
     exchangeVersion: DNA_EXCHANGE_VERSION,
-    capabilities: EXCHANGE_CAPABILITIES
+    capabilities: EXCHANGE_CAPABILITIES,
+    exportProfile: options.profile,
+    proposalId: options.proposalId,
+    omitted: options.omitted
   };
 }
 
@@ -231,6 +252,7 @@ function repairSqliteLibraryGraphIds(store: SqliteDnaStore): number {
 
 export class SqliteDnaStore implements StorageEngine {
   readonly db: DatabaseSync;
+  private transactionDepth = 0;
   readonly graphs: GraphRepository;
   readonly facetDefinitions: FacetDefinitionRepository;
   readonly facetSchemas: FacetSchemaRepository;
@@ -719,7 +741,11 @@ export class SqliteDnaStore implements StorageEngine {
   }
 
   transaction<T>(fn: () => T): T {
+    if (this.transactionDepth > 0) {
+      return fn();
+    }
     this.db.exec("BEGIN");
+    this.transactionDepth += 1;
     try {
       const result = fn();
       this.db.exec("COMMIT");
@@ -727,6 +753,8 @@ export class SqliteDnaStore implements StorageEngine {
     } catch (error) {
       this.db.exec("ROLLBACK");
       throw error;
+    } finally {
+      this.transactionDepth -= 1;
     }
   }
 
@@ -2116,12 +2144,51 @@ class SqliteChangeSetRepository implements ChangeSetRepository {
   }
 }
 
-export function exportProject(store: SqliteDnaStore, outDir: string): void {
+export function exportProject(store: SqliteDnaStore, outDir: string, options: ExportProjectOptions = {}): void {
+  const profile = options.profile ?? "full";
+  const allChangeSets = store.changeSets.list();
+  const allProposals = store.proposals.list();
+  const proposal =
+    profile === "proposal-review"
+      ? requireExportProposal(allProposals, allChangeSets, options.proposalId)
+      : undefined;
+  const proposalChangeSetIds = new Set(proposal?.changeSetIds ?? []);
+  const exportedChangeSets =
+    profile === "review-current"
+      ? []
+      : profile === "proposal-review"
+        ? allChangeSets.filter((changeSet) => proposalChangeSetIds.has(changeSet.changeSetId))
+        : allChangeSets;
+  const exportedProposals =
+    profile === "review-current"
+      ? []
+      : profile === "proposal-review"
+        ? proposal
+          ? [proposal]
+          : []
+        : allProposals;
+  const omitted =
+    profile === "full"
+      ? undefined
+      : profile === "review-current"
+        ? {
+            sections: ["change-sets", "proposals"],
+            changeSetCount: allChangeSets.length,
+            proposalCount: allProposals.length
+          }
+        : {
+            sections: ["unrelated change-sets", "unrelated proposals"],
+            changeSetCount: allChangeSets.length - exportedChangeSets.length,
+            proposalCount: allProposals.length - exportedProposals.length
+          };
   mkdirSync(outDir, { recursive: true });
-  writeFileSync(join(outDir, "dna.project.json"), `${JSON.stringify(createExchangeManifest(), null, 2)}\n`);
+  writeFileSync(
+    join(outDir, "dna.project.json"),
+    `${JSON.stringify(createExchangeManifest({ profile, proposalId: proposal?.proposalId, omitted }), null, 2)}\n`
+  );
   mkdirSync(join(outDir, "templates"), { recursive: true });
-  for (const changeSet of store.changeSets.list()) writeJson(join(outDir, "change-sets", `${changeSet.changeSetId}.json`), changeSet);
-  for (const proposal of store.proposals.list()) writeJson(join(outDir, "proposals", `${proposal.proposalId}.json`), proposal);
+  for (const changeSet of exportedChangeSets) writeJson(join(outDir, "change-sets", `${changeSet.changeSetId}.json`), changeSet);
+  for (const proposalValue of exportedProposals) writeJson(join(outDir, "proposals", `${proposalValue.proposalId}.json`), proposalValue);
   for (const definition of store.facetDefinitions.list()) {
     writeJson(join(outDir, "facets", "definitions", `${definition.facetId}.json`), definition);
   }
@@ -2208,6 +2275,18 @@ export function exportProject(store: SqliteDnaStore, outDir: string): void {
     for (const record of store.reviews.listByGraph(graph.graphId)) writeJson(join(graphDir, "reviews", `${record.reviewRecordId}.json`), record);
     for (const record of store.impacts.listByGraph(graph.graphId)) writeJson(join(graphDir, "impacts", `${record.impactRecordId}.json`), record);
   }
+}
+
+function requireExportProposal(proposals: Proposal[], changeSets: ChangeSet[], proposalId: string | undefined): Proposal {
+  if (!proposalId) throw new Error("--proposal is required for proposal-review export");
+  const proposal = proposals.find((value) => value.proposalId === proposalId);
+  if (!proposal) throw new Error(`proposal not found: ${proposalId}`);
+  const changeSetIds = new Set(changeSets.map((changeSet) => changeSet.changeSetId));
+  const missing = proposal.changeSetIds.filter((changeSetId) => !changeSetIds.has(changeSetId));
+  if (missing.length > 0) {
+    throw new Error(`proposal ${proposalId} references missing change-set: ${missing.join(", ")}`);
+  }
+  return proposal;
 }
 
 export function importProject(store: SqliteDnaStore, inDir: string): void {
@@ -2303,6 +2382,9 @@ function validateExchangeManifest(manifest: Record<string, unknown> | undefined)
   if (!manifest) return;
   if (manifest.format !== undefined && manifest.format !== "dna.git-directory") {
     throw new Error(`unsupported exchange format ${String(manifest.format)}`);
+  }
+  if (manifest.exportProfile === "proposal-review") {
+    throw new Error("proposal-review export packages are review-only and cannot be imported as project state");
   }
   if (manifest.exchangeVersion === undefined) return;
   if (manifest.exchangeVersion !== DNA_EXCHANGE_VERSION) {

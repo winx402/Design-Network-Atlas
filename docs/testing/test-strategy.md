@@ -45,9 +45,9 @@
 | Phase 11 | full E2E + release checks | PRD 13 条验收场景全通过 |
 | Phase 12 | result library schema + SQLite + CLI | 图谱和结果库多对多，输出引用可不用 DNA 结果库 |
 | Phase 13 | routing unit + SQLite + CLI E2E | 输出引用按策略路由到挂载，显式挂载优先 |
-| Phase 14 | graph tree unit + CLI E2E | 多 root、多父节点和附加关系输出清晰 |
+| Phase 14 | graph tree unit + CLI E2E | 多 root、多父节点和附加关系输出清晰；`--include-groups` 可审阅 groups、memberships、ungrouped nodes 和 group relations |
 | Phase 15 | HTTP API + sync + provider baseline | API 可读本地数据，网页默认关闭，routing fallback/metadata 生效，generation jobs 可导入导出 |
-| Phase 16 | change-set review CLI E2E | preview change-set 可 list/show/review/apply/discard，并可导入导出 |
+| Phase 16 | change-set/proposal review CLI E2E | preview change-set 可 list/show/review/apply/discard；proposal 可批量导入建模草案；export profile 可区分 full、review-current 和 proposal-review |
 
 ## 4. 关键测试数据
 
@@ -235,6 +235,11 @@
 - `changeset discard <id>` 会标记 discarded，且后续 apply 会失败。
 - `--mode changeset-apply --change-set <id>` 可在 graph/node/edge create 命令上引用既有 preview change-set，不要求重复 create 参数。
 - Git-friendly export/import 保留顶层 `change-sets/` 目录。
+- `dna export --profile review-current` 不生成 `change-sets/` 或 `proposals/`，manifest 记录省略摘要，且当前正式 state 可导入。
+- `dna export --profile proposal-review --proposal <id>` 只导出目标 proposal 与 linked change-sets，遇到缺失 change-set 必须失败。
+- `dna proposal import-batch --in <file>` 接受 `format: "dna.modeling-batch.v1"`，默认生成 proposal + 有序 preview change-sets，不写正式 graph/node/group/library objects。
+- invalid modeling batch 必须 all-or-nothing 失败，不留下 proposal、change-set 或正式对象。
+- `dna graph tree --include-groups` 在默认 tree 之外展示 `Groups:`、`Ungrouped nodes:` 和 `Group relations:`；默认 text/json 输出保持兼容。
 
 ## 6. Golden 输出规则
 

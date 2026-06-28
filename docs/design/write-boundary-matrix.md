@@ -38,9 +38,10 @@ Web remains read-only in the current product baseline. It must not expose graph,
 3. Generated trace artifacts and generated outputs may use `direct audit write` during formal generation apply because they are provenance records, not unconfirmed graph facts.
 4. Standalone compile commands default to preview. Persisting compile artifacts requires explicit apply mode.
 5. `phenotype generate --apply` may persist compile artifacts, phenotype/version records, and a generation job in one transaction.
-6. Direct audit commands must name the object type they persist and must not imply they changed graph identity.
-7. Provider credentials, raw provider errors, complete private links, and secrets may not be stored in generated artifacts, jobs, exports, logs, or fixtures.
-8. Web remains read-only until a future accepted PRD adds service-backed writes.
+6. `proposal import-batch` defaults to proposal + preview change-sets for `dna.modeling-batch.v1`; explicit `draft-write` is a local seed path that skips proposal review and must say so in output.
+7. Direct audit commands must name the object type they persist and must not imply they changed graph identity.
+8. Provider credentials, raw provider errors, complete private links, and secrets may not be stored in generated artifacts, jobs, exports, logs, or fixtures.
+9. Web remains read-only until a future accepted PRD adds service-backed writes.
 
 ## CLI And Skill Language
 

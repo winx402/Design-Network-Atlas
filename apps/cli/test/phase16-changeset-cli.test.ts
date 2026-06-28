@@ -127,4 +127,55 @@ describe("Phase 16 change-set review workflow CLI", () => {
     runDna(["--db", targetDb, "import", "--in", out, "--yes"]);
     expect(runDna(["--db", targetDb, "changeset", "show", exportedChangeSetId])).toContain("Exported Preview Node");
   }, CLI_TIMEOUT);
+
+  test("supports review export profiles on export and sync export", () => {
+    const dir = tempDir("phase16-export-profiles-cli");
+    const db = join(dir, "source.sqlite");
+    const reviewOut = join(dir, "review-export");
+    const syncReviewOut = join(dir, "sync-review-export");
+    const proposalOut = join(dir, "proposal-export");
+
+    runDna(["--db", db, "graph", "create", "--id", "graph-profile", "--name", "Profile Graph", "--purpose", "export profiles", "--yes"]);
+    const preview = runDna([
+      "--db",
+      db,
+      "node",
+      "create",
+      "--graph",
+      "graph-profile",
+      "--id",
+      "node-profile",
+      "--name",
+      "Profile Node"
+    ]);
+    const changeSetId = extractChangeSetId(preview);
+    runDna(["--db", db, "proposal", "create", "--id", "proposal-profile", "--title", "Profile proposal"]);
+    runDna(["--db", db, "proposal", "add-change-set", "proposal-profile", "--change-set", changeSetId]);
+
+    const exportHelp = runDna(["export", "--help"]);
+    expect(exportHelp).toContain("--profile <profile>");
+    expect(exportHelp).toContain("--proposal <proposalId>");
+    const syncHelp = runDna(["sync", "export", "--help"]);
+    expect(syncHelp).toContain("--profile <profile>");
+    expect(syncHelp).toContain("--proposal <proposalId>");
+
+    runDna(["--db", db, "export", "--out", reviewOut, "--profile", "review-current"]);
+    expect(existsSync(join(reviewOut, "graphs", "graph-profile", "graph.json"))).toBe(true);
+    expect(existsSync(join(reviewOut, "change-sets"))).toBe(false);
+    expect(existsSync(join(reviewOut, "proposals"))).toBe(false);
+    expect(JSON.parse(readFileSync(join(reviewOut, "dna.project.json"), "utf8")).exportProfile).toBe("review-current");
+
+    runDna(["--db", db, "sync", "export", "--out", syncReviewOut, "--profile", "review-current"]);
+    expect(existsSync(join(syncReviewOut, "change-sets"))).toBe(false);
+    expect(JSON.parse(readFileSync(join(syncReviewOut, "dna.project.json"), "utf8")).exportProfile).toBe("review-current");
+
+    runDna(["--db", db, "export", "--out", proposalOut, "--profile", "proposal-review", "--proposal", "proposal-profile"]);
+    expect(existsSync(join(proposalOut, "change-sets", `${changeSetId}.json`))).toBe(true);
+    expect(existsSync(join(proposalOut, "proposals", "proposal-profile.json"))).toBe(true);
+    expect(JSON.parse(readFileSync(join(proposalOut, "dna.project.json"), "utf8")).proposalId).toBe("proposal-profile");
+
+    expect(runDnaFailure(["--db", db, "export", "--out", join(dir, "missing-proposal"), "--profile", "proposal-review"])).toContain(
+      "--proposal is required for proposal-review export"
+    );
+  }, CLI_TIMEOUT);
 });

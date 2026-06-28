@@ -277,12 +277,15 @@ Historical compatibility tables:
 - `version` / `projectVersion`：当前项目版本。
 - `exchangeVersion`：当前交换格式版本。
 - `capabilities`：本次导出包含的能力集合。
+- `exportProfile`：`full`、`review-current` 或 `proposal-review`。
+- `omitted`：review profile 省略的 section 和计数摘要。
 
 当前稳定目录结构：
 
 ```text
 dna.project.json
 change-sets/
+proposals/
 facets/definitions/
 facets/schemas/
 facets/assignments/
@@ -320,6 +323,14 @@ graphs/<graph_id>/impacts/
 
 目录化 JSON 用于审阅、版本控制、迁移、开源模板包分发。SQLite 用于本地运行效率和事务一致性。缺失 manifest 的历史导出可以作为 legacy 目录导入；存在 manifest 但 `exchangeVersion` 不受支持时，导入必须明确失败。
 
+导出 profile：
+
+- `full`：默认完整备份/迁移/审计导出，包含全部 change-sets 和 proposals。
+- `review-current`：导出当前正式 project state，默认不生成 `change-sets/` 和 `proposals/`，manifest 记录省略摘要；可以作为当前正式 state 导入。
+- `proposal-review`：要求 `--proposal <proposalId>`，只导出目标 proposal 和 linked change-sets，并保留 review 所需的当前上下文对象；若 proposal 引用缺失 change-set 必须失败。该 profile 是 review-only package，import 必须明确拒绝，不得静默半导入。
+
+`dna.modeling-batch.v1` 是独立于 Git-friendly project exchange 的初始建模批次格式，面向 LLM/Agent 生成的本地 modeling draft。它通过 `dna proposal import-batch --in <file>` 进入 proposal workflow，默认生成 proposal 和有序 preview change-sets，不直接写正式 graph facts；显式 `--mode draft-write` 只用于本地种子导入，并跳过 proposal review。
+
 ## 8. Skill、CLI、Web、Server 边界
 
 ### 8.1 CLI
@@ -328,6 +339,7 @@ CLI 是本地核心阶段的主要产品入口。CLI 必须支持：
 
 - graph
   - `graph tree`：把物种和进化边投影成可读树或 JSON。
+  - `graph tree --include-groups`：在默认 tree 后追加 species group、membership、ungrouped nodes 和 group relation overlay。
 - template
 - node
 - edge
@@ -335,6 +347,8 @@ CLI 是本地核心阶段的主要产品入口。CLI 必须支持：
 - asset
 - output-ref
 - changeset
+- proposal
+  - `proposal import-batch`：导入 `dna.modeling-batch.v1` 本地建模草案，默认生成 proposal + preview change-sets。
 - library
 - review
 - impact

@@ -12,13 +12,18 @@ import {
   createDefaultDesignPrinciple,
   createDefaultGraph,
   createDefaultEvolutionEdge,
+  createDefaultExternalLibraryMapping,
   createDefaultGraphBridge,
+  createDefaultLibraryRoutingPolicy,
   createDefaultNodeVersion,
+  createDefaultPhenotypeLibrary,
+  createDefaultPhenotypeLibraryGraphBinding,
   createDefaultProposal,
   createDefaultSpeciesGroup,
   createDefaultSpeciesGroupMembership,
   createDefaultSpeciesGroupRelation,
   createDefaultSpeciesNode,
+  createDefaultStorageMount,
   EdgeVersion,
   ContextAttachment,
   ContextFact,
@@ -28,17 +33,24 @@ import {
   DesignContext,
   DesignPrinciple,
   EvolutionEdge,
+  ExternalLibraryMapping,
   Graph,
   GraphBridge,
+  LibraryRoutingPolicy,
   markChangeSetApplied,
   markChangeSetDiscarded,
+  ModelingBatch,
+  ModelingBatchSchema,
   nowIso,
+  PhenotypeLibrary,
+  PhenotypeLibraryGraphBinding,
   Proposal,
   resolveLineageStatus,
   SpeciesGroup,
   SpeciesGroupMembership,
   SpeciesGroupRelation,
   SpeciesNode,
+  StorageMount,
   validateGraphBridgeSet,
   validateSpeciesGroupRelationSet,
   WriteMode
@@ -280,6 +292,28 @@ export interface ProposalApplyResult {
   proposal: Proposal;
   appliedChangeSetIds: string[];
   childResults: ServiceResult<unknown>[];
+}
+
+export interface ImportModelingBatchInput {
+  proposalId: string;
+  title: string;
+  summary?: string;
+  batch: unknown;
+  mode: "preview-confirm" | "draft-write";
+}
+
+export interface ImportModelingBatchResult {
+  mode: "preview-confirm" | "draft-write";
+  proposal: Proposal | null;
+  changeSetIds: string[];
+  counts: {
+    planned: Record<string, number>;
+    applied: Record<string, number>;
+    skipped: Record<string, number>;
+  };
+  includesCrossGraphReferences: boolean;
+  includesLibraryObjects: boolean;
+  warning?: string;
 }
 
 export function createDnaServices(store: DnaServiceStore) {
@@ -698,6 +732,50 @@ export function createDnaServices(store: DnaServiceStore) {
         store.proposals.create(proposal);
         return proposal;
       },
+      importBatch(input: ImportModelingBatchInput): ImportModelingBatchResult {
+        const batch = ModelingBatchSchema.parse(input.batch) as ModelingBatch;
+        validateModelingBatchReferences(store, batch);
+        return store.transaction(() => {
+          const created = createModelingBatchChangeSets(store, batch, {
+            mode: input.mode,
+            apply: input.mode === "draft-write"
+          });
+          if (input.mode === "draft-write") {
+            return {
+              mode: "draft-write",
+              proposal: null,
+              changeSetIds: created.changeSetIds,
+              counts: {
+                planned: countModelingBatchObjects(batch),
+                applied: countModelingBatchObjects(batch),
+                skipped: { proposals: 1 }
+              },
+              includesCrossGraphReferences: modelingBatchHasCrossGraphReferences(batch),
+              includesLibraryObjects: modelingBatchHasLibraryObjects(batch),
+              warning: "mode draft-write writes local seed objects immediately and skips proposal review; do not use it for formal review packages"
+            };
+          }
+          const proposal = createDefaultProposal({
+            proposalId: input.proposalId,
+            title: input.title,
+            summary: input.summary ?? "",
+            changeSetIds: created.changeSetIds
+          });
+          store.proposals.create(proposal);
+          return {
+            mode: "preview-confirm",
+            proposal,
+            changeSetIds: created.changeSetIds,
+            counts: {
+              planned: countModelingBatchObjects(batch),
+              applied: {} as Record<string, number>,
+              skipped: {} as Record<string, number>
+            },
+            includesCrossGraphReferences: modelingBatchHasCrossGraphReferences(batch),
+            includesLibraryObjects: modelingBatchHasLibraryObjects(batch)
+          };
+        });
+      },
       list(): Proposal[] {
         return store.proposals.list();
       },
@@ -780,6 +858,301 @@ export function createDnaServices(store: DnaServiceStore) {
   };
 }
 
+function createModelingBatchChangeSets(
+  store: DnaServiceStore,
+  batch: ModelingBatch,
+  options: WriteOptions
+): { changeSetIds: string[] } {
+  const changeSets: ChangeSet[] = [];
+  const push = (changeSet: ChangeSet) => {
+    store.changeSets.create(changeSet);
+    const next = shouldApply(options) ? applyChangeSet(store, changeSet).changeSet : changeSet;
+    changeSets.push(next);
+  };
+
+  for (const input of batch.graphs) {
+    const graph = createDefaultGraph(input);
+    push(
+      createChangeSet({
+        mode: options.mode,
+        objectType: "graph",
+        operation: "create",
+        summary: `import graph ${graph.graphId}`,
+        diff: { graphId: graph.graphId, name: graph.name, status: graph.status },
+        payload: { graph }
+      })
+    );
+  }
+  for (const input of batch.atlases) {
+    const atlas = createDefaultAtlas(input);
+    push(
+      createChangeSet({
+        mode: options.mode,
+        objectType: "atlas",
+        operation: "create",
+        summary: `import atlas ${atlas.atlasId}`,
+        diff: { atlasId: atlas.atlasId, graphIds: atlas.graphIds, status: atlas.status },
+        payload: { atlas }
+      })
+    );
+  }
+  for (const input of batch.speciesGroups) {
+    const group = createDefaultSpeciesGroup(input);
+    push(
+      createChangeSet({
+        mode: options.mode,
+        objectType: "species-group",
+        operation: "create",
+        summary: `import species group ${group.groupId}`,
+        diff: { groupId: group.groupId, graphId: group.graphId, status: group.status },
+        payload: { group }
+      })
+    );
+  }
+  for (const input of batch.speciesNodes) {
+    const node = createDefaultSpeciesNode(input);
+    const version = createDefaultNodeVersion({
+      graphId: node.graphId,
+      nodeId: node.nodeId,
+      nodeVersionId: `${node.nodeId}@${node.currentVersion}`,
+      ownGeneDelta: node.constraints,
+      resolvedGeneSnapshot: { ...node.constraints, motifs: node.motifs, badcases: node.badcases },
+      constraintSnapshot: node.constraints,
+      compileSnapshot: node.compilePolicy ?? { type: "system-rule-first" }
+    });
+    push(
+      createChangeSet({
+        mode: options.mode,
+        objectType: "node",
+        operation: "create",
+        summary: `import node ${node.nodeId}`,
+        diff: { nodeId: node.nodeId, graphId: node.graphId, version: version.nodeVersionId },
+        payload: { node, version }
+      })
+    );
+  }
+  for (const input of batch.evolutionEdges) {
+    const edge = createDefaultEvolutionEdge(input);
+    const version: EdgeVersion = {
+      edgeVersionId: `${edge.edgeId}@${edge.currentVersion}`,
+      edgeId: edge.edgeId,
+      graphId: edge.graphId,
+      version: edge.currentVersion,
+      deltaGenes: edge.deltaGenes,
+      valueResolution: edge.valueResolution,
+      mustPreserve: edge.mustPreserve,
+      mustAvoid: edge.mustAvoid,
+      changeSummary: `import edge ${edge.edgeId}`,
+      createdAt: edge.createdAt
+    };
+    push(
+      createChangeSet({
+        mode: options.mode,
+        objectType: "edge",
+        operation: "create",
+        summary: `import edge ${edge.edgeId}`,
+        diff: { edgeId: edge.edgeId, graphId: edge.graphId, fromNodeId: edge.fromNodeId, toNodeId: edge.toNodeId },
+        payload: { edge, version }
+      })
+    );
+  }
+  for (const input of batch.groupMemberships) {
+    const membership = createDefaultSpeciesGroupMembership(input);
+    push(
+      createChangeSet({
+        mode: options.mode,
+        objectType: "species-group-membership",
+        operation: "create",
+        summary: `import species group membership ${membership.membershipId}`,
+        diff: { membershipId: membership.membershipId, groupId: membership.groupId, nodeId: membership.nodeId, role: membership.role },
+        payload: { membership }
+      })
+    );
+  }
+  for (const input of batch.groupRelations) {
+    const relation = createDefaultSpeciesGroupRelation(input);
+    push(
+      createChangeSet({
+        mode: options.mode,
+        objectType: "species-group-relation",
+        operation: "create",
+        summary: `import species group relation ${relation.relationId}`,
+        diff: { relationId: relation.relationId, sourceGroupId: relation.sourceGroupId, targetGroupId: relation.targetGroupId },
+        payload: { relation, allowParallel: Boolean(input.allowParallel) }
+      })
+    );
+  }
+  for (const input of batch.graphBridges) {
+    const bridge = createDefaultGraphBridge(input);
+    push(
+      createChangeSet({
+        mode: options.mode,
+        objectType: "graph-bridge",
+        operation: "create",
+        summary: `import graph bridge ${bridge.bridgeId}`,
+        diff: { bridgeId: bridge.bridgeId, atlasId: bridge.atlasId, sourceGraphId: bridge.sourceGraphId, targetGraphId: bridge.targetGraphId },
+        payload: { bridge, allowParallel: Boolean(input.allowParallel) }
+      })
+    );
+  }
+  for (const input of batch.phenotypeLibraries) {
+    const library = createDefaultPhenotypeLibrary(input);
+    push(createLibraryChangeSet(options.mode, "phenotype-library", `import phenotype library ${library.libraryId}`, { libraryId: library.libraryId }, { library }));
+  }
+  for (const input of batch.libraryGraphBindings) {
+    const binding = createDefaultPhenotypeLibraryGraphBinding(input);
+    push(createLibraryChangeSet(options.mode, "phenotype-library-graph-binding", `import library graph binding ${binding.bindingId}`, { bindingId: binding.bindingId, libraryId: binding.libraryId, graphId: binding.graphId }, { binding }));
+  }
+  for (const input of batch.storageMounts) {
+    const mount = createDefaultStorageMount(input);
+    push(createLibraryChangeSet(options.mode, "storage-mount", `import storage mount ${mount.mountId}`, { mountId: mount.mountId, libraryId: mount.libraryId }, { mount }));
+  }
+  for (const input of batch.externalLibraryMappings) {
+    const mapping = createDefaultExternalLibraryMapping(input);
+    push(createLibraryChangeSet(options.mode, "external-library-mapping", `import external library mapping ${mapping.mappingId}`, { mappingId: mapping.mappingId, libraryId: mapping.libraryId, mountId: mapping.mountId }, { mapping }));
+  }
+  for (const input of batch.libraryRoutingPolicies) {
+    const policy = createDefaultLibraryRoutingPolicy(input);
+    push(createLibraryChangeSet(options.mode, "library-routing-policy", `import library routing policy ${policy.routingPolicyId}`, { routingPolicyId: policy.routingPolicyId, libraryId: policy.libraryId, targetMountId: policy.targetMountId }, { policy }));
+  }
+  return { changeSetIds: changeSets.map((changeSet) => changeSet.changeSetId) };
+}
+
+function createLibraryChangeSet(
+  mode: WriteMode,
+  objectType: string,
+  summary: string,
+  diff: Record<string, unknown>,
+  payload: Record<string, unknown>
+): ChangeSet {
+  return createChangeSet({ mode, objectType, operation: "create", summary, diff, payload });
+}
+
+function countModelingBatchObjects(batch: ModelingBatch): Record<string, number> {
+  return {
+    graphs: batch.graphs.length,
+    atlases: batch.atlases.length,
+    speciesGroups: batch.speciesGroups.length,
+    groupMemberships: batch.groupMemberships.length,
+    groupRelations: batch.groupRelations.length,
+    graphBridges: batch.graphBridges.length,
+    speciesNodes: batch.speciesNodes.length,
+    evolutionEdges: batch.evolutionEdges.length,
+    phenotypeLibraries: batch.phenotypeLibraries.length,
+    libraryGraphBindings: batch.libraryGraphBindings.length,
+    storageMounts: batch.storageMounts.length,
+    externalLibraryMappings: batch.externalLibraryMappings.length,
+    libraryRoutingPolicies: batch.libraryRoutingPolicies.length
+  };
+}
+
+function modelingBatchHasLibraryObjects(batch: ModelingBatch): boolean {
+  return (
+    batch.phenotypeLibraries.length +
+      batch.libraryGraphBindings.length +
+      batch.storageMounts.length +
+      batch.externalLibraryMappings.length +
+      batch.libraryRoutingPolicies.length >
+    0
+  );
+}
+
+function modelingBatchHasCrossGraphReferences(batch: ModelingBatch): boolean {
+  return batch.graphBridges.some((bridge) => bridge.sourceGraphId !== bridge.targetGraphId);
+}
+
+function validateModelingBatchReferences(store: DnaServiceStore, batch: ModelingBatch) {
+  const errors: string[] = [];
+  const graphIds = collectKnownIds(store.graphs.list().map((graph) => graph.graphId), batch.graphs.map((graph) => graph.graphId));
+  const nodeIds = collectKnownIds(
+    batch.graphs.flatMap((graph) => store.nodes.listByGraph(graph.graphId).map((node) => node.nodeId)),
+    batch.speciesNodes.map((node) => node.nodeId)
+  );
+  const groupIds = collectKnownIds(
+    batch.graphs.flatMap((graph) => store.speciesGroups.listByGraph(graph.graphId).map((group) => group.groupId)),
+    batch.speciesGroups.map((group) => group.groupId)
+  );
+  const atlasIds = collectKnownIds(store.atlases.list().map((atlas) => atlas.atlasId), batch.atlases.map((atlas) => atlas.atlasId));
+  const libraryIds = collectKnownIds(store.phenotypeLibraries.list().map((library) => library.libraryId), batch.phenotypeLibraries.map((library) => library.libraryId));
+  const mountIds = collectKnownIds(
+    store.phenotypeLibraries.list().flatMap((library) => store.storageMounts.listByLibrary(library.libraryId).map((mount) => mount.mountId)),
+    batch.storageMounts.map((mount) => mount.mountId)
+  );
+
+  addDuplicateErrors(errors, "graphs", batch.graphs.map((graph) => graph.graphId));
+  addDuplicateErrors(errors, "atlases", batch.atlases.map((atlas) => atlas.atlasId));
+  addDuplicateErrors(errors, "speciesGroups", batch.speciesGroups.map((group) => group.groupId));
+  addDuplicateErrors(errors, "speciesNodes", batch.speciesNodes.map((node) => node.nodeId));
+  addDuplicateErrors(errors, "evolutionEdges", batch.evolutionEdges.map((edge) => edge.edgeId));
+  addDuplicateErrors(errors, "groupMemberships", batch.groupMemberships.map((membership) => membership.membershipId));
+  addDuplicateErrors(errors, "groupRelations", batch.groupRelations.map((relation) => relation.relationId));
+  addDuplicateErrors(errors, "graphBridges", batch.graphBridges.map((bridge) => bridge.bridgeId));
+  addDuplicateErrors(errors, "phenotypeLibraries", batch.phenotypeLibraries.map((library) => library.libraryId));
+  addDuplicateErrors(errors, "libraryGraphBindings", batch.libraryGraphBindings.map((binding) => binding.bindingId));
+  addDuplicateErrors(errors, "storageMounts", batch.storageMounts.map((mount) => mount.mountId));
+  addDuplicateErrors(errors, "externalLibraryMappings", batch.externalLibraryMappings.map((mapping) => mapping.mappingId));
+  addDuplicateErrors(errors, "libraryRoutingPolicies", batch.libraryRoutingPolicies.map((policy) => policy.routingPolicyId));
+
+  batch.speciesNodes.forEach((node, index) => requireKnown(errors, `speciesNodes[${index}].graphId`, graphIds, node.graphId, "graph"));
+  batch.evolutionEdges.forEach((edge, index) => {
+    requireKnown(errors, `evolutionEdges[${index}].graphId`, graphIds, edge.graphId, "graph");
+    requireKnown(errors, `evolutionEdges[${index}].fromNodeId`, nodeIds, edge.fromNodeId, "source node");
+    requireKnown(errors, `evolutionEdges[${index}].toNodeId`, nodeIds, edge.toNodeId, "target node");
+  });
+  batch.speciesGroups.forEach((group, index) => requireKnown(errors, `speciesGroups[${index}].graphId`, graphIds, group.graphId, "graph"));
+  batch.groupMemberships.forEach((membership, index) => {
+    requireKnown(errors, `groupMemberships[${index}].graphId`, graphIds, membership.graphId, "graph");
+    requireKnown(errors, `groupMemberships[${index}].groupId`, groupIds, membership.groupId, "species group");
+    requireKnown(errors, `groupMemberships[${index}].nodeId`, nodeIds, membership.nodeId, "node");
+  });
+  batch.groupRelations.forEach((relation, index) => {
+    requireKnown(errors, `groupRelations[${index}].graphId`, graphIds, relation.graphId, "graph");
+    requireKnown(errors, `groupRelations[${index}].sourceGroupId`, groupIds, relation.sourceGroupId, "source species group");
+    requireKnown(errors, `groupRelations[${index}].targetGroupId`, groupIds, relation.targetGroupId, "target species group");
+  });
+  batch.atlases.forEach((atlas, index) => {
+    (atlas.graphIds ?? []).forEach((graphId) => requireKnown(errors, `atlases[${index}].graphIds`, graphIds, graphId, "graph"));
+  });
+  batch.graphBridges.forEach((bridge, index) => {
+    requireKnown(errors, `graphBridges[${index}].atlasId`, atlasIds, bridge.atlasId, "atlas");
+    requireKnown(errors, `graphBridges[${index}].sourceGraphId`, graphIds, bridge.sourceGraphId, "source graph");
+    requireKnown(errors, `graphBridges[${index}].targetGraphId`, graphIds, bridge.targetGraphId, "target graph");
+  });
+  batch.libraryGraphBindings.forEach((binding, index) => {
+    requireKnown(errors, `libraryGraphBindings[${index}].libraryId`, libraryIds, binding.libraryId, "library");
+    requireKnown(errors, `libraryGraphBindings[${index}].graphId`, graphIds, binding.graphId, "graph");
+  });
+  batch.storageMounts.forEach((mount, index) => requireKnown(errors, `storageMounts[${index}].libraryId`, libraryIds, mount.libraryId, "library"));
+  batch.externalLibraryMappings.forEach((mapping, index) => {
+    requireKnown(errors, `externalLibraryMappings[${index}].libraryId`, libraryIds, mapping.libraryId, "library");
+    requireKnown(errors, `externalLibraryMappings[${index}].mountId`, mountIds, mapping.mountId, "storage mount");
+  });
+  batch.libraryRoutingPolicies.forEach((policy, index) => {
+    requireKnown(errors, `libraryRoutingPolicies[${index}].libraryId`, libraryIds, policy.libraryId, "library");
+    requireKnown(errors, `libraryRoutingPolicies[${index}].targetMountId`, mountIds, policy.targetMountId, "storage mount");
+  });
+
+  if (errors.length > 0) {
+    throw new Error(`modeling batch validation failed (${errors.length}): ${errors.join("; ")}`);
+  }
+}
+
+function collectKnownIds(existingIds: string[], batchIds: string[]): Set<string> {
+  return new Set([...existingIds, ...batchIds]);
+}
+
+function addDuplicateErrors(errors: string[], section: string, ids: string[]) {
+  const seen = new Set<string>();
+  for (const id of ids) {
+    if (seen.has(id)) errors.push(`${section}: duplicate id ${id}`);
+    seen.add(id);
+  }
+}
+
+function requireKnown(errors: string[], path: string, knownIds: Set<string>, id: string, label: string) {
+  if (!knownIds.has(id)) errors.push(`${path}: ${label} not found: ${id}`);
+}
+
 function shouldApply(options: WriteOptions): boolean {
   return options.apply === true || options.mode === "draft-write";
 }
@@ -824,7 +1197,12 @@ const PROPOSAL_APPLY_OBJECT_TYPES = new Set([
   "design-principle",
   "context-motif",
   "context-reference",
-  "context-review-rubric"
+  "context-review-rubric",
+  "phenotype-library",
+  "phenotype-library-graph-binding",
+  "storage-mount",
+  "external-library-mapping",
+  "library-routing-policy"
 ]);
 
 interface ProposalPlannedCreates {
@@ -833,6 +1211,8 @@ interface ProposalPlannedCreates {
   speciesGroupIds: Set<string>;
   atlasIds: Set<string>;
   designContextIds: Set<string>;
+  libraryIds: Set<string>;
+  mountIds: Set<string>;
 }
 
 function reviewProposal(
@@ -885,7 +1265,9 @@ function collectProposalPlannedCreates(changeSets: ChangeSet[]): ProposalPlanned
     nodeIds: new Set(),
     speciesGroupIds: new Set(),
     atlasIds: new Set(),
-    designContextIds: new Set()
+    designContextIds: new Set(),
+    libraryIds: new Set(),
+    mountIds: new Set()
   };
   for (const changeSet of changeSets) {
     if (changeSet.status !== "preview" || changeSet.operation !== "create") continue;
@@ -895,11 +1277,15 @@ function collectProposalPlannedCreates(changeSets: ChangeSet[]): ProposalPlanned
     const group = payload.group as SpeciesGroup | undefined;
     const atlas = payload.atlas as Atlas | undefined;
     const context = payload.context as DesignContext | undefined;
+    const library = payload.library as PhenotypeLibrary | undefined;
+    const mount = payload.mount as StorageMount | undefined;
     if (graph?.graphId) planned.graphIds.add(graph.graphId);
     if (node?.nodeId) planned.nodeIds.add(node.nodeId);
     if (group?.groupId) planned.speciesGroupIds.add(group.groupId);
     if (atlas?.atlasId) planned.atlasIds.add(atlas.atlasId);
     if (context?.contextId) planned.designContextIds.add(context.contextId);
+    if (library?.libraryId) planned.libraryIds.add(library.libraryId);
+    if (mount?.mountId) planned.mountIds.add(mount.mountId);
   }
   return planned;
 }
@@ -930,7 +1316,9 @@ function isSatisfiedByProposalPlan(violation: string, plannedCreates: ProposalPl
     plannedIdMatches(violation, /^source species group not found: (.+)$/, plannedCreates.speciesGroupIds) ||
     plannedIdMatches(violation, /^target species group not found: (.+)$/, plannedCreates.speciesGroupIds) ||
     plannedIdMatches(violation, /^atlas not found: (.+)$/, plannedCreates.atlasIds) ||
-    plannedIdMatches(violation, /^design context not found: (.+)$/, plannedCreates.designContextIds)
+    plannedIdMatches(violation, /^design context not found: (.+)$/, plannedCreates.designContextIds) ||
+    plannedIdMatches(violation, /^library not found: (.+)$/, plannedCreates.libraryIds) ||
+    plannedIdMatches(violation, /^storage mount not found: (.+)$/, plannedCreates.mountIds)
   );
 }
 
@@ -955,6 +1343,11 @@ function applyChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ServiceRe
   if (changeSet.objectType === "context-motif") return applyContextMotifChangeSet(store, changeSet);
   if (changeSet.objectType === "context-reference") return applyContextReferenceChangeSet(store, changeSet);
   if (changeSet.objectType === "context-review-rubric") return applyContextReviewRubricChangeSet(store, changeSet);
+  if (changeSet.objectType === "phenotype-library") return applyPhenotypeLibraryChangeSet(store, changeSet);
+  if (changeSet.objectType === "phenotype-library-graph-binding") return applyPhenotypeLibraryGraphBindingChangeSet(store, changeSet);
+  if (changeSet.objectType === "storage-mount") return applyStorageMountChangeSet(store, changeSet);
+  if (changeSet.objectType === "external-library-mapping") return applyExternalLibraryMappingChangeSet(store, changeSet);
+  if (changeSet.objectType === "library-routing-policy") return applyLibraryRoutingPolicyChangeSet(store, changeSet);
   throw new Error(`unsupported change-set object type: ${changeSet.objectType}`);
 }
 
@@ -1038,6 +1431,29 @@ function reviewChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ChangeSe
     const rubric = changeSet.payload.rubric as ContextReviewRubric | undefined;
     if (!rubric) constraintViolations.push("change-set payload missing context review rubric");
     if (rubric && !rubric.question) missingDimensions.push("rubric.question");
+  } else if (changeSet.objectType === "phenotype-library") {
+    const library = changeSet.payload.library as PhenotypeLibrary | undefined;
+    if (!library) constraintViolations.push("change-set payload missing phenotype library");
+    if (library && !library.purpose) missingDimensions.push("library.purpose");
+  } else if (changeSet.objectType === "phenotype-library-graph-binding") {
+    const binding = changeSet.payload.binding as PhenotypeLibraryGraphBinding | undefined;
+    if (!binding) constraintViolations.push("change-set payload missing phenotype library graph binding");
+    if (binding && !store.phenotypeLibraries.get(binding.libraryId)) constraintViolations.push(`library not found: ${binding.libraryId}`);
+    if (binding && !store.graphs.get(binding.graphId)) constraintViolations.push(`graph not found: ${binding.graphId}`);
+  } else if (changeSet.objectType === "storage-mount") {
+    const mount = changeSet.payload.mount as StorageMount | undefined;
+    if (!mount) constraintViolations.push("change-set payload missing storage mount");
+    if (mount && !store.phenotypeLibraries.get(mount.libraryId)) constraintViolations.push(`library not found: ${mount.libraryId}`);
+  } else if (changeSet.objectType === "external-library-mapping") {
+    const mapping = changeSet.payload.mapping as ExternalLibraryMapping | undefined;
+    if (!mapping) constraintViolations.push("change-set payload missing external library mapping");
+    if (mapping && !store.phenotypeLibraries.get(mapping.libraryId)) constraintViolations.push(`library not found: ${mapping.libraryId}`);
+    if (mapping && !store.storageMounts.get(mapping.mountId)) constraintViolations.push(`storage mount not found: ${mapping.mountId}`);
+  } else if (changeSet.objectType === "library-routing-policy") {
+    const policy = changeSet.payload.policy as LibraryRoutingPolicy | undefined;
+    if (!policy) constraintViolations.push("change-set payload missing library routing policy");
+    if (policy && !store.phenotypeLibraries.get(policy.libraryId)) constraintViolations.push(`library not found: ${policy.libraryId}`);
+    if (policy && !store.storageMounts.get(policy.targetMountId)) constraintViolations.push(`storage mount not found: ${policy.targetMountId}`);
   } else {
     suggestedActions.push(`manual review required for unsupported object type: ${changeSet.objectType}`);
   }
@@ -1349,4 +1765,79 @@ function applyContextReviewRubricChangeSet(store: DnaServiceStore, changeSet: Ch
     return next;
   });
   return { value: rubric, changeSet: applied };
+}
+
+function applyPhenotypeLibraryChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ServiceResult<PhenotypeLibrary> {
+  requireChangeSetObjectType(changeSet, "phenotype-library");
+  const library = changeSet.payload.library as PhenotypeLibrary | undefined;
+  if (!library) throw new Error("change-set payload missing phenotype library");
+  const applied = store.transaction(() => {
+    store.phenotypeLibraries.create(library);
+    const next = markChangeSetApplied(changeSet);
+    store.changeSets.update(next);
+    return next;
+  });
+  return { value: library, changeSet: applied };
+}
+
+function applyPhenotypeLibraryGraphBindingChangeSet(
+  store: DnaServiceStore,
+  changeSet: ChangeSet
+): ServiceResult<PhenotypeLibraryGraphBinding> {
+  requireChangeSetObjectType(changeSet, "phenotype-library-graph-binding");
+  const binding = changeSet.payload.binding as PhenotypeLibraryGraphBinding | undefined;
+  if (!binding) throw new Error("change-set payload missing phenotype library graph binding");
+  const applied = store.transaction(() => {
+    if (!store.phenotypeLibraries.get(binding.libraryId)) throw new Error(`library not found: ${binding.libraryId}`);
+    if (!store.graphs.get(binding.graphId)) throw new Error(`graph not found: ${binding.graphId}`);
+    store.phenotypeLibraryGraphBindings.create(binding);
+    const next = markChangeSetApplied(changeSet);
+    store.changeSets.update(next);
+    return next;
+  });
+  return { value: binding, changeSet: applied };
+}
+
+function applyStorageMountChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ServiceResult<StorageMount> {
+  requireChangeSetObjectType(changeSet, "storage-mount");
+  const mount = changeSet.payload.mount as StorageMount | undefined;
+  if (!mount) throw new Error("change-set payload missing storage mount");
+  const applied = store.transaction(() => {
+    if (!store.phenotypeLibraries.get(mount.libraryId)) throw new Error(`library not found: ${mount.libraryId}`);
+    store.storageMounts.create(mount);
+    const next = markChangeSetApplied(changeSet);
+    store.changeSets.update(next);
+    return next;
+  });
+  return { value: mount, changeSet: applied };
+}
+
+function applyExternalLibraryMappingChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ServiceResult<ExternalLibraryMapping> {
+  requireChangeSetObjectType(changeSet, "external-library-mapping");
+  const mapping = changeSet.payload.mapping as ExternalLibraryMapping | undefined;
+  if (!mapping) throw new Error("change-set payload missing external library mapping");
+  const applied = store.transaction(() => {
+    if (!store.phenotypeLibraries.get(mapping.libraryId)) throw new Error(`library not found: ${mapping.libraryId}`);
+    if (!store.storageMounts.get(mapping.mountId)) throw new Error(`storage mount not found: ${mapping.mountId}`);
+    store.externalLibraryMappings.create(mapping);
+    const next = markChangeSetApplied(changeSet);
+    store.changeSets.update(next);
+    return next;
+  });
+  return { value: mapping, changeSet: applied };
+}
+
+function applyLibraryRoutingPolicyChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ServiceResult<LibraryRoutingPolicy> {
+  requireChangeSetObjectType(changeSet, "library-routing-policy");
+  const policy = changeSet.payload.policy as LibraryRoutingPolicy | undefined;
+  if (!policy) throw new Error("change-set payload missing library routing policy");
+  const applied = store.transaction(() => {
+    if (!store.phenotypeLibraries.get(policy.libraryId)) throw new Error(`library not found: ${policy.libraryId}`);
+    if (!store.storageMounts.get(policy.targetMountId)) throw new Error(`storage mount not found: ${policy.targetMountId}`);
+    store.libraryRoutingPolicies.create(policy);
+    const next = markChangeSetApplied(changeSet);
+    store.changeSets.update(next);
+    return next;
+  });
+  return { value: policy, changeSet: applied };
 }

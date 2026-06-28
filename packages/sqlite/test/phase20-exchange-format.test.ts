@@ -24,6 +24,7 @@ import {
   createDefaultOutputReference,
   createDefaultPhenotype,
   createDefaultPhenotypeVersion,
+  createDefaultProposal,
   createDefaultSpeciesGroup,
   createDefaultSpeciesGroupMembership,
   createDefaultSpeciesGroupRelation,
@@ -338,5 +339,120 @@ describe("Phase 20 versioned exchange format manifest", () => {
 
     source.close();
     target.close();
+  });
+
+  test("exports review-current packages without change-set and proposal noise", () => {
+    const dir = tempDir("exchange-review-current");
+    const source = new SqliteDnaStore(join(dir, "source.sqlite"));
+    const target = new SqliteDnaStore(join(dir, "target.sqlite"));
+    const out = join(dir, "export");
+    source.migrate();
+    target.migrate();
+    seedExchangeProject(source);
+    const linkedChangeSetId = source.changeSets.list()[0]?.changeSetId;
+    source.proposals.create(
+      createDefaultProposal({
+        proposalId: "proposal-review-current",
+        title: "Review current",
+        changeSetIds: linkedChangeSetId ? [linkedChangeSetId] : []
+      })
+    );
+
+    exportProject(source, out, { profile: "review-current" });
+    const manifest = readJson(join(out, "dna.project.json"));
+
+    expect(manifest).toMatchObject({
+      exportProfile: "review-current",
+      omitted: {
+        sections: ["change-sets", "proposals"],
+        changeSetCount: 1,
+        proposalCount: 1
+      }
+    });
+    expect(existsSync(join(out, "change-sets"))).toBe(false);
+    expect(existsSync(join(out, "proposals"))).toBe(false);
+    expect(existsSync(join(out, "graphs", "graph-exchange", "graph.json"))).toBe(true);
+
+    importProject(target, out);
+
+    expect(target.graphs.get("graph-exchange")?.name).toBe("Exchange Graph");
+    expect(target.changeSets.list()).toHaveLength(0);
+    expect(target.proposals.list()).toHaveLength(0);
+
+    source.close();
+    target.close();
+  });
+
+  test("exports proposal-review packages with only the target proposal and linked change-sets", () => {
+    const dir = tempDir("exchange-proposal-review");
+    const source = new SqliteDnaStore(join(dir, "source.sqlite"));
+    const out = join(dir, "export");
+    source.migrate();
+    seedExchangeProject(source);
+    const targetChangeSetId = source.changeSets.list()[0]?.changeSetId;
+    if (!targetChangeSetId) throw new Error("expected seeded change-set");
+    const unrelated = createChangeSet({
+      mode: "preview-confirm",
+      objectType: "graph",
+      operation: "create",
+      summary: "unrelated preview",
+      diff: { graphId: "graph-unrelated" },
+      payload: { graphId: "graph-unrelated" }
+    });
+    source.changeSets.create(unrelated);
+    source.proposals.create(
+      createDefaultProposal({
+        proposalId: "proposal-target",
+        title: "Target proposal",
+        changeSetIds: [targetChangeSetId]
+      })
+    );
+    source.proposals.create(
+      createDefaultProposal({
+        proposalId: "proposal-unrelated",
+        title: "Unrelated proposal",
+        changeSetIds: [unrelated.changeSetId]
+      })
+    );
+
+    exportProject(source, out, { profile: "proposal-review", proposalId: "proposal-target" });
+    const manifest = readJson(join(out, "dna.project.json"));
+
+    expect(manifest).toMatchObject({
+      exportProfile: "proposal-review",
+      proposalId: "proposal-target",
+      omitted: {
+        sections: ["unrelated change-sets", "unrelated proposals"],
+        changeSetCount: 1,
+        proposalCount: 1
+      }
+    });
+    expect(existsSync(join(out, "change-sets", `${targetChangeSetId}.json`))).toBe(true);
+    expect(existsSync(join(out, "change-sets", `${unrelated.changeSetId}.json`))).toBe(false);
+    expect(existsSync(join(out, "proposals", "proposal-target.json"))).toBe(true);
+    expect(existsSync(join(out, "proposals", "proposal-unrelated.json"))).toBe(false);
+
+    source.close();
+  });
+
+  test("rejects proposal-review export when a linked change-set is missing", () => {
+    const dir = tempDir("exchange-proposal-review-broken");
+    const source = new SqliteDnaStore(join(dir, "source.sqlite"));
+    const out = join(dir, "export");
+    source.migrate();
+    seedExchangeProject(source);
+    source.proposals.create(
+      createDefaultProposal({
+        proposalId: "proposal-broken",
+        title: "Broken proposal",
+        changeSetIds: ["missing-change-set"]
+      })
+    );
+
+    expect(() => exportProject(source, out, { profile: "proposal-review", proposalId: "proposal-broken" })).toThrow(
+      /proposal proposal-broken references missing change-set: missing-change-set/
+    );
+
+    source.close();
   });
 });

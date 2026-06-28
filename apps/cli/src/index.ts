@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { readFileSync } from "node:fs";
 import { Command } from "commander";
 import {
   buildSpeciesCompileInput,
@@ -24,7 +25,9 @@ import {
   createImpactRecords,
   createReviewRecord,
   formatGraphTreeText,
+  formatGraphTreeWithGroupsText,
   buildGraphTree,
+  buildGraphGroupOverlay,
   makeId,
   MockGenerationProvider,
   OutputReferenceRoleSchema,
@@ -131,6 +134,11 @@ function parsePort(value: string) {
   return parsed;
 }
 
+function parseExportProfile(value: string): "full" | "review-current" | "proposal-review" {
+  if (value === "full" || value === "review-current" || value === "proposal-review") return value;
+  throw new Error(`unknown export profile: ${value}`);
+}
+
 function resolveOutputReferenceMount(
   store: SqliteDnaStore,
   request: {
@@ -232,6 +240,7 @@ graph
   .command("tree")
   .requiredOption("--id <graphId>", "graph id")
   .option("--format <format>", "output format: text or json", "text")
+  .option("--include-groups", "include species group memberships and group relations as a review overlay")
   .action((options, command) => {
     const store = openStore(command);
     const value = store.graphs.get(options.id);
@@ -241,10 +250,19 @@ graph
       nodes: store.nodes.listByGraph(options.id),
       edges: store.edges.listByGraph(options.id)
     });
+    const overlay = options.includeGroups
+      ? buildGraphGroupOverlay({
+          graph: value,
+          nodes: store.nodes.listByGraph(options.id),
+          groups: store.speciesGroups.listByGraph(options.id),
+          memberships: store.speciesGroupMemberships.listByGraph(options.id),
+          groupRelations: store.speciesGroupRelations.listByGraph(options.id)
+        })
+      : undefined;
     if (options.format === "json") {
-      console.log(JSON.stringify(tree, null, 2));
+      console.log(JSON.stringify(overlay ? { ...tree, groupOverlay: overlay } : tree, null, 2));
     } else if (options.format === "text") {
-      process.stdout.write(formatGraphTreeText(tree));
+      process.stdout.write(overlay ? formatGraphTreeWithGroupsText(tree, overlay) : formatGraphTreeText(tree));
     } else {
       throw new Error(`unknown graph tree format: ${options.format}`);
     }
@@ -1609,6 +1627,32 @@ proposal
     console.log(JSON.stringify(value, null, 2));
     store.close();
   });
+proposal
+  .command("import-batch")
+  .requiredOption("--in <file>", "dna.modeling-batch.v1 JSON file")
+  .requiredOption("--id <proposalId>", "proposal id for preview-confirm mode")
+  .requiredOption("--title <title>", "proposal title for preview-confirm mode")
+  .option("--summary <summary>", "proposal summary", "")
+  .option("--mode <mode>", "import mode: preview-confirm or draft-write", "preview-confirm")
+  .action((options, command) => {
+    const importMode = (command as Command).optsWithGlobals<CommandOptions>().mode ?? options.mode;
+    if (importMode === "changeset-apply") throw new Error("changeset-apply is not an import-batch mode");
+    if (importMode !== "preview-confirm" && importMode !== "draft-write") {
+      throw new Error(`unknown import-batch mode: ${importMode}`);
+    }
+    const store = openStore(command);
+    const services = createDnaServices(store);
+    const batch = JSON.parse(readFileSync(options.in, "utf8"));
+    const result = services.proposal.importBatch({
+      proposalId: options.id,
+      title: options.title,
+      summary: options.summary,
+      batch,
+      mode: importMode
+    });
+    console.log(JSON.stringify(result, null, 2));
+    store.close();
+  });
 proposal.command("list").action((_options, command) => {
   const store = openStore(command);
   const services = createDnaServices(store);
@@ -1810,17 +1854,24 @@ program
     await new Promise(() => {});
   });
 
-program.command("export").requiredOption("--out <directory>", "output directory").action((options, command) => {
+function addExportOptions(command: Command) {
+  return command
+    .requiredOption("--out <directory>", "output directory")
+    .option("--profile <profile>", "export profile: full, review-current, proposal-review", "full")
+    .option("--proposal <proposalId>", "proposal id required for --profile proposal-review");
+}
+
+addExportOptions(program.command("export")).action((options, command) => {
   const store = openStore(command);
-  exportProject(store, options.out);
+  exportProject(store, options.out, { profile: parseExportProfile(options.profile), proposalId: options.proposal });
   console.log(`exported DNA project to ${options.out}`);
   store.close();
 });
 
 const sync = program.command("sync").description("Exchange DNA projects through Git-friendly directories");
-sync.command("export").requiredOption("--out <directory>", "output directory").action((options, command) => {
+addExportOptions(sync.command("export")).action((options, command) => {
   const store = openStore(command);
-  exportProject(store, options.out);
+  exportProject(store, options.out, { profile: parseExportProfile(options.profile), proposalId: options.proposal });
   console.log(`synced DNA project export to ${options.out}`);
   store.close();
 });

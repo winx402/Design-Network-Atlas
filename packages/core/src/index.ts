@@ -12,3 +12,4 @@ export * from "./library-routing.js";
 export * from "./graph-tree.js";
 export * from "./populations.js";
 export * from "./template-compatibility.js";
+export * from "./modeling-batch.js";

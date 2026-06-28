@@ -1,4 +1,4 @@
-import { EvolutionEdge, Graph, SpeciesNode } from "./schemas.js";
+import { EvolutionEdge, Graph, SpeciesGroup, SpeciesGroupMembership, SpeciesGroupRelation, SpeciesNode } from "./schemas.js";
 
 export interface GraphTreeRelation {
   fromNodeId: string;
@@ -32,6 +32,18 @@ export interface GraphTree {
   relations: GraphTreeRelation[];
   additionalRelations: GraphTreeRelation[];
   missingNodeIds: string[];
+}
+
+export interface GraphGroupOverlay {
+  groups: SpeciesGroup[];
+  memberships: SpeciesGroupMembership[];
+  groupRelations: SpeciesGroupRelation[];
+  membershipsByNodeId: Record<string, SpeciesGroupMembership[]>;
+  ungroupedNodeIds: string[];
+}
+
+export interface GraphTreeWithGroupOverlay extends GraphTree {
+  groupOverlay: GraphGroupOverlay;
 }
 
 export function buildGraphTree(input: { graph: Graph; nodes: SpeciesNode[]; edges: EvolutionEdge[] }): GraphTree {
@@ -134,6 +146,100 @@ export function formatGraphTreeText(tree: GraphTree): string {
   if (tree.missingNodeIds.length > 0) {
     lines.push("");
     lines.push(`Missing node references: ${tree.missingNodeIds.join(", ")}`);
+  }
+
+  return `${lines.join("\n")}\n`;
+}
+
+export function buildGraphGroupOverlay(input: {
+  graph: Graph;
+  nodes: SpeciesNode[];
+  groups: SpeciesGroup[];
+  memberships: SpeciesGroupMembership[];
+  groupRelations: SpeciesGroupRelation[];
+}): GraphGroupOverlay {
+  const nodeIds = new Set(input.nodes.filter((node) => node.graphId === input.graph.graphId).map((node) => node.nodeId));
+  const groups = input.groups.filter((group) => group.graphId === input.graph.graphId).sort((left, right) => left.groupId.localeCompare(right.groupId));
+  const groupIds = new Set(groups.map((group) => group.groupId));
+  const memberships = input.memberships
+    .filter((membership) => membership.graphId === input.graph.graphId && nodeIds.has(membership.nodeId) && groupIds.has(membership.groupId))
+    .sort((left, right) => left.groupId.localeCompare(right.groupId) || left.nodeId.localeCompare(right.nodeId) || left.membershipId.localeCompare(right.membershipId));
+  const groupRelations = input.groupRelations
+    .filter(
+      (relation) =>
+        relation.graphId === input.graph.graphId && groupIds.has(relation.sourceGroupId) && groupIds.has(relation.targetGroupId)
+    )
+    .sort(
+      (left, right) =>
+        left.sourceGroupId.localeCompare(right.sourceGroupId) ||
+        left.targetGroupId.localeCompare(right.targetGroupId) ||
+        left.relationId.localeCompare(right.relationId)
+    );
+  const membershipsByNodeId: Record<string, SpeciesGroupMembership[]> = {};
+  for (const membership of memberships) {
+    membershipsByNodeId[membership.nodeId] = membershipsByNodeId[membership.nodeId] ?? [];
+    membershipsByNodeId[membership.nodeId].push(membership);
+  }
+  const ungroupedNodeIds = [...nodeIds].filter((nodeId) => !membershipsByNodeId[nodeId]?.length).sort();
+  return { groups, memberships, groupRelations, membershipsByNodeId, ungroupedNodeIds };
+}
+
+export function formatGraphTreeWithGroupsText(tree: GraphTree, overlay: GraphGroupOverlay): string {
+  const lines = formatGraphTreeText(tree).trimEnd().split("\n");
+  const nodeById = collectTreeNodes(tree);
+  const groupById = new Map(overlay.groups.map((group) => [group.groupId, group]));
+  const membershipsByGroupId = new Map<string, SpeciesGroupMembership[]>();
+  for (const membership of overlay.memberships) {
+    const memberships = membershipsByGroupId.get(membership.groupId) ?? [];
+    memberships.push(membership);
+    membershipsByGroupId.set(membership.groupId, memberships);
+  }
+
+  lines.push("");
+  lines.push("Groups:");
+  if (overlay.groups.length === 0) {
+    lines.push("- none");
+  } else {
+    for (const group of overlay.groups) {
+      const details = [group.groupType, group.status].filter(Boolean).join(", ");
+      const summary = group.sharedFacts.length ? ` - ${group.sharedFacts.join("; ")}` : "";
+      lines.push(`- ${group.name} (${group.groupId}) [${details}]${summary}`);
+      const memberships = membershipsByGroupId.get(group.groupId) ?? [];
+      if (memberships.length === 0) {
+        lines.push("  - no members");
+      } else {
+        for (const membership of memberships) {
+          const node = nodeById.get(membership.nodeId);
+          lines.push(`  - ${node?.name ?? membership.nodeId} (${membership.nodeId}) [${membership.role}, ${membership.membershipId}]`);
+        }
+      }
+    }
+  }
+
+  lines.push("");
+  lines.push("Ungrouped nodes:");
+  if (overlay.ungroupedNodeIds.length === 0) {
+    lines.push("- none");
+  } else {
+    for (const nodeId of overlay.ungroupedNodeIds) {
+      const node = nodeById.get(nodeId);
+      lines.push(`- ${node?.name ?? nodeId} (${nodeId})`);
+    }
+  }
+
+  lines.push("");
+  lines.push("Group relations:");
+  if (overlay.groupRelations.length === 0) {
+    lines.push("- none");
+  } else {
+    for (const relation of overlay.groupRelations) {
+      const source = groupById.get(relation.sourceGroupId);
+      const target = groupById.get(relation.targetGroupId);
+      const description = relation.description ? ` ${relation.description}` : "";
+      lines.push(
+        `- ${source?.name ?? relation.sourceGroupId} (${relation.sourceGroupId}) -> ${target?.name ?? relation.targetGroupId} (${relation.targetGroupId}) [${relation.relationType}, ${relation.relationId}]${description}`
+      );
+    }
   }
 
   return `${lines.join("\n")}\n`;
@@ -247,6 +353,17 @@ function findTreeNode(nodes: GraphTreeNode[], nodeId: string): GraphTreeNode | u
     if (child) return child;
   }
   return undefined;
+}
+
+function collectTreeNodes(tree: GraphTree): Map<string, GraphTreeNode> {
+  const nodes = new Map<string, GraphTreeNode>();
+  for (const root of tree.roots) collectTreeNode(root, nodes);
+  return nodes;
+}
+
+function collectTreeNode(node: GraphTreeNode, nodes: Map<string, GraphTreeNode>) {
+  nodes.set(node.nodeId, node);
+  for (const child of node.children) collectTreeNode(child, nodes);
 }
 
 function compareNodeOrder(left: string, right: string, nodeOrder: Map<string, number>) {

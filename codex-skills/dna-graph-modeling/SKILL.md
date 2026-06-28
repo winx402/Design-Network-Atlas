@@ -94,6 +94,7 @@ Run these gates in order. If a gate cannot be answered, mark it as a blocking or
    - Use preview-confirm for normal single-object writes.
    - Use change-set review for several related node/edge/template edits.
    - Use a local proposal package for initial multi-node trees, group systems, bridges, or high-uncertainty modeling that should review several preview change-sets together.
+   - For large initial modeling drafts, prepare a `dna.modeling-batch.v1` JSON file for `dna proposal import-batch --in <file>` instead of listing dozens of one-off commands. The batch format may include graphs, atlases, species groups, group memberships, group relations, graph bridges, species nodes, evolution edges, phenotype libraries, library graph bindings, storage mounts, external library mappings, and library routing policies.
    - Use draft-write only when the user wants visible but non-final graph objects or explicitly draft generated trace/output records.
    - Use direct audit write only for generated trace/output/audit records and external pointers through CLI/application service boundaries.
 
@@ -112,6 +113,7 @@ Return a structured modeling proposal with these fields:
 - phenotypePlan: generated result types, expected variants, review needs, and output/library routing.
 - compilePlan: suggested CompilePolicy, compileMode, conflict strategy, expected SpeciesCompileArtifact and PhenotypeCompileArtifact contents.
 - writeStrategy: preview-confirm, change-set review, local proposal package, draft-write, or direct audit write with reason.
+- modelingBatchPlan: when a local proposal package is appropriate, state whether to produce `dna.modeling-batch.v1`, list included object sections, and note references that must resolve before import.
 - assumptions: facts treated as assumptions.
 - blockingQuestions: questions that materially change graph structure or write safety.
 - nonBlockingQuestions: questions that can remain unresolved for a draft or preview.
@@ -135,4 +137,5 @@ Return a structured modeling proposal with these fields:
 - Do not hide storage concerns inside graph identity; bind graphs and result libraries explicitly.
 - Do not treat custom relation types as fixed compile rules. They can be included as trace/context for Agent-assisted compile.
 - Do not bypass DNA service, CLI, change-set, or local proposal package write flows.
+- Do not include API keys, provider credentials, passwords, complete private links, generation jobs, phenotype versions, assets, output references, review records, or impact records in `dna.modeling-batch.v1`; those records use their own service boundaries.
 - Do not store API keys, credentials, complete private links, raw Agent host responses, or unrelated private project material.

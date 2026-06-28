@@ -133,4 +133,99 @@ describe("Phase 14 graph tree CLI", () => {
       ])
     );
   }, 60_000);
+
+  test("adds an optional species group overlay without changing default tree output", () => {
+    const db = join(tempDir("phase14-graph-tree-groups"), "dna.sqlite");
+
+    runDna(["--db", db, "graph", "create", "--id", "graph-groups", "--name", "Grouped Graph", "--purpose", "group overlay", "--yes"]);
+    runDna(["--db", db, "node", "create", "--graph", "graph-groups", "--id", "node-root", "--name", "Root", "--yes"]);
+    runDna(["--db", db, "node", "create", "--graph", "graph-groups", "--id", "node-grouped", "--name", "Grouped Node", "--parent", "node-root", "--yes"]);
+    runDna(["--db", db, "node", "create", "--graph", "graph-groups", "--id", "node-ungrouped", "--name", "Ungrouped Node", "--yes"]);
+    runDna(["--db", db, "group", "create", "--graph", "graph-groups", "--id", "group-main", "--name", "Main Group", "--type", "population", "--yes"]);
+    runDna(["--db", db, "group", "create", "--graph", "graph-groups", "--id", "group-secondary", "--name", "Secondary Group", "--type", "domain", "--yes"]);
+    runDna([
+      "--db",
+      db,
+      "group",
+      "member",
+      "add",
+      "--graph",
+      "graph-groups",
+      "--group",
+      "group-main",
+      "--node",
+      "node-grouped",
+      "--id",
+      "membership-main",
+      "--role",
+      "primary",
+      "--yes"
+    ]);
+    runDna([
+      "--db",
+      db,
+      "group",
+      "member",
+      "add",
+      "--graph",
+      "graph-groups",
+      "--group",
+      "group-secondary",
+      "--node",
+      "node-grouped",
+      "--id",
+      "membership-secondary",
+      "--role",
+      "reference",
+      "--yes"
+    ]);
+    runDna([
+      "--db",
+      db,
+      "group",
+      "relation",
+      "add",
+      "--graph",
+      "graph-groups",
+      "--id",
+      "relation-groups",
+      "--source",
+      "group-main",
+      "--target",
+      "group-secondary",
+      "--type",
+      "references",
+      "--description",
+      "main references secondary",
+      "--yes"
+    ]);
+
+    const defaultText = runDna(["--db", db, "graph", "tree", "--id", "graph-groups"]);
+    expect(defaultText).not.toContain("Groups:");
+    expect(defaultText.match(/Grouped Node/g) ?? []).toHaveLength(1);
+    const defaultJson = JSON.parse(runDna(["--db", db, "graph", "tree", "--id", "graph-groups", "--format", "json"]));
+    expect(defaultJson.groupOverlay).toBeUndefined();
+
+    const text = runDna(["--db", db, "graph", "tree", "--id", "graph-groups", "--include-groups"]);
+    expect(text).toContain("Groups:");
+    expect(text).toContain("- Main Group (group-main) [population, draft]");
+    expect(text).toContain("  - Grouped Node (node-grouped) [primary, membership-main]");
+    expect(text).toContain("- Secondary Group (group-secondary) [domain, draft]");
+    expect(text).toContain("  - Grouped Node (node-grouped) [reference, membership-secondary]");
+    expect(text).toContain("Ungrouped nodes:");
+    expect(text).toContain("- Root (node-root)");
+    expect(text).toContain("- Ungrouped Node (node-ungrouped)");
+    expect(text).toContain("Group relations:");
+    expect(text).toContain("- Main Group (group-main) -> Secondary Group (group-secondary) [references, relation-groups] main references secondary");
+    expect(text.match(/^  - Grouped Node \(node-grouped\)/gm) ?? []).toHaveLength(3);
+
+    const json = JSON.parse(runDna(["--db", db, "graph", "tree", "--id", "graph-groups", "--include-groups", "--format", "json"]));
+    expect(json.groupOverlay.groups.map((group: { groupId: string }) => group.groupId)).toEqual(["group-main", "group-secondary"]);
+    expect(json.groupOverlay.membershipsByNodeId["node-grouped"].map((membership: { membershipId: string }) => membership.membershipId)).toEqual([
+      "membership-main",
+      "membership-secondary"
+    ]);
+    expect(json.groupOverlay.ungroupedNodeIds).toEqual(["node-root", "node-ungrouped"]);
+    expect(json.groupOverlay.groupRelations).toEqual([expect.objectContaining({ relationId: "relation-groups" })]);
+  }, 60_000);
 });
