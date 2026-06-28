@@ -1,0 +1,71 @@
+name: DNA feedback, bug, or product gap
+description: Report a DNA bug, improvement idea, unclear modeling boundary, docs drift, or missing product capability.
+title: "[Feedback]: "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve DNA. DNA is built for LLM-assisted design graph modeling, phenotype generation, review exports, and Agent workflows.
+
+        Do not include API keys, passwords, provider credentials, complete private links, private project data, or non-public generated assets.
+  - type: dropdown
+    id: issue_type
+    attributes:
+      label: Issue type
+      description: Pick the closest category. It is fine if the issue spans more than one.
+      options:
+        - Bug
+        - Product capability gap
+        - Modeling guidance is unclear
+        - CLI or workflow friction
+        - Documentation drift or missing docs
+        - Improvement or optimization idea
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: scenario
+    attributes:
+      label: Scenario
+      description: What were you trying to do with DNA?
+      placeholder: "Example: I used dna.modeling-batch.v1 to model UI icons and expected planned phenotype surfaces under each SpeciesNode."
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect DNA, the CLI, a skill, an export, or a document to do?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What actually happened?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction or evidence
+      description: Include commands, input snippets, safe error output, or public review/export snippets when possible.
+      render: shell
+    validations:
+      required: false
+  - type: textarea
+    id: product_context
+    attributes:
+      label: Product context
+      description: If this is not a pure bug, explain the modeling/product gap or why the current behavior creates confusion.
+      placeholder: "Example: The current flow makes portraits and icons look like separate SpeciesNode records instead of planned Phenotype surfaces."
+    validations:
+      required: false
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: I did not include API keys, passwords, provider credentials, complete private links, private project data, or non-public generated assets.
+          required: true
