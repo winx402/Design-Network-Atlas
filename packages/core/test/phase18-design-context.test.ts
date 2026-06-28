@@ -211,6 +211,6 @@ describe("Phase 18 PRD-02 design context core model", () => {
     );
     expect(result.prompt).toContain("Design Context");
     expect(result.prompt).toContain("月蚀阵营、异境禁忌和 UI 降噪原则");
-    expect(result.edgeVersionTrace).toEqual([]);
+    expect(result.relationshipTrace).toEqual([]);
   });
 });

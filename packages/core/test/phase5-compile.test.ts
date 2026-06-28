@@ -30,7 +30,7 @@ function node() {
     parentNodes: ["node-parent"],
     primaryParent: "node-parent",
     parentRoles: { "node-parent": "primary" },
-    incomingEdges: ["edge-warning"],
+    incomingEdges: ["rel-warning"],
     relatedNodes: [],
     currentVersion: "1.0.0",
     status: "active",
@@ -51,7 +51,7 @@ describe("Phase 5 compile policies and phenotype production text", () => {
       graph: graph("system-rule-first"),
       node: node(),
       parentSnapshots: [{ nodeVersionId: "node-parent@1.0.0", snapshot: { color: "blue", grid: "24px" } }],
-      edgeDeltas: [{ edgeVersionId: "edge-warning@1.0.0", delta: { color: "red", danger: true } }],
+      relationshipDeltas: [{ relationshipId: "rel-warning", delta: { color: "red", danger: true } }],
       taskBrief: "toolbar warning icon",
       phenotypeType: "image-prompt"
     });
@@ -68,7 +68,7 @@ describe("Phase 5 compile policies and phenotype production text", () => {
       "color:blue->red",
       "color:red->amber"
     ]);
-    expect(result.edgeVersionTrace).toEqual(["edge-warning@1.0.0"]);
+    expect(result.relationshipTrace).toEqual(["rel-warning"]);
   });
 
   test("snapshot-fixed uses the fixed snapshot instead of recomputing parent and edge deltas", () => {
@@ -76,7 +76,7 @@ describe("Phase 5 compile policies and phenotype production text", () => {
       graph: graph("snapshot-fixed"),
       node: node(),
       parentSnapshots: [{ nodeVersionId: "node-parent@1.0.0", snapshot: { color: "blue", grid: "24px" } }],
-      edgeDeltas: [{ edgeVersionId: "edge-warning@1.0.0", delta: { color: "red", danger: true } }],
+      relationshipDeltas: [{ relationshipId: "rel-warning", delta: { color: "red", danger: true } }],
       fixedSnapshot: { color: "green", grid: "16px", motifs: ["fixed-ring"] },
       taskBrief: "toolbar warning icon",
       phenotypeType: "art-brief"
@@ -92,7 +92,7 @@ describe("Phase 5 compile policies and phenotype production text", () => {
       graph: graph("system-rule-first"),
       node: node(),
       parentSnapshots: [{ nodeVersionId: "node-parent@1.0.0", snapshot: { grid: "24px" } }],
-      edgeDeltas: [{ edgeVersionId: "edge-warning@1.0.0", delta: { semantic: "danger" } }],
+      relationshipDeltas: [{ relationshipId: "rel-warning", delta: { semantic: "danger" } }],
       taskBrief: "check if generated icon stays inside the warning family",
       phenotypeType: "review-checklist"
     });

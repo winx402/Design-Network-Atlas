@@ -10,10 +10,9 @@ import {
   createDefaultContextReviewRubric,
   createDefaultDesignContext,
   createDefaultDesignPrinciple,
+  createDefaultDesignRelationship,
   createDefaultGraph,
-  createDefaultEvolutionEdge,
   createDefaultExternalLibraryMapping,
-  createDefaultGraphBridge,
   createDefaultLibraryRoutingPolicy,
   createDefaultNodeVersion,
   createDefaultPhenotypeLibrary,
@@ -21,10 +20,8 @@ import {
   createDefaultProposal,
   createDefaultSpeciesGroup,
   createDefaultSpeciesGroupMembership,
-  createDefaultSpeciesGroupRelation,
   createDefaultSpeciesNode,
   createDefaultStorageMount,
-  EdgeVersion,
   ContextAttachment,
   ContextFact,
   ContextMotif,
@@ -32,10 +29,9 @@ import {
   ContextReviewRubric,
   DesignContext,
   DesignPrinciple,
-  EvolutionEdge,
+  DesignRelationship,
   ExternalLibraryMapping,
   Graph,
-  GraphBridge,
   LibraryRoutingPolicy,
   markChangeSetApplied,
   markChangeSetDiscarded,
@@ -48,11 +44,9 @@ import {
   resolveLineageStatus,
   SpeciesGroup,
   SpeciesGroupMembership,
-  SpeciesGroupRelation,
   SpeciesNode,
   StorageMount,
-  validateGraphBridgeSet,
-  validateSpeciesGroupRelationSet,
+  validateDesignRelationshipSet,
   WriteMode
 } from "@dna/core";
 import { DnaServiceStore } from "./memory.js";
@@ -106,20 +100,6 @@ export interface CreateNodeInput {
   badcases?: string[];
 }
 
-export interface CreateEdgeInput {
-  graphId: string;
-  edgeId: string;
-  fromNodeId: string;
-  toNodeId: string;
-  edgeType?: EvolutionEdge["edgeType"];
-  direction?: string;
-  operation?: string;
-  deltaGenes?: Record<string, unknown>;
-  valueResolution?: Record<string, unknown>;
-  mustPreserve?: string[];
-  mustAvoid?: string[];
-}
-
 export interface CreateSpeciesGroupInput {
   graphId: string;
   groupId: string;
@@ -146,18 +126,6 @@ export interface AddSpeciesGroupMemberInput {
   status?: SpeciesGroupMembership["status"];
 }
 
-export interface CreateSpeciesGroupRelationInput {
-  relationId: string;
-  graphId: string;
-  sourceGroupId: string;
-  targetGroupId: string;
-  relationType: SpeciesGroupRelation["relationType"];
-  description?: string;
-  status?: SpeciesGroupRelation["status"];
-  extensions?: Record<string, unknown>;
-  allowParallel?: boolean;
-}
-
 export interface CreateAtlasInput {
   atlasId: string;
   name: string;
@@ -172,15 +140,17 @@ export interface AddAtlasGraphInput {
   graphId: string;
 }
 
-export interface CreateGraphBridgeInput {
-  bridgeId: string;
-  atlasId: string;
-  sourceGraphId: string;
-  targetGraphId: string;
-  bridgeType: GraphBridge["bridgeType"];
+export interface CreateDesignRelationshipInput {
+  relationshipId: string;
+  source: DesignRelationship["source"];
+  target: DesignRelationship["target"];
+  relationshipType: DesignRelationship["relationshipType"];
+  direction?: DesignRelationship["direction"];
   description?: string;
-  status?: GraphBridge["status"];
-  extensions?: Record<string, unknown>;
+  designContract?: Partial<DesignRelationship["designContract"]>;
+  auxiliaryRefs?: Partial<DesignRelationship["auxiliaryRefs"]>;
+  status?: DesignRelationship["status"];
+  metadata?: Record<string, unknown>;
   allowParallel?: boolean;
 }
 
@@ -393,50 +363,53 @@ export function createDnaServices(store: DnaServiceStore) {
           return applyNodeChangeSet(store, changeSet);
         }
         return { value: { node, nodeVersionId: version.nodeVersionId }, changeSet };
-      },
-      createEdge(input: CreateEdgeInput, options: WriteOptions): ServiceResult<{ edge: EvolutionEdge; edgeVersionId: string }> {
+      }
+    },
+    relationship: {
+      createRelationship(input: CreateDesignRelationshipInput, options: WriteOptions): ServiceResult<DesignRelationship> {
         if (options.mode === "changeset-apply") {
           const existing = requireExistingChangeSet(store, options.changeSetId);
-          return applyEdgeChangeSet(store, existing);
+          return applyDesignRelationshipChangeSet(store, existing);
         }
-        const edge = createDefaultEvolutionEdge({
-          graphId: input.graphId,
-          edgeId: input.edgeId,
-          fromNodeId: input.fromNodeId,
-          toNodeId: input.toNodeId,
-          edgeType: input.edgeType ?? "inherit",
-          direction: input.direction ?? "inherits visual identity",
-          operation: input.operation ?? "merge",
-          deltaGenes: input.deltaGenes ?? {},
-          valueResolution: input.valueResolution ?? { default: "override" },
-          mustPreserve: input.mustPreserve ?? [],
-          mustAvoid: input.mustAvoid ?? []
+        const relationship = createDefaultDesignRelationship({
+          ...input,
+          designContract: {
+            transferRule: input.designContract?.transferRule ?? "",
+            mustPreserve: input.designContract?.mustPreserve ?? [],
+            mustAvoid: input.designContract?.mustAvoid ?? [],
+            divergenceRule: input.designContract?.divergenceRule ?? "",
+            reviewQuestions: input.designContract?.reviewQuestions ?? []
+          },
+          auxiliaryRefs: {
+            contextIds: input.auxiliaryRefs?.contextIds ?? [],
+            motifIds: input.auxiliaryRefs?.motifIds ?? [],
+            principleIds: input.auxiliaryRefs?.principleIds ?? [],
+            facetIds: input.auxiliaryRefs?.facetIds ?? [],
+            rubricIds: input.auxiliaryRefs?.rubricIds ?? [],
+            referenceIds: input.auxiliaryRefs?.referenceIds ?? []
+          }
         });
-        const version: EdgeVersion = {
-          edgeVersionId: `${edge.edgeId}@${edge.currentVersion}`,
-          edgeId: edge.edgeId,
-          graphId: edge.graphId,
-          version: edge.currentVersion,
-          deltaGenes: edge.deltaGenes,
-          valueResolution: edge.valueResolution,
-          mustPreserve: edge.mustPreserve,
-          mustAvoid: edge.mustAvoid,
-          changeSummary: `create edge ${edge.edgeId}`,
-          createdAt: edge.createdAt
-        };
+        validatePendingDesignRelationship(store, relationship, Boolean(input.allowParallel));
         const changeSet = createChangeSet({
           mode: options.mode,
-          objectType: "edge",
+          objectType: "design-relationship",
           operation: "create",
-          summary: `create edge ${edge.edgeId}`,
-          diff: { edgeId: edge.edgeId, graphId: edge.graphId, fromNodeId: edge.fromNodeId, toNodeId: edge.toNodeId },
-          payload: { edge, version }
+          summary: `create design relationship ${relationship.relationshipId}`,
+          diff: {
+            relationshipId: relationship.relationshipId,
+            source: relationship.source,
+            target: relationship.target,
+            relationshipType: relationship.relationshipType,
+            direction: relationship.direction,
+            contract: Boolean(relationship.designContract.transferRule || relationship.designContract.mustPreserve.length || relationship.designContract.mustAvoid.length)
+          },
+          payload: { relationship, allowParallel: Boolean(input.allowParallel) }
         });
         store.changeSets.create(changeSet);
         if (shouldApply(options)) {
-          return applyEdgeChangeSet(store, changeSet);
+          return applyDesignRelationshipChangeSet(store, changeSet);
         }
-        return { value: { edge, edgeVersionId: version.edgeVersionId }, changeSet };
+        return { value: relationship, changeSet };
       }
     },
     group: {
@@ -479,33 +452,6 @@ export function createDnaServices(store: DnaServiceStore) {
           return applySpeciesGroupMembershipChangeSet(store, changeSet);
         }
         return { value: membership, changeSet };
-      },
-      createRelation(input: CreateSpeciesGroupRelationInput, options: WriteOptions): ServiceResult<SpeciesGroupRelation> {
-        if (options.mode === "changeset-apply") {
-          const existing = requireExistingChangeSet(store, options.changeSetId);
-          return applySpeciesGroupRelationChangeSet(store, existing);
-        }
-        const relation = createDefaultSpeciesGroupRelation(input);
-        validatePendingGroupRelation(store, relation, Boolean(input.allowParallel));
-        const changeSet = createChangeSet({
-          mode: options.mode,
-          objectType: "species-group-relation",
-          operation: "create",
-          summary: `create species group relation ${relation.relationId}`,
-          diff: {
-            relationId: relation.relationId,
-            graphId: relation.graphId,
-            sourceGroupId: relation.sourceGroupId,
-            targetGroupId: relation.targetGroupId,
-            relationType: relation.relationType
-          },
-          payload: { relation, allowParallel: Boolean(input.allowParallel) }
-        });
-        store.changeSets.create(changeSet);
-        if (shouldApply(options)) {
-          return applySpeciesGroupRelationChangeSet(store, changeSet);
-        }
-        return { value: relation, changeSet };
       }
     },
     atlas: {
@@ -549,33 +495,6 @@ export function createDnaServices(store: DnaServiceStore) {
           return applyAtlasUpdateChangeSet(store, changeSet);
         }
         return { value: next, changeSet };
-      },
-      createBridge(input: CreateGraphBridgeInput, options: WriteOptions): ServiceResult<GraphBridge> {
-        if (options.mode === "changeset-apply") {
-          const existing = requireExistingChangeSet(store, options.changeSetId);
-          return applyGraphBridgeChangeSet(store, existing);
-        }
-        const bridge = createDefaultGraphBridge(input);
-        validatePendingGraphBridge(store, bridge, Boolean(input.allowParallel));
-        const changeSet = createChangeSet({
-          mode: options.mode,
-          objectType: "graph-bridge",
-          operation: "create",
-          summary: `create graph bridge ${bridge.bridgeId}`,
-          diff: {
-            bridgeId: bridge.bridgeId,
-            atlasId: bridge.atlasId,
-            sourceGraphId: bridge.sourceGraphId,
-            targetGraphId: bridge.targetGraphId,
-            bridgeType: bridge.bridgeType
-          },
-          payload: { bridge, allowParallel: Boolean(input.allowParallel) }
-        });
-        store.changeSets.create(changeSet);
-        if (shouldApply(options)) {
-          return applyGraphBridgeChangeSet(store, changeSet);
-        }
-        return { value: bridge, changeSet };
       }
     },
     context: {
@@ -931,31 +850,6 @@ function createModelingBatchChangeSets(
       })
     );
   }
-  for (const input of batch.evolutionEdges) {
-    const edge = createDefaultEvolutionEdge(input);
-    const version: EdgeVersion = {
-      edgeVersionId: `${edge.edgeId}@${edge.currentVersion}`,
-      edgeId: edge.edgeId,
-      graphId: edge.graphId,
-      version: edge.currentVersion,
-      deltaGenes: edge.deltaGenes,
-      valueResolution: edge.valueResolution,
-      mustPreserve: edge.mustPreserve,
-      mustAvoid: edge.mustAvoid,
-      changeSummary: `import edge ${edge.edgeId}`,
-      createdAt: edge.createdAt
-    };
-    push(
-      createChangeSet({
-        mode: options.mode,
-        objectType: "edge",
-        operation: "create",
-        summary: `import edge ${edge.edgeId}`,
-        diff: { edgeId: edge.edgeId, graphId: edge.graphId, fromNodeId: edge.fromNodeId, toNodeId: edge.toNodeId },
-        payload: { edge, version }
-      })
-    );
-  }
   for (const input of batch.groupMemberships) {
     const membership = createDefaultSpeciesGroupMembership(input);
     push(
@@ -969,29 +863,16 @@ function createModelingBatchChangeSets(
       })
     );
   }
-  for (const input of batch.groupRelations) {
-    const relation = createDefaultSpeciesGroupRelation(input);
+  for (const input of batch.designRelationships) {
+    const relationship = createDefaultDesignRelationship(input);
     push(
       createChangeSet({
         mode: options.mode,
-        objectType: "species-group-relation",
+        objectType: "design-relationship",
         operation: "create",
-        summary: `import species group relation ${relation.relationId}`,
-        diff: { relationId: relation.relationId, sourceGroupId: relation.sourceGroupId, targetGroupId: relation.targetGroupId },
-        payload: { relation, allowParallel: Boolean(input.allowParallel) }
-      })
-    );
-  }
-  for (const input of batch.graphBridges) {
-    const bridge = createDefaultGraphBridge(input);
-    push(
-      createChangeSet({
-        mode: options.mode,
-        objectType: "graph-bridge",
-        operation: "create",
-        summary: `import graph bridge ${bridge.bridgeId}`,
-        diff: { bridgeId: bridge.bridgeId, atlasId: bridge.atlasId, sourceGraphId: bridge.sourceGraphId, targetGraphId: bridge.targetGraphId },
-        payload: { bridge, allowParallel: Boolean(input.allowParallel) }
+        summary: `import design relationship ${relationship.relationshipId}`,
+        diff: { relationshipId: relationship.relationshipId, source: relationship.source, target: relationship.target, relationshipType: relationship.relationshipType },
+        payload: { relationship, allowParallel: Boolean(input.allowParallel) }
       })
     );
   }
@@ -1034,10 +915,8 @@ function countModelingBatchObjects(batch: ModelingBatch): Record<string, number>
     atlases: batch.atlases.length,
     speciesGroups: batch.speciesGroups.length,
     groupMemberships: batch.groupMemberships.length,
-    groupRelations: batch.groupRelations.length,
-    graphBridges: batch.graphBridges.length,
+    designRelationships: batch.designRelationships.length,
     speciesNodes: batch.speciesNodes.length,
-    evolutionEdges: batch.evolutionEdges.length,
     phenotypeLibraries: batch.phenotypeLibraries.length,
     libraryGraphBindings: batch.libraryGraphBindings.length,
     storageMounts: batch.storageMounts.length,
@@ -1058,7 +937,7 @@ function modelingBatchHasLibraryObjects(batch: ModelingBatch): boolean {
 }
 
 function modelingBatchHasCrossGraphReferences(batch: ModelingBatch): boolean {
-  return batch.graphBridges.some((bridge) => bridge.sourceGraphId !== bridge.targetGraphId);
+  return batch.designRelationships.some((relationship) => relationship.source.graphId !== relationship.target.graphId);
 }
 
 function validateModelingBatchReferences(store: DnaServiceStore, batch: ModelingBatch) {
@@ -1083,10 +962,8 @@ function validateModelingBatchReferences(store: DnaServiceStore, batch: Modeling
   addDuplicateErrors(errors, "atlases", batch.atlases.map((atlas) => atlas.atlasId));
   addDuplicateErrors(errors, "speciesGroups", batch.speciesGroups.map((group) => group.groupId));
   addDuplicateErrors(errors, "speciesNodes", batch.speciesNodes.map((node) => node.nodeId));
-  addDuplicateErrors(errors, "evolutionEdges", batch.evolutionEdges.map((edge) => edge.edgeId));
   addDuplicateErrors(errors, "groupMemberships", batch.groupMemberships.map((membership) => membership.membershipId));
-  addDuplicateErrors(errors, "groupRelations", batch.groupRelations.map((relation) => relation.relationId));
-  addDuplicateErrors(errors, "graphBridges", batch.graphBridges.map((bridge) => bridge.bridgeId));
+  addDuplicateErrors(errors, "designRelationships", batch.designRelationships.map((relationship) => relationship.relationshipId));
   addDuplicateErrors(errors, "phenotypeLibraries", batch.phenotypeLibraries.map((library) => library.libraryId));
   addDuplicateErrors(errors, "libraryGraphBindings", batch.libraryGraphBindings.map((binding) => binding.bindingId));
   addDuplicateErrors(errors, "storageMounts", batch.storageMounts.map((mount) => mount.mountId));
@@ -1094,29 +971,18 @@ function validateModelingBatchReferences(store: DnaServiceStore, batch: Modeling
   addDuplicateErrors(errors, "libraryRoutingPolicies", batch.libraryRoutingPolicies.map((policy) => policy.routingPolicyId));
 
   batch.speciesNodes.forEach((node, index) => requireKnown(errors, `speciesNodes[${index}].graphId`, graphIds, node.graphId, "graph"));
-  batch.evolutionEdges.forEach((edge, index) => {
-    requireKnown(errors, `evolutionEdges[${index}].graphId`, graphIds, edge.graphId, "graph");
-    requireKnown(errors, `evolutionEdges[${index}].fromNodeId`, nodeIds, edge.fromNodeId, "source node");
-    requireKnown(errors, `evolutionEdges[${index}].toNodeId`, nodeIds, edge.toNodeId, "target node");
-  });
   batch.speciesGroups.forEach((group, index) => requireKnown(errors, `speciesGroups[${index}].graphId`, graphIds, group.graphId, "graph"));
   batch.groupMemberships.forEach((membership, index) => {
     requireKnown(errors, `groupMemberships[${index}].graphId`, graphIds, membership.graphId, "graph");
     requireKnown(errors, `groupMemberships[${index}].groupId`, groupIds, membership.groupId, "species group");
     requireKnown(errors, `groupMemberships[${index}].nodeId`, nodeIds, membership.nodeId, "node");
   });
-  batch.groupRelations.forEach((relation, index) => {
-    requireKnown(errors, `groupRelations[${index}].graphId`, graphIds, relation.graphId, "graph");
-    requireKnown(errors, `groupRelations[${index}].sourceGroupId`, groupIds, relation.sourceGroupId, "source species group");
-    requireKnown(errors, `groupRelations[${index}].targetGroupId`, groupIds, relation.targetGroupId, "target species group");
-  });
   batch.atlases.forEach((atlas, index) => {
     (atlas.graphIds ?? []).forEach((graphId) => requireKnown(errors, `atlases[${index}].graphIds`, graphIds, graphId, "graph"));
   });
-  batch.graphBridges.forEach((bridge, index) => {
-    requireKnown(errors, `graphBridges[${index}].atlasId`, atlasIds, bridge.atlasId, "atlas");
-    requireKnown(errors, `graphBridges[${index}].sourceGraphId`, graphIds, bridge.sourceGraphId, "source graph");
-    requireKnown(errors, `graphBridges[${index}].targetGraphId`, graphIds, bridge.targetGraphId, "target graph");
+  batch.designRelationships.forEach((relationship, index) => {
+    validateBatchEndpoint(errors, `designRelationships[${index}].source`, relationship.source, graphIds, groupIds, nodeIds);
+    validateBatchEndpoint(errors, `designRelationships[${index}].target`, relationship.target, graphIds, groupIds, nodeIds);
   });
   batch.libraryGraphBindings.forEach((binding, index) => {
     requireKnown(errors, `libraryGraphBindings[${index}].libraryId`, libraryIds, binding.libraryId, "library");
@@ -1153,6 +1019,19 @@ function requireKnown(errors: string[], path: string, knownIds: Set<string>, id:
   if (!knownIds.has(id)) errors.push(`${path}: ${label} not found: ${id}`);
 }
 
+function validateBatchEndpoint(
+  errors: string[],
+  path: string,
+  endpoint: DesignRelationship["source"],
+  graphIds: Set<string>,
+  groupIds: Set<string>,
+  nodeIds: Set<string>
+) {
+  requireKnown(errors, `${path}.graphId`, graphIds, endpoint.graphId, "graph");
+  if (endpoint.type === "species-group") requireKnown(errors, `${path}.groupId`, groupIds, endpoint.groupId, "species group");
+  if (endpoint.type === "species-node") requireKnown(errors, `${path}.nodeId`, nodeIds, endpoint.nodeId, "node");
+}
+
 function shouldApply(options: WriteOptions): boolean {
   return options.apply === true || options.mode === "draft-write";
 }
@@ -1185,12 +1064,10 @@ function ensureProposalEditable(proposal: Proposal) {
 const PROPOSAL_APPLY_OBJECT_TYPES = new Set([
   "graph",
   "node",
-  "edge",
+  "design-relationship",
   "species-group",
   "species-group-membership",
-  "species-group-relation",
   "atlas",
-  "graph-bridge",
   "design-context",
   "context-attachment",
   "context-fact",
@@ -1330,12 +1207,10 @@ function plannedIdMatches(violation: string, pattern: RegExp, plannedIds: Set<st
 function applyChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ServiceResult<unknown> {
   if (changeSet.objectType === "graph") return applyGraphChangeSet(store, changeSet);
   if (changeSet.objectType === "node") return applyNodeChangeSet(store, changeSet);
-  if (changeSet.objectType === "edge") return applyEdgeChangeSet(store, changeSet);
+  if (changeSet.objectType === "design-relationship") return applyDesignRelationshipChangeSet(store, changeSet);
   if (changeSet.objectType === "species-group") return changeSet.operation === "update" ? applySpeciesGroupUpdateChangeSet(store, changeSet) : applySpeciesGroupChangeSet(store, changeSet);
   if (changeSet.objectType === "species-group-membership") return applySpeciesGroupMembershipChangeSet(store, changeSet);
-  if (changeSet.objectType === "species-group-relation") return applySpeciesGroupRelationChangeSet(store, changeSet);
   if (changeSet.objectType === "atlas") return changeSet.operation === "update" ? applyAtlasUpdateChangeSet(store, changeSet) : applyAtlasChangeSet(store, changeSet);
-  if (changeSet.objectType === "graph-bridge") return applyGraphBridgeChangeSet(store, changeSet);
   if (changeSet.objectType === "design-context") return applyDesignContextChangeSet(store, changeSet);
   if (changeSet.objectType === "context-attachment") return applyContextAttachmentChangeSet(store, changeSet);
   if (changeSet.objectType === "context-fact") return applyContextFactChangeSet(store, changeSet);
@@ -1371,14 +1246,12 @@ function reviewChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ChangeSe
       if (!node.category) missingDimensions.push("node.category");
       if (!node.level) missingDimensions.push("node.level");
     }
-  } else if (changeSet.objectType === "edge") {
-    const edge = changeSet.payload.edge as EvolutionEdge | undefined;
-    if (!edge) {
-      constraintViolations.push("change-set payload missing edge");
+  } else if (changeSet.objectType === "design-relationship") {
+    const relationship = changeSet.payload.relationship as DesignRelationship | undefined;
+    if (!relationship) {
+      constraintViolations.push("change-set payload missing design relationship");
     } else {
-      if (!store.graphs.get(edge.graphId)) constraintViolations.push(`graph not found: ${edge.graphId}`);
-      if (!store.nodes.get(edge.fromNodeId)) constraintViolations.push(`source node not found: ${edge.fromNodeId}`);
-      if (!store.nodes.get(edge.toNodeId)) constraintViolations.push(`target node not found: ${edge.toNodeId}`);
+      constraintViolations.push(...validateRelationshipEndpointsForStore(store, relationship));
     }
   } else if (changeSet.objectType === "species-group") {
     const group = changeSet.payload.group as SpeciesGroup | undefined;
@@ -1389,20 +1262,9 @@ function reviewChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ChangeSe
     if (!membership) constraintViolations.push("change-set payload missing species group membership");
     if (membership && !store.speciesGroups.get(membership.groupId)) constraintViolations.push(`species group not found: ${membership.groupId}`);
     if (membership && !store.nodes.get(membership.nodeId)) constraintViolations.push(`node not found: ${membership.nodeId}`);
-  } else if (changeSet.objectType === "species-group-relation") {
-    const relation = changeSet.payload.relation as SpeciesGroupRelation | undefined;
-    if (!relation) constraintViolations.push("change-set payload missing species group relation");
-    if (relation && !store.speciesGroups.get(relation.sourceGroupId)) constraintViolations.push(`source species group not found: ${relation.sourceGroupId}`);
-    if (relation && !store.speciesGroups.get(relation.targetGroupId)) constraintViolations.push(`target species group not found: ${relation.targetGroupId}`);
   } else if (changeSet.objectType === "atlas") {
     const atlas = changeSet.payload.atlas as Atlas | undefined;
     if (!atlas) constraintViolations.push("change-set payload missing atlas");
-  } else if (changeSet.objectType === "graph-bridge") {
-    const bridge = changeSet.payload.bridge as GraphBridge | undefined;
-    if (!bridge) constraintViolations.push("change-set payload missing graph bridge");
-    if (bridge && !store.atlases.get(bridge.atlasId)) constraintViolations.push(`atlas not found: ${bridge.atlasId}`);
-    if (bridge && !store.graphs.get(bridge.sourceGraphId)) constraintViolations.push(`source graph not found: ${bridge.sourceGraphId}`);
-    if (bridge && !store.graphs.get(bridge.targetGraphId)) constraintViolations.push(`target graph not found: ${bridge.targetGraphId}`);
   } else if (changeSet.objectType === "design-context") {
     const context = changeSet.payload.context as DesignContext | undefined;
     if (!context) constraintViolations.push("change-set payload missing design context");
@@ -1518,38 +1380,37 @@ function applyNodeChangeSet(
   return { value: { node, nodeVersionId: version.nodeVersionId }, changeSet: applied };
 }
 
-function applyEdgeChangeSet(
-  store: DnaServiceStore,
-  changeSet: ChangeSet
-): ServiceResult<{ edge: EvolutionEdge; edgeVersionId: string }> {
-  const edge = changeSet.payload.edge as EvolutionEdge | undefined;
-  const version = changeSet.payload.version as EdgeVersion | undefined;
-  if (!edge || !version) throw new Error("change-set payload missing edge or version");
+function applyDesignRelationshipChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ServiceResult<DesignRelationship> {
+  const relationship = changeSet.payload.relationship as DesignRelationship | undefined;
+  if (!relationship) throw new Error("change-set payload missing design relationship");
+  const allowParallel = Boolean(changeSet.payload.allowParallel);
   const applied = store.transaction(() => {
-    const graph = store.graphs.get(edge.graphId);
-    if (!graph) throw new Error(`graph not found: ${edge.graphId}`);
-    const target = store.nodes.get(edge.toNodeId);
-    if (!target) throw new Error(`target node not found: ${edge.toNodeId}`);
-    store.edges.create(edge);
-    store.edgeVersions.create(version);
-    const incomingEdges = target.incomingEdges.includes(edge.edgeId)
+    const endpointErrors = validateRelationshipEndpointsForStore(store, relationship);
+    if (endpointErrors.length > 0) throw new Error(endpointErrors.join("; "));
+    validatePendingDesignRelationship(store, relationship, allowParallel);
+    store.designRelationships.create(relationship);
+    const targetNodeId = relationship.target.type === "species-node" ? relationship.target.nodeId : undefined;
+    const target = targetNodeId ? store.nodes.get(targetNodeId) : undefined;
+    if (target) {
+      const incomingEdges = target.incomingEdges.includes(relationship.relationshipId)
       ? target.incomingEdges
-      : [...target.incomingEdges, edge.edgeId];
-    store.nodes.update({
-      ...target,
-      incomingEdges,
-      lineageStatus: resolveLineageStatus({
-        parentNodes: target.parentNodes,
+      : [...target.incomingEdges, relationship.relationshipId];
+      store.nodes.update({
+        ...target,
         incomingEdges,
-        primaryParent: target.primaryParent
-      }),
-      updatedAt: nowIso()
-    });
+        lineageStatus: resolveLineageStatus({
+          parentNodes: target.parentNodes,
+          incomingEdges,
+          primaryParent: target.primaryParent
+        }),
+        updatedAt: nowIso()
+      });
+    }
     const next = markChangeSetApplied(changeSet);
     store.changeSets.update(next);
     return next;
   });
-  return { value: { edge, edgeVersionId: version.edgeVersionId }, changeSet: applied };
+  return { value: relationship, changeSet: applied };
 }
 
 function applySpeciesGroupChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ServiceResult<SpeciesGroup> {
@@ -1593,29 +1454,38 @@ function applySpeciesGroupMembershipChangeSet(store: DnaServiceStore, changeSet:
   return { value: membership, changeSet: applied };
 }
 
-function validatePendingGroupRelation(store: DnaServiceStore, relation: SpeciesGroupRelation, allowParallel: boolean) {
-  const existing = store.speciesGroupRelations.listByGraph(relation.graphId).filter((candidate) => {
-    return candidate.sourceGroupId === relation.sourceGroupId && candidate.targetGroupId === relation.targetGroupId;
+function validatePendingDesignRelationship(store: DnaServiceStore, relationship: DesignRelationship, allowParallel: boolean) {
+  const existing = store.designRelationships.listByGraph(relationship.source.graphId).filter((candidate) => {
+    return JSON.stringify(candidate.source) === JSON.stringify(relationship.source) && JSON.stringify(candidate.target) === JSON.stringify(relationship.target);
   });
-  const validation = validateSpeciesGroupRelationSet([...existing, relation], { allowParallel });
+  const validation = validateDesignRelationshipSet([...existing, relationship], { allowParallel });
   if (!validation.valid) throw new Error(validation.issues.join("; "));
 }
 
-function applySpeciesGroupRelationChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ServiceResult<SpeciesGroupRelation> {
-  const relation = changeSet.payload.relation as SpeciesGroupRelation | undefined;
-  if (!relation) throw new Error("change-set payload missing species group relation");
-  const allowParallel = Boolean(changeSet.payload.allowParallel);
-  const applied = store.transaction(() => {
-    if (!store.graphs.get(relation.graphId)) throw new Error(`graph not found: ${relation.graphId}`);
-    if (!store.speciesGroups.get(relation.sourceGroupId)) throw new Error(`source species group not found: ${relation.sourceGroupId}`);
-    if (!store.speciesGroups.get(relation.targetGroupId)) throw new Error(`target species group not found: ${relation.targetGroupId}`);
-    validatePendingGroupRelation(store, relation, allowParallel);
-    store.speciesGroupRelations.create(relation);
-    const next = markChangeSetApplied(changeSet);
-    store.changeSets.update(next);
-    return next;
-  });
-  return { value: relation, changeSet: applied };
+function validateRelationshipEndpointsForStore(store: DnaServiceStore, relationship: DesignRelationship): string[] {
+  const errors: string[] = [];
+  validateEndpoint(store, relationship.source, "source", errors);
+  validateEndpoint(store, relationship.target, "target", errors);
+  return errors;
+}
+
+function validateEndpoint(
+  store: DnaServiceStore,
+  endpoint: DesignRelationship["source"],
+  label: "source" | "target",
+  errors: string[]
+) {
+  if (endpoint.type === "graph" && !store.graphs.get(endpoint.graphId)) errors.push(`${label} graph not found: ${endpoint.graphId}`);
+  if (endpoint.type === "species-group") {
+    const group = store.speciesGroups.get(endpoint.groupId);
+    if (!group) errors.push(`${label} species group not found: ${endpoint.groupId}`);
+    if (group && group.graphId !== endpoint.graphId) errors.push(`${label} species group ${endpoint.groupId} is not in graph ${endpoint.graphId}`);
+  }
+  if (endpoint.type === "species-node") {
+    const node = store.nodes.get(endpoint.nodeId);
+    if (!node) errors.push(`${label} node not found: ${endpoint.nodeId}`);
+    if (node && node.graphId !== endpoint.graphId) errors.push(`${label} node ${endpoint.nodeId} is not in graph ${endpoint.graphId}`);
+  }
 }
 
 function applyAtlasChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ServiceResult<Atlas> {
@@ -1647,34 +1517,6 @@ function applyAtlasUpdateChangeSet(store: DnaServiceStore, changeSet: ChangeSet)
     return next;
   });
   return { value: atlas, changeSet: applied };
-}
-
-function validatePendingGraphBridge(store: DnaServiceStore, bridge: GraphBridge, allowParallel: boolean) {
-  const existing = store.graphBridges.listByAtlas(bridge.atlasId).filter((candidate) => {
-    return candidate.sourceGraphId === bridge.sourceGraphId && candidate.targetGraphId === bridge.targetGraphId;
-  });
-  const validation = validateGraphBridgeSet([...existing, bridge], { allowParallel });
-  if (!validation.valid) throw new Error(validation.issues.join("; "));
-}
-
-function applyGraphBridgeChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ServiceResult<GraphBridge> {
-  const bridge = changeSet.payload.bridge as GraphBridge | undefined;
-  if (!bridge) throw new Error("change-set payload missing graph bridge");
-  const allowParallel = Boolean(changeSet.payload.allowParallel);
-  const applied = store.transaction(() => {
-    const atlas = store.atlases.get(bridge.atlasId);
-    if (!atlas) throw new Error(`atlas not found: ${bridge.atlasId}`);
-    if (!store.graphs.get(bridge.sourceGraphId)) throw new Error(`source graph not found: ${bridge.sourceGraphId}`);
-    if (!store.graphs.get(bridge.targetGraphId)) throw new Error(`target graph not found: ${bridge.targetGraphId}`);
-    if (!atlas.graphIds.includes(bridge.sourceGraphId)) throw new Error(`source graph is not in atlas: ${bridge.sourceGraphId}`);
-    if (!atlas.graphIds.includes(bridge.targetGraphId)) throw new Error(`target graph is not in atlas: ${bridge.targetGraphId}`);
-    validatePendingGraphBridge(store, bridge, allowParallel);
-    store.graphBridges.create(bridge);
-    const next = markChangeSetApplied(changeSet);
-    store.changeSets.update(next);
-    return next;
-  });
-  return { value: bridge, changeSet: applied };
 }
 
 function applyDesignContextChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ServiceResult<DesignContext> {

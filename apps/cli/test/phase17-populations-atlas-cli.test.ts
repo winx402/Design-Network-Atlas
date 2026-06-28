@@ -22,7 +22,7 @@ function runDna(args: string[]) {
 }
 
 describe("Phase 17 PRD-01 group and atlas CLI", () => {
-  test("creates and displays species groups, group relations, atlases, and graph bridges", () => {
+  test("creates and displays species groups, design relationships, and atlases", () => {
     const db = join(tempDir("phase17-populations-atlas"), "dna.sqlite");
 
     runDna(["--db", db, "graph", "create", "--id", "graph-ui", "--name", "UI Graph", "--purpose", "ui", "--yes"]);
@@ -100,22 +100,19 @@ describe("Phase 17 PRD-01 group and atlas CLI", () => {
     runDna([
       "--db",
       db,
-      "group",
-      "relation",
-      "add",
+      "relationship",
+      "create",
       "--id",
       "rel-ui-icons",
-      "--graph",
-      "graph-ui",
       "--source",
-      "group-ui",
+      "species-group:graph-ui:group-ui",
       "--target",
-      "group-icons",
+      "species-group:graph-ui:group-icons",
       "--type",
-      "adapts-from",
+      "aligns-with",
       "--description",
       "Icon family adapts UI readability.",
-      "--extension",
+      "--metadata",
       "scope=toolbar",
       "--yes"
     ]);
@@ -123,13 +120,13 @@ describe("Phase 17 PRD-01 group and atlas CLI", () => {
     const groupMap = JSON.parse(runDna(["--db", db, "group", "map", "--graph", "graph-ui", "--format", "json"]));
     expect(groupMap.groups.map((group: { groupId: string }) => group.groupId)).toEqual(["group-ui", "group-icons"]);
     expect(groupMap.memberships.map((membership: { membershipId: string }) => membership.membershipId)).toEqual(["member-icon-root"]);
-    expect(groupMap.relations.map((relation: { relationId: string }) => relation.relationId)).toEqual(["rel-ui-icons"]);
+    expect(groupMap.relationships.map((relationship: { relationshipId: string }) => relationship.relationshipId)).toEqual(["rel-ui-icons"]);
 
     const groupText = runDna(["--db", db, "group", "map", "--graph", "graph-ui"]);
     expect(groupText).toContain("Group Map: UI Graph (graph-ui)");
     expect(groupText).toContain("- UI Group (group-ui) [domain]");
-    expect(groupText).toContain("Relations:");
-    expect(groupText).toContain("group-ui -> group-icons [adapts-from]");
+    expect(groupText).toContain("Design Relationships:");
+    expect(groupText).toContain("group-ui -> group-icons [aligns-with]");
 
     runDna([
       "--db",
@@ -151,31 +148,30 @@ describe("Phase 17 PRD-01 group and atlas CLI", () => {
     runDna([
       "--db",
       db,
-      "atlas",
-      "bridge",
-      "add",
+      "relationship",
+      "create",
       "--id",
-      "bridge-style-ui",
-      "--atlas",
-      "atlas-ui",
+      "rel-style-ui",
       "--source",
-      "graph-style",
+      "graph:graph-style",
       "--target",
-      "graph-ui",
+      "graph:graph-ui",
       "--type",
-      "style-aligned-with",
+      "aligns-with",
       "--description",
       "UI graph stays aligned with style graph.",
+      "--metadata",
+      "atlasId=atlas-ui",
       "--yes"
     ]);
 
     const atlasMap = JSON.parse(runDna(["--db", db, "atlas", "map", "--id", "atlas-ui", "--format", "json"]));
     expect(atlasMap.atlas.graphIds).toEqual(["graph-style", "graph-ui"]);
-    expect(atlasMap.bridges.map((bridge: { bridgeId: string }) => bridge.bridgeId)).toEqual(["bridge-style-ui"]);
+    expect(atlasMap.relationships.map((relationship: { relationshipId: string }) => relationship.relationshipId)).toEqual(["rel-style-ui"]);
 
     const atlasText = runDna(["--db", db, "atlas", "map", "--id", "atlas-ui"]);
     expect(atlasText).toContain("Atlas Map: UI Atlas (atlas-ui)");
-    expect(atlasText).toContain("graph-style -> graph-ui [style-aligned-with]");
+    expect(atlasText).toContain("graph:graph-style -> graph:graph-ui [aligns-with]");
 
     const groupImpacts = JSON.parse(runDna(["--db", db, "impact", "check", "--graph", "graph-ui", "--group", "group-ui"]));
     expect(groupImpacts).toEqual(
@@ -185,8 +181,8 @@ describe("Phase 17 PRD-01 group and atlas CLI", () => {
       ])
     );
 
-    const bridgeImpacts = JSON.parse(runDna(["--db", db, "impact", "check", "--graph", "graph-ui", "--bridge", "bridge-style-ui"]));
-    expect(bridgeImpacts).toEqual(
+    const relationshipImpacts = JSON.parse(runDna(["--db", db, "impact", "check", "--graph", "graph-ui", "--relationship", "rel-style-ui"]));
+    expect(relationshipImpacts).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ objectType: "graph", objectId: "graph-ui" }),
         expect.objectContaining({ objectType: "node", objectId: "node-icon-root" })

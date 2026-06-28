@@ -78,10 +78,9 @@
 - `SpeciesNodeSchema` 接受多父节点，并要求 `parentRoles` 只引用已声明父节点。
 - `SpeciesNodeSchema` 拒绝 `primaryParent` 不在 `parentNodes` 中的对象。
 - `SpeciesNodeSchema` 保留视觉母题字段，并把 `facets` 作为扩展元数据。
-- `NodeVersionSchema` 保存 parent node versions、incoming edge versions、resolved gene snapshot、compile snapshot。
-- `EvolutionEdgeSchema` 接受所有 PRD 指定 edge type。
-- `EvolutionEdgeSchema` 保存 `deltaGenes`、`valueResolution`、`mustPreserve`、`mustAvoid`。
-- `EdgeVersionSchema` 创建后被 repository contract 视为不可变。
+- `NodeVersionSchema` 保存 parent node versions、incoming relationship ids、resolved gene snapshot、compile snapshot。
+- `DesignRelationshipSchema` 接受 graph/group/node 三种同层级 endpoint。
+- `DesignRelationshipSchema` 保存 relationship type、direction、designContract、auxiliaryRefs、review/provenance metadata。
 - `PhenotypeSchema` 支持 built-in、template、custom 三种表型类型来源。
 - `PhenotypeVersionSchema` 默认状态为 `pending-confirmation`，并支持多个 asset ids。
 - `AssetIndexSchema` 支持多种 storage type、asset type、role、variant role。
@@ -95,7 +94,7 @@
 - `createGraph` preview 只返回 change-set，不写 repository。
 - `createGraph` apply 写入 graph 并返回 applied change-set。
 - `createNode` 自动创建初始 `NodeVersion`。
-- `createEdge` 更新目标 node lineage 状态但不覆盖旧 node version。
+- `createRelationship` 更新目标 node lineage 状态但不覆盖旧 node version。
 - `updateNode` 创建新 `NodeVersion`，旧版本仍可查询。
 - `applyChangeSet` 遇到 repository error 必须 rollback。
 - `draft-write` 写入对象状态为 draft，并保留输入快照。
@@ -105,10 +104,10 @@
 
 - migration 可在空库重复运行。
 - 所有表存在，包含 PRD 指定核心表。
-- graph、template、node、edge、phenotype、asset、review、impact CRUD 成功。
-- `NodeVersion`、`EdgeVersion`、`PhenotypeVersion` 没有 update 入口。
-- rollback 后 graph/node/edge 都不残留。
-- 归档 graph 不删除其 nodes、edges、phenotypes。
+- graph、template、node、design relationship、phenotype、asset、review、impact CRUD 成功。
+- `NodeVersion`、`PhenotypeVersion` 没有通用内容 update 入口。
+- rollback 后 graph/node/design relationship 都不残留。
+- 归档 graph 不删除其 nodes、relationships、phenotypes。
 - asset search 支持 tag、status、linked object、graph 过滤。
 - Git 目录 export/import 后对象数量和核心 id 一致。
 
@@ -146,7 +145,7 @@
 ### 5.7 Phase 7 Skill Cases
 
 - 不保留浅层 `dna` 路由/CLI 说明 skill；CLI 命令说明由 `dna --help` 和子命令 help 承担。
-- `dna-graph-modeling` 能把新场景映射到 SpeciesNode、EvolutionEdge、facets、Phenotype、phenotype library 和生效策略。
+- `dna-graph-modeling` 能把新场景映射到 SpeciesNode、DesignRelationship、facets、Phenotype、phenotype library 和生效策略。
 - `dna-graph-editing` 能对已有图谱变更输出合理性、影响分析、风险等级、outdated 风险、替代方案和推荐写入路径。
 - `dna-phenotype-generation` 是正式 MVP 场景 skill，覆盖 missing compile artifact、blocking open questions、generationPlan、registrationPlan 和 writeStrategy。
 - Skill 不建议保存 provider credentials、完整私密链接或 raw Agent host responses。

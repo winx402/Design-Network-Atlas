@@ -5,7 +5,7 @@ import { describe, expect, test } from "vitest";
 import {
   createDefaultGraph,
   createDefaultSpeciesNode,
-  createDefaultEvolutionEdge,
+  createDefaultDesignRelationship,
   createDefaultPhenotype,
   createDefaultPhenotypeVersion,
   createImpactRecord,
@@ -27,18 +27,18 @@ describe("SQLite DNA store", () => {
     const graph = createDefaultGraph({ graphId: "graph-a", name: "Graph A", purpose: "test" });
     store.graphs.create(graph);
     store.nodes.create(createDefaultSpeciesNode({ graphId: graph.graphId, nodeId: "node-root", name: "Root" }));
-    store.edges.create(
-      createDefaultEvolutionEdge({
-        graphId: graph.graphId,
-        edgeId: "edge-1",
-        fromNodeId: "node-root",
-        toNodeId: "node-child"
+    store.designRelationships.create(
+      createDefaultDesignRelationship({
+        relationshipId: "rel-1",
+        source: { type: "species-node", graphId: graph.graphId, nodeId: "node-root" },
+        target: { type: "species-node", graphId: graph.graphId, nodeId: "node-child" },
+        relationshipType: "derives-from"
       })
     );
 
     expect(store.graphs.get("graph-a")?.name).toBe("Graph A");
     expect(store.nodes.listByGraph("graph-a")).toHaveLength(1);
-    expect(store.edges.listByGraph("graph-a")).toHaveLength(1);
+    expect(store.designRelationships.listByGraph("graph-a")).toHaveLength(1);
 
     store.close();
   });

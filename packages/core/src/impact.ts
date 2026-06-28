@@ -6,16 +6,16 @@ export interface ImpactNodeInput {
   phenotypeVersionIds: string[];
 }
 
-export interface ImpactEdgeInput {
-  edgeId: string;
+export interface ImpactRelationshipInput {
+  relationshipId: string;
   fromNodeId: string;
   toNodeId: string;
 }
 
 export interface CollectImpactInput {
-  changed: { type: "node" | "edge"; id: string; versionId: string };
+  changed: { type: "node" | "design-relationship"; id: string; versionId: string };
   nodes: ImpactNodeInput[];
-  edges: ImpactEdgeInput[];
+  relationships: ImpactRelationshipInput[];
 }
 
 export interface ImpactSummary {
@@ -29,19 +29,21 @@ export function collectImpact(input: CollectImpactInput): ImpactSummary[] {
   const startNode =
     input.changed.type === "node"
       ? input.changed.id
-      : input.edges.find((edge) => edge.edgeId === input.changed.id)?.toNodeId;
+      : input.relationships.find((relationship) => relationship.relationshipId === input.changed.id)?.toNodeId;
   if (!startNode) return [];
 
   const nodeById = new Map(input.nodes.map((node) => [node.nodeId, node]));
-  const outgoing = new Map<string, ImpactEdgeInput[]>();
-  for (const edge of input.edges) {
-    outgoing.set(edge.fromNodeId, [...(outgoing.get(edge.fromNodeId) ?? []), edge]);
+  const outgoing = new Map<string, ImpactRelationshipInput[]>();
+  for (const relationship of input.relationships) {
+    outgoing.set(relationship.fromNodeId, [...(outgoing.get(relationship.fromNodeId) ?? []), relationship]);
   }
 
   const result: ImpactSummary[] = [];
   const visited = new Set<string>();
   const queue =
-    input.changed.type === "edge" ? [startNode] : [...(outgoing.get(startNode) ?? []).map((edge) => edge.toNodeId)];
+    input.changed.type === "design-relationship"
+      ? [startNode]
+      : [...(outgoing.get(startNode) ?? []).map((relationship) => relationship.toNodeId)];
 
   while (queue.length) {
     const nodeId = queue.shift()!;
@@ -61,7 +63,7 @@ export function collectImpact(input: CollectImpactInput): ImpactSummary[] {
         suggestedAction: "review-or-regenerate"
       });
     }
-    queue.push(...(outgoing.get(nodeId) ?? []).map((edge) => edge.toNodeId));
+    queue.push(...(outgoing.get(nodeId) ?? []).map((relationship) => relationship.toNodeId));
   }
 
   return result;

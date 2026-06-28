@@ -67,52 +67,46 @@ describe("Phase 14 graph tree CLI", () => {
     runDna([
       "--db",
       db,
-      "edge",
+      "relationship",
       "create",
-      "--graph",
-      "graph-tree",
       "--id",
-      "edge-root-child",
-      "--from",
-      "node-root",
-      "--to",
-      "node-child",
+      "rel-root-child",
+      "--source",
+      "species-node:graph-tree:node-root",
+      "--target",
+      "species-node:graph-tree:node-child",
       "--type",
-      "specialize",
+      "derives-from",
       "--yes"
     ]);
     runDna([
       "--db",
       db,
-      "edge",
+      "relationship",
       "create",
-      "--graph",
-      "graph-tree",
       "--id",
-      "edge-root-hybrid",
-      "--from",
-      "node-root",
-      "--to",
-      "node-hybrid",
+      "rel-root-hybrid",
+      "--source",
+      "species-node:graph-tree:node-root",
+      "--target",
+      "species-node:graph-tree:node-hybrid",
       "--type",
-      "inherit",
+      "derives-from",
       "--yes"
     ]);
     runDna([
       "--db",
       db,
-      "edge",
+      "relationship",
       "create",
-      "--graph",
-      "graph-tree",
       "--id",
-      "edge-accent-hybrid",
-      "--from",
-      "node-accent",
-      "--to",
-      "node-hybrid",
+      "rel-accent-hybrid",
+      "--source",
+      "species-node:graph-tree:node-accent",
+      "--target",
+      "species-node:graph-tree:node-hybrid",
       "--type",
-      "fusion",
+      "translates-to",
       "--yes"
     ]);
 
@@ -122,14 +116,14 @@ describe("Phase 14 graph tree CLI", () => {
     expect(text).toContain("  - Child Icon (node-child)");
     expect(text).toContain("  - Hybrid Icon (node-hybrid)");
     expect(text).toContain("Additional parent relations:");
-    expect(text).toContain("- Accent Motif (node-accent) -> Hybrid Icon (node-hybrid) [fusion, edge-accent-hybrid]");
+    expect(text).toContain("- Accent Motif (node-accent) -> Hybrid Icon (node-hybrid) [translates-to, rel-accent-hybrid]");
 
     const json = JSON.parse(runDna(["--db", db, "graph", "tree", "--id", "graph-tree", "--format", "json"]));
     expect(json.roots.map((root: { nodeId: string }) => root.nodeId)).toEqual(["node-root", "node-accent"]);
     expect(json.relations).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ fromNodeId: "node-root", toNodeId: "node-child", edgeType: "specialize" }),
-        expect.objectContaining({ fromNodeId: "node-accent", toNodeId: "node-hybrid", edgeType: "fusion" })
+        expect.objectContaining({ fromNodeId: "node-root", toNodeId: "node-child", relationshipType: "derives-from" }),
+        expect.objectContaining({ fromNodeId: "node-accent", toNodeId: "node-hybrid", relationshipType: "translates-to" })
       ])
     );
   }, 60_000);
@@ -182,17 +176,14 @@ describe("Phase 14 graph tree CLI", () => {
     runDna([
       "--db",
       db,
-      "group",
-      "relation",
-      "add",
-      "--graph",
-      "graph-groups",
+      "relationship",
+      "create",
       "--id",
-      "relation-groups",
+      "rel-groups",
       "--source",
-      "group-main",
+      "species-group:graph-groups:group-main",
       "--target",
-      "group-secondary",
+      "species-group:graph-groups:group-secondary",
       "--type",
       "references",
       "--description",
@@ -216,7 +207,7 @@ describe("Phase 14 graph tree CLI", () => {
     expect(text).toContain("- Root (node-root)");
     expect(text).toContain("- Ungrouped Node (node-ungrouped)");
     expect(text).toContain("Group relations:");
-    expect(text).toContain("- Main Group (group-main) -> Secondary Group (group-secondary) [references, relation-groups] main references secondary");
+    expect(text).toContain("- Main Group (group-main) -> Secondary Group (group-secondary) [references, rel-groups] main references secondary");
     expect(text.match(/^  - Grouped Node \(node-grouped\)/gm) ?? []).toHaveLength(3);
 
     const json = JSON.parse(runDna(["--db", db, "graph", "tree", "--id", "graph-groups", "--include-groups", "--format", "json"]));
@@ -226,6 +217,6 @@ describe("Phase 14 graph tree CLI", () => {
       "membership-secondary"
     ]);
     expect(json.groupOverlay.ungroupedNodeIds).toEqual(["node-root", "node-ungrouped"]);
-    expect(json.groupOverlay.groupRelations).toEqual([expect.objectContaining({ relationId: "relation-groups" })]);
+    expect(json.groupOverlay.groupRelations).toEqual([expect.objectContaining({ relationshipId: "rel-groups" })]);
   }, 60_000);
 });

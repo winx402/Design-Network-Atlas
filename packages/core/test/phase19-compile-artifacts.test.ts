@@ -11,10 +11,9 @@ import {
   createDefaultContextReviewRubric,
   createDefaultDesignContext,
   createDefaultDesignPrinciple,
+  createDefaultDesignRelationship,
   createDefaultGraph,
-  createDefaultGraphBridge,
   createDefaultSpeciesGroup,
-  createDefaultSpeciesGroupRelation,
   createDefaultSpeciesNode,
   PhenotypeCompileArtifactSchema,
   SpeciesCompileArtifactSchema
@@ -49,20 +48,18 @@ describe("Phase 19 PRD-03 compile artifacts", () => {
       sharedFacts: ["all faction icons must read at 32px"],
       phenotypeTypeSuggestions: ["ui-icon"]
     });
-    const relation = createDefaultSpeciesGroupRelation({
-      relationId: "rel-ui-world",
-      graphId: graph.graphId,
-      sourceGroupId: "group-world",
-      targetGroupId: group.groupId,
-      relationType: "custom:inherits-worldview-symbols",
+    const groupRelationship = createDefaultDesignRelationship({
+      relationshipId: "rel-ui-world",
+      source: { type: "species-group", graphId: graph.graphId, groupId: "group-world" },
+      target: { type: "species-group", graphId: graph.graphId, groupId: group.groupId },
+      relationshipType: "custom:inherits-worldview-symbols",
       description: "Use custom worldview relationship as LLM context."
     });
-    const bridge = createDefaultGraphBridge({
-      bridgeId: "bridge-style",
-      atlasId: "atlas-butian",
-      sourceGraphId: "graph-visual-foundation",
-      targetGraphId: graph.graphId,
-      bridgeType: "style-aligned-with",
+    const graphRelationship = createDefaultDesignRelationship({
+      relationshipId: "rel-style",
+      source: { type: "graph", graphId: "graph-visual-foundation" },
+      target: { type: "graph", graphId: graph.graphId },
+      relationshipType: "aligns-with",
       description: "Align UI graph with the visual foundation graph."
     });
     const context = createDefaultDesignContext({
@@ -95,10 +92,9 @@ describe("Phase 19 PRD-03 compile artifacts", () => {
         { parentNodeId: "node-base", nodeVersionId: "node-base@1.0.0", snapshot: { shape: "circle", color: "blue" } },
         { parentNodeId: "node-bronze-style", nodeVersionId: "node-bronze-style@1.0.0", snapshot: { material: "bronze", color: "bronze" } }
       ],
-      edgeDeltas: [{ edgeVersionId: "edge-faction-icon@1.0.0", delta: { shape: "broken circle", symbol: "crescent" } }],
+      relationshipDeltas: [{ relationshipId: "rel-faction-icon", delta: { shape: "broken circle", symbol: "crescent" } }],
       speciesGroups: [group],
-      groupRelations: [relation],
-      graphBridges: [bridge],
+      designRelationships: [groupRelationship, graphRelationship],
       designContexts: [context],
       contextAttachments: [attachment],
       contextFacts: [createDefaultContextFact({ factId: "fact-faction", factType: "faction", statement: "月蚀阵营使用残月符号" })],
@@ -125,7 +121,7 @@ describe("Phase 19 PRD-03 compile artifacts", () => {
     expect(artifact.conflictReport).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ key: "color", resolutionRule: "override", parentRole: "style" }),
-        expect.objectContaining({ key: "shape", resolutionRule: "override", layer: "evolution-edge-deltas" })
+        expect.objectContaining({ key: "shape", resolutionRule: "override", layer: "design-relationship-contracts" })
       ])
     );
     expect(artifact.sourceTrace).toEqual(
@@ -138,9 +134,9 @@ describe("Phase 19 PRD-03 compile artifacts", () => {
           decision: "included"
         }),
         expect.objectContaining({
-          objectType: "graph-bridge",
-          objectId: "bridge-style",
-          layer: "graph-bridge-facts",
+          objectType: "design-relationship",
+          objectId: "rel-style",
+          layer: "design-relationship-facts",
           decision: "included"
         }),
         expect.objectContaining({

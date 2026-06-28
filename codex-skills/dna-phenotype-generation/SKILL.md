@@ -81,7 +81,7 @@ Return a generationPlan with these fields:
 
 ## Guardrails
 
-- do not invent SpeciesNode, EvolutionEdge, facet, context, reference, or rubric facts to make generation easier.
+- do not invent SpeciesNode, DesignRelationship, facet, context, reference, or rubric facts to make generation easier.
 - Do not call an external tool when a blocking question, conflict, missing target, or missing storage decision would make the result misleading.
 - Do not treat generated output as accepted by default; use pending-confirmation unless the user has explicitly approved acceptance.
 - Do not bypass DNA compile artifacts when prompt or brief generation depends on graph constraints.

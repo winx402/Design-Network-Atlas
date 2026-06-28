@@ -1,6 +1,6 @@
 ---
 name: dna-graph-modeling
-description: Build a new Design Network Atlas graph from a design scenario. Use when a user needs to map a game art system, UI/icon system, brand family, asset taxonomy, worldbuilding context, or rough visual domain into DNA graphs, groups, species, evolution edges, facets, context, phenotype types, compile artifacts, and a reviewable write strategy.
+description: Build a new Design Network Atlas graph from a design scenario. Use when a user needs to map a game art system, UI/icon system, brand family, asset taxonomy, worldbuilding context, or rough visual domain into DNA graphs, groups, species, design relationships, facets, context, phenotype types, compile artifacts, and a reviewable write strategy.
 ---
 
 # DNA Graph Modeling
@@ -23,10 +23,10 @@ For Chinese responses, keep these review anchors when useful: `直接生效`, `�
 | What domain or product visual system is being modeled? | Graph |
 | Which stable families or systems need shared context? | SpeciesGroup |
 | What stable design object can generate many outputs? | SpeciesNode |
-| How does a child object evolve from parent constraints? | EvolutionEdge |
+| How does one same-level core entity derive from, align with, reference, or constrain another? | DesignRelationship |
 | Which reusable dimensions describe many objects? | FacetDefinition, FacetSchema, GeneTemplate |
 | Which background facts, motifs, principles, references, or review rules support generation? | DesignContext, ContextFact, ContextMotif, DesignPrinciple, ContextReference, ContextReviewRubric |
-| Which relationship spans groups or graphs? | SpeciesGroupRelation, GraphBridge |
+| Which design-language relationship spans groups or graphs at the same level? | DesignRelationship |
 | What concrete generated or curated output is needed? | Phenotype, PhenotypeVersion |
 | Where will generated results or files be registered? | PhenotypeLibrary, StorageMount, OutputReference, AssetIndex |
 | What compiled package should generation/review consume? | SpeciesCompileArtifact, PhenotypeCompileArtifact |
@@ -38,7 +38,7 @@ Use "phenotype library" as the plain-language bridge for `PhenotypeLibrary` when
 | User concept is mostly... | Map to | Avoid |
 | --- | --- | --- |
 | Stable design identity | SpeciesNode | Phenotype or tag |
-| Parent-to-child transformation | EvolutionEdge | Child name only |
+| Same-level design relationship | DesignRelationship | Child name only |
 | Shared family or collection | SpeciesGroup | Repeated local node note |
 | Reusable design dimension | facet/template | One-off context fact |
 | Worldview, story, rationale, reference, or rubric | context object | Hidden node gene |
@@ -49,12 +49,12 @@ Use "phenotype library" as the plain-language bridge for `PhenotypeLibrary` when
 
 Run these gates in order. If a gate cannot be answered, mark it as a blocking or non-blocking uncertainty instead of inventing missing facts.
 
-1. domain-boundary gate: decide whether this is one graph, several graphs linked by GraphBridge, or only a one-off output that should go to phenotype-generation instead.
+1. domain-boundary gate: decide whether this is one graph, several graphs linked by graph-level DesignRelationship, or only a one-off output that should go to phenotype-generation instead.
 2. group gate: decide whether families, factions, UI systems, regions, disciplines, or asset sets need SpeciesGroup boundaries.
-3. bridge gate: decide whether cross-group or cross-graph relationships are meaningful enough to record as SpeciesGroupRelation or GraphBridge.
+3. relationship gate: decide whether group-level, graph-level, or node-level relationships are meaningful enough to record as DesignRelationship.
 4. context gate: separate worldbuilding, design rationale, cultural motif, brand principle, reference, and review rubric from node or edge genes.
 5. species gate: create SpeciesNode only for stable design objects that can pass phenotype readiness and produce multiple outputs.
-6. evolution gate: create EvolutionEdge only when there is a parent-to-child transformation with meaningful deltas or preservation rules.
+6. relationship contract gate: create DesignRelationship only when there is a meaningful design-language contract, such as derivation, translation, alignment, divergence, reference, or constraint.
 7. facet gate: define facets only for reusable dimensions with a value strategy, not one-off notes.
 8. compile gate: decide whether species should compile through system rules, fixed snapshots, Agent-assisted conflict review, or a hybrid policy.
 9. clarity gate: separate assumptions, blockingQuestions, nonBlockingQuestions, draftFields, and confidence.
@@ -77,19 +77,19 @@ Use these nine modules before listing SpeciesNode candidates. Each module contri
 
 - Module question: Is this one Graph, multiple Graph objects in an Atlas, or a one-off generated output?
 - Evidence to inspect: production output type, reviewer or discipline, downstream consumption path, source boundaries, and whether relationships are inheritance or only reference, drive, consume, or review relationships.
-- Decision boundary: split into multiple Graph objects when disciplines, output pipelines, or review ownership differ; connect them with GraphBridge only when the relation spans graph boundaries without pretending to be inheritance.
+- Decision boundary: split into multiple Graph objects when disciplines, output pipelines, or review ownership differ; connect them with graph-level DesignRelationship only when the relation spans graph boundaries without pretending to be inheritance.
 - Positive pattern: UI icon assets and character equipment can be separate graphs connected by a bridge when they share a brand principle but have different reviewers and phenotype outputs.
 - Counterexample: putting every department, storage folder, or page framework into one graph hides review ownership and downstream impact.
-- Output contribution: graphScope, bridgePlan, reviewOutline, and nonBlockingQuestions for unresolved graph boundaries.
+- Output contribution: graphScope, relationshipPlan, reviewOutline, and nonBlockingQuestions for unresolved graph boundaries.
 
 ## Group Organization
 
 - Module question: Which SpeciesGroup boundaries are needed before species are proposed?
 - Evidence to inspect: families, factions, components, disciplines, release slices, source batches, review units, shared context facts, and production ownership.
-- Decision boundary: groups are review and production units, not decorative categories. Use SpeciesGroup for shared constraints or review ownership, SpeciesGroupRelation for weak relationships between groups, and avoid groups when only a tag or file folder is present.
+- Decision boundary: groups are review and production units, not decorative categories. Use SpeciesGroup for shared constraints or review ownership, DesignRelationship for meaningful group-level design relations, and avoid groups when only a tag or file folder is present.
 - Positive pattern: a set of button states or monster roles sharing review criteria can be a group before individual drawable species are chosen.
 - Counterexample: "all exported PNGs" is storage organization and belongs to phenotype library/routing, not a SpeciesGroup by itself.
-- Output contribution: groupPlan, group relations in reviewOutline, and firstSliceStrategy grouping.
+- Output contribution: groupPlan, group-level relationships in reviewOutline, and firstSliceStrategy grouping.
 
 ## Phenotype Readiness
 
@@ -104,17 +104,17 @@ Use these nine modules before listing SpeciesNode candidates. Each module contri
 
 - Module question: Which relationships are true inheritance and which are reference, driver, consumer, review, or shared context links?
 - Evidence to inspect: parent roles, transformation deltas, preservation rules, source-to-target identity, production variants, cross-graph dependencies, and whether a child becomes an independent stable object.
-- Decision boundary: prohibit fake inheritance. EvolutionEdge is only for real parent-child variants, form derivation, fusion sources, or production variants that become independent stable objects. References, drivers, consumers, review rules, and shared semantics use SpeciesGroupRelation, GraphBridge, context, facets, or templates.
-- Positive pattern: a battle-sprite variant derived from a character base with preserved silhouette and altered pose can be an EvolutionEdge.
-- Counterexample: "danger cue reminds reviewers of monster ecology" is a reference or context relation, not an inheritance edge.
-- Output contribution: evolutionPlan, bridgePlan, groupPlan relation notes, and reviewOutline notes for multi-root graphs where no inheritance edge should be invented.
+- Decision boundary: prohibit fake inheritance. DesignRelationship is valid only when two same-level core entities have a real design-language contract. References, drivers, consumers, review rules, and shared semantics that are not between same-level core entities use context, facets, templates, or output provenance.
+- Positive pattern: a battle-sprite species derived from a character-base species with preserved silhouette and altered pose can be a node-level DesignRelationship.
+- Counterexample: "danger cue reminds reviewers of monster ecology" is context or review rationale, not a fake inheritance link.
+- Output contribution: relationshipPlan and reviewOutline notes for multi-root graphs where no inheritance should be invented.
 
 ## Review Shape
 
 - Module question: How should the graph be inspected by a human reviewer before writes are applied?
-- Evidence to inspect: atlas, graph boundaries, group boundaries, roots, independent nodes, group relations, bridges, and unresolved assumptions.
+- Evidence to inspect: atlas, graph boundaries, group boundaries, roots, independent nodes, DesignRelationship endpoints, and unresolved assumptions.
 - Decision boundary: reviewability is part of the model. If the graph tree is flat because nodes are independent roots, say that explicitly. If there are multiple roots with no real derivation, do not invent an edge to make the tree look tidy.
-- Positive pattern: a reviewOutline lists atlas -> graphs -> groups -> species nodes, graph bridges, group relations, and a note that independent roots are intentionally flat.
+- Positive pattern: a reviewOutline lists atlas -> graphs -> groups -> species nodes, DesignRelationship endpoints, and a note that independent roots are intentionally flat.
 - Counterexample: a lineage tree that hides groups or makes fake parent edges for readability is misleading.
 - Output contribution: reviewOutline.
 
@@ -123,7 +123,7 @@ Use these nine modules before listing SpeciesNode candidates. Each module contri
 - Module question: What is the smallest useful first modeling slice that can be reviewed and expanded later?
 - Evidence to inspect: first-release outputs, priority, available source evidence, stable object confidence, group coverage, and downstream compile/generation needs.
 - Decision boundary: include only objects with enough evidence and immediate phenotype value. Exclude but name expandable objects when source is missing, priority is low, the item is not a stable object, not a first-release phenotype, or is only an abstract rule.
-- Positive pattern: firstSliceStrategy includes one graph, two groups, three drawable species, one bridge, and the minimum context/rubric needed for first generation.
+- Positive pattern: firstSliceStrategy includes one graph, two groups, three drawable species, one design relationship, and the minimum context/rubric needed for first generation.
 - Counterexample: importing a full taxonomy of unverified names creates review debt and weakens confidence.
 - Output contribution: firstSliceStrategy with included first-slice objects, excluded but expandable objects, and exclusion reasons.
 
@@ -158,12 +158,11 @@ Required patterns:
 Return a structured modeling proposal with these fields:
 
 - graphScope: graph id suggestion, purpose, boundaries, root candidates, and whether multiple graphs are required.
-- objectClassification: user concepts mapped to Graph, SpeciesGroup, SpeciesNode, EvolutionEdge, facet, context, Phenotype, OutputReference, or unresolved.
-- groupPlan: SpeciesGroup and SpeciesGroupRelation candidates with rationale.
-- bridgePlan: GraphBridge candidates, compile relevance, and why a simple parent edge is not enough.
-- reviewOutline: atlas -> graphs -> groups -> species nodes, graph bridges, group relations, explicit note when graph tree is flat because nodes are independent roots, and explicit note for multi-root graphs where no inheritance edge should be invented.
+- objectClassification: user concepts mapped to Graph, SpeciesGroup, SpeciesNode, DesignRelationship, facet, context, Phenotype, OutputReference, or unresolved.
+- groupPlan: SpeciesGroup candidates with rationale.
+- relationshipPlan: DesignRelationship candidates with source endpoint, target endpoint, endpoint level, type, direction, transfer rule, must preserve, must avoid, review questions, and why the relationship is not only context or output provenance.
+- reviewOutline: atlas -> graphs -> groups -> species nodes, DesignRelationship endpoints, explicit note when graph tree is flat because nodes are independent roots, and explicit note for multi-root graphs where no inheritance should be invented.
 - speciesPlan: SpeciesNode candidates with parent candidates, role, level, category, status, source evidence, object ID or asset ID when available, expected first phenotype type, drawable visual signal, negative boundary, group membership, confidence, draft fields, and rationale.
-- evolutionPlan: EvolutionEdge candidates with source, target, parent role, direction, delta genes, must preserve, must avoid, and conflict notes.
 - contextPlan: DesignContext, ContextFact, ContextMotif, DesignPrinciple, ContextReference, and ContextReviewRubric candidates.
 - facetTemplatePlan: required, recommended, and optional facets with value strategy.
 - phenotypePlan: generated result types, expected variants, review needs, and output/library routing.
@@ -182,7 +181,7 @@ Return a structured modeling proposal with these fields:
 - Every SpeciesNode has a stable identity and a reason it is not just one generated result.
 - Every SpeciesNode passes phenotype readiness; unclear candidates become context, group facts, facets, or unresolved items instead of species.
 - Abstract system downgrade is explicit when visual language, UI system, ecosystem, workflow, review standard, material library, storage directory, page framework, or counter relationship appears.
-- Every EvolutionEdge describes the transformation, not only the child label.
+- Every DesignRelationship describes the design-language contract, not only the target label.
 - Fake inheritance is rejected even when it would make the graph tree easier to read.
 - Facets are reusable dimensions with a value strategy.
 - Context facts and motifs stay separate from reusable facets.

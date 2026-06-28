@@ -9,9 +9,8 @@ import {
   ContextReference,
   ContextReviewRubric,
   DesignContext,
+  DesignRelationship,
   DesignPrinciple,
-  EvolutionEdge,
-  EdgeVersion,
   ExternalLibraryMapping,
   FacetAssignment,
   FacetDefinition,
@@ -19,7 +18,6 @@ import {
   GeneTemplate,
   GenerationJob,
   Graph,
-  GraphBridge,
   ImpactRecord,
   LibraryRoutingPolicy,
   NodeVersion,
@@ -34,7 +32,6 @@ import {
   SpeciesGroup,
   SpeciesCompileArtifact,
   SpeciesGroupMembership,
-  SpeciesGroupRelation,
   SpeciesNode,
   StorageMount,
   TemplatePack
@@ -108,13 +105,6 @@ export interface SpeciesGroupMembershipRepository {
   listByNode(nodeId: string): SpeciesGroupMembership[];
 }
 
-export interface SpeciesGroupRelationRepository {
-  create(relation: SpeciesGroupRelation): void;
-  update(relation: SpeciesGroupRelation): void;
-  get(relationId: string): SpeciesGroupRelation | undefined;
-  listByGraph(graphId: string): SpeciesGroupRelation[];
-}
-
 export interface AtlasRepository {
   create(atlas: Atlas): void;
   update(atlas: Atlas): void;
@@ -122,12 +112,13 @@ export interface AtlasRepository {
   list(): Atlas[];
 }
 
-export interface GraphBridgeRepository {
-  create(bridge: GraphBridge): void;
-  update(bridge: GraphBridge): void;
-  get(bridgeId: string): GraphBridge | undefined;
-  listByAtlas(atlasId: string): GraphBridge[];
-  listByGraph(graphId: string): GraphBridge[];
+export interface DesignRelationshipRepository {
+  create(relationship: DesignRelationship): void;
+  update(relationship: DesignRelationship): void;
+  get(relationshipId: string): DesignRelationship | undefined;
+  list(): DesignRelationship[];
+  listByGraph(graphId: string): DesignRelationship[];
+  listByEndpoint(type: DesignRelationship["source"]["type"], id: string): DesignRelationship[];
 }
 
 export interface DesignContextRepository {
@@ -194,19 +185,6 @@ export interface LineageRepository {
   update(node: SpeciesNode): void;
   get(nodeId: string): SpeciesNode | undefined;
   listByGraph(graphId: string): SpeciesNode[];
-}
-
-export interface EdgeRepository {
-  create(edge: EvolutionEdge): void;
-  update(edge: EvolutionEdge): void;
-  get(edgeId: string): EvolutionEdge | undefined;
-  listByGraph(graphId: string): EvolutionEdge[];
-}
-
-export interface EdgeVersionRepository {
-  create(version: EdgeVersion): void;
-  get(edgeVersionId: string): EdgeVersion | undefined;
-  listByEdge(edgeId: string): EdgeVersion[];
 }
 
 export interface NodeVersionRepository {

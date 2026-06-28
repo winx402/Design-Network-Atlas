@@ -1,16 +1,14 @@
 import { z } from "zod";
 import {
   Atlas,
-  EvolutionEdge,
+  DesignRelationship,
   ExternalLibraryMapping,
   Graph,
-  GraphBridge,
   LibraryRoutingPolicy,
   PhenotypeLibrary,
   PhenotypeLibraryGraphBinding,
   SpeciesGroup,
   SpeciesGroupMembership,
-  SpeciesGroupRelation,
   SpeciesNode,
   StorageMount
 } from "./schemas.js";
@@ -47,22 +45,6 @@ const SpeciesNodeInputSchema = z
   })
   .passthrough();
 
-const EvolutionEdgeInputSchema = z
-  .object({
-    graphId: z.string().min(1),
-    edgeId: z.string().min(1),
-    fromNodeId: z.string().min(1),
-    toNodeId: z.string().min(1),
-    edgeType: z.string().optional(),
-    direction: z.string().optional(),
-    operation: z.string().optional(),
-    deltaGenes: JsonObjectInput.optional(),
-    valueResolution: JsonObjectInput.optional(),
-    mustPreserve: stringArray.optional(),
-    mustAvoid: stringArray.optional()
-  })
-  .passthrough();
-
 const SpeciesGroupInputSchema = z
   .object({
     graphId: z.string().min(1),
@@ -92,20 +74,6 @@ const SpeciesGroupMembershipInputSchema = z
   })
   .passthrough();
 
-const SpeciesGroupRelationInputSchema = z
-  .object({
-    relationId: z.string().min(1),
-    graphId: z.string().min(1),
-    sourceGroupId: z.string().min(1),
-    targetGroupId: z.string().min(1),
-    relationType: z.string().min(1),
-    description: z.string().optional(),
-    status: z.string().optional(),
-    extensions: JsonObjectInput.optional(),
-    allowParallel: z.boolean().optional()
-  })
-  .passthrough();
-
 const AtlasInputSchema = z
   .object({
     atlasId: z.string().min(1),
@@ -117,16 +85,24 @@ const AtlasInputSchema = z
   })
   .passthrough();
 
-const GraphBridgeInputSchema = z
+const RelationshipEndpointInputSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("graph"), graphId: z.string().min(1) }),
+  z.object({ type: z.literal("species-group"), graphId: z.string().min(1), groupId: z.string().min(1) }),
+  z.object({ type: z.literal("species-node"), graphId: z.string().min(1), nodeId: z.string().min(1) })
+]);
+
+const DesignRelationshipInputSchema = z
   .object({
-    bridgeId: z.string().min(1),
-    atlasId: z.string().min(1),
-    sourceGraphId: z.string().min(1),
-    targetGraphId: z.string().min(1),
-    bridgeType: z.string().min(1),
+    relationshipId: z.string().min(1),
+    source: RelationshipEndpointInputSchema,
+    target: RelationshipEndpointInputSchema,
+    relationshipType: z.string().min(1),
+    direction: z.string().optional(),
     description: z.string().optional(),
+    designContract: JsonObjectInput.optional(),
+    auxiliaryRefs: JsonObjectInput.optional(),
     status: z.string().optional(),
-    extensions: JsonObjectInput.optional(),
+    metadata: JsonObjectInput.optional(),
     allowParallel: z.boolean().optional()
   })
   .passthrough();
@@ -185,10 +161,8 @@ export const ModelingBatchSchema = z.object({
   atlases: z.array(AtlasInputSchema).default([]),
   speciesGroups: z.array(SpeciesGroupInputSchema).default([]),
   groupMemberships: z.array(SpeciesGroupMembershipInputSchema).default([]),
-  groupRelations: z.array(SpeciesGroupRelationInputSchema).default([]),
-  graphBridges: z.array(GraphBridgeInputSchema).default([]),
+  designRelationships: z.array(DesignRelationshipInputSchema).default([]),
   speciesNodes: z.array(SpeciesNodeInputSchema).default([]),
-  evolutionEdges: z.array(EvolutionEdgeInputSchema).default([]),
   phenotypeLibraries: z.array(PhenotypeLibraryInputSchema).default([]),
   libraryGraphBindings: z.array(LibraryGraphBindingInputSchema).default([]),
   storageMounts: z.array(StorageMountInputSchema).default([]),
@@ -204,18 +178,8 @@ export interface ModelingBatch {
   groupMemberships: Array<
     Partial<SpeciesGroupMembership> & Pick<SpeciesGroupMembership, "membershipId" | "graphId" | "groupId" | "nodeId">
   >;
-  groupRelations: Array<
-    Partial<SpeciesGroupRelation> &
-      Pick<SpeciesGroupRelation, "relationId" | "graphId" | "sourceGroupId" | "targetGroupId" | "relationType"> & {
-        allowParallel?: boolean;
-      }
-  >;
-  graphBridges: Array<
-    Partial<GraphBridge> &
-      Pick<GraphBridge, "bridgeId" | "atlasId" | "sourceGraphId" | "targetGraphId" | "bridgeType"> & { allowParallel?: boolean }
-  >;
+  designRelationships: Array<Partial<DesignRelationship> & Pick<DesignRelationship, "relationshipId" | "source" | "target" | "relationshipType"> & { allowParallel?: boolean }>;
   speciesNodes: Array<Partial<SpeciesNode> & Pick<SpeciesNode, "graphId" | "nodeId" | "name">>;
-  evolutionEdges: Array<Partial<EvolutionEdge> & Pick<EvolutionEdge, "graphId" | "edgeId" | "fromNodeId" | "toNodeId">>;
   phenotypeLibraries: Array<Partial<PhenotypeLibrary> & Pick<PhenotypeLibrary, "libraryId" | "name" | "purpose" | "profile">>;
   libraryGraphBindings: Array<
     Partial<PhenotypeLibraryGraphBinding> &

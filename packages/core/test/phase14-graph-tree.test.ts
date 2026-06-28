@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   buildGraphTree,
-  createDefaultEvolutionEdge,
+  createDefaultDesignRelationship,
   createDefaultGraph,
   createDefaultSpeciesNode,
   formatGraphTreeText
@@ -47,32 +47,29 @@ describe("Phase 14 graph tree view", () => {
         lineageStatus: "multi-origin"
       })
     ];
-    const edges = [
-      createDefaultEvolutionEdge({
-        graphId: graph.graphId,
-        edgeId: "edge-root-child",
-        fromNodeId: "node-root",
-        toNodeId: "node-child",
-        edgeType: "specialize",
-        direction: "adds warning semantics"
+    const relationships = [
+      createDefaultDesignRelationship({
+        relationshipId: "rel-root-child",
+        source: { type: "species-node", graphId: graph.graphId, nodeId: "node-root" },
+        target: { type: "species-node", graphId: graph.graphId, nodeId: "node-child" },
+        relationshipType: "derives-from",
+        description: "adds warning semantics"
       }),
-      createDefaultEvolutionEdge({
-        graphId: graph.graphId,
-        edgeId: "edge-root-hybrid",
-        fromNodeId: "node-root",
-        toNodeId: "node-hybrid",
-        edgeType: "inherit"
+      createDefaultDesignRelationship({
+        relationshipId: "rel-root-hybrid",
+        source: { type: "species-node", graphId: graph.graphId, nodeId: "node-root" },
+        target: { type: "species-node", graphId: graph.graphId, nodeId: "node-hybrid" },
+        relationshipType: "derives-from"
       }),
-      createDefaultEvolutionEdge({
-        graphId: graph.graphId,
-        edgeId: "edge-accent-hybrid",
-        fromNodeId: "node-accent",
-        toNodeId: "node-hybrid",
-        edgeType: "fusion"
+      createDefaultDesignRelationship({
+        relationshipId: "rel-accent-hybrid",
+        source: { type: "species-node", graphId: graph.graphId, nodeId: "node-accent" },
+        target: { type: "species-node", graphId: graph.graphId, nodeId: "node-hybrid" },
+        relationshipType: "translates-to"
       })
     ];
 
-    const tree = buildGraphTree({ graph, nodes, edges });
+    const tree = buildGraphTree({ graph, nodes, relationships });
 
     expect(tree.roots.map((root) => root.nodeId)).toEqual(["node-root", "node-accent"]);
     expect(tree.roots[0]?.children.map((child) => child.nodeId)).toEqual(["node-child", "node-hybrid"]);
@@ -80,14 +77,14 @@ describe("Phase 14 graph tree view", () => {
       expect.objectContaining({
         fromNodeId: "node-accent",
         toNodeId: "node-hybrid",
-        edgeId: "edge-accent-hybrid",
-        edgeType: "fusion",
+        relationshipId: "rel-accent-hybrid",
+        relationshipType: "translates-to",
         parentRole: "fusion"
       })
     ]);
     expect(formatGraphTreeText(tree)).toContain("- Root Style (node-root)");
     expect(formatGraphTreeText(tree)).toContain("  - Hybrid Icon (node-hybrid) [multi-origin]");
     expect(formatGraphTreeText(tree)).toContain("Additional parent relations:");
-    expect(formatGraphTreeText(tree)).toContain("- Accent Motif (node-accent) -> Hybrid Icon (node-hybrid) [fusion, edge-accent-hybrid]");
+    expect(formatGraphTreeText(tree)).toContain("- Accent Motif (node-accent) -> Hybrid Icon (node-hybrid) [translates-to, rel-accent-hybrid]");
   });
 });

@@ -4,7 +4,7 @@ import { Command } from "commander";
 import {
   buildSpeciesCompileInput,
   collectContextImpact,
-  collectGraphBridgeImpact,
+  collectDesignRelationshipImpact,
   collectGroupImpact,
   collectLineageImpact,
   preparePhenotypeGeneration,
@@ -248,7 +248,7 @@ graph
     const tree = buildGraphTree({
       graph: value,
       nodes: store.nodes.listByGraph(options.id),
-      edges: store.edges.listByGraph(options.id)
+      relationships: store.designRelationships.listByGraph(options.id)
     });
     const overlay = options.includeGroups
       ? buildGraphGroupOverlay({
@@ -256,7 +256,7 @@ graph
           nodes: store.nodes.listByGraph(options.id),
           groups: store.speciesGroups.listByGraph(options.id),
           memberships: store.speciesGroupMemberships.listByGraph(options.id),
-          groupRelations: store.speciesGroupRelations.listByGraph(options.id)
+          relationships: store.designRelationships.listByGraph(options.id)
         })
       : undefined;
     if (options.format === "json") {
@@ -381,60 +381,87 @@ node.command("versions").requiredOption("--id <nodeId>", "node id").action((opti
   store.close();
 });
 
-const edge = program.command("edge").description("Manage evolution edges");
-edge
+const relationship = program.command("relationship").description("Manage design relationships between same-level core entities").addHelpText(
+  "after",
+  `
+Endpoint formats:
+  graph:<graphId>
+  species-group:<graphId>:<groupId>
+  species-node:<graphId>:<nodeId>
+`
+);
+relationship
   .command("create")
-  .option("--graph <graphId>", "graph id")
-  .option("--id <edgeId>", "edge id")
-  .option("--from <nodeId>", "source node")
-  .option("--to <nodeId>", "target node")
-  .option("--type <edgeType>", "edge type", "inherit")
-  .option("--direction <direction>", "direction", "inherits visual identity")
-  .option("--operation <operation>", "operation", "merge")
-  .option("--delta <key=value>", "delta gene", collect, [])
-  .option("--value-resolution <key=value>", "value resolution", collect, [])
-  .option("--preserve <dimension>", "must preserve dimension or motif", collect, [])
-  .option("--avoid <badcase>", "must avoid badcase", collect, [])
+  .option("--id <relationshipId>", "design relationship id")
+  .option("--source <endpoint>", "source endpoint: graph:<id>, species-group:<graphId>:<groupId>, or species-node:<graphId>:<nodeId>")
+  .option("--target <endpoint>", "target endpoint: graph:<id>, species-group:<graphId>:<groupId>, or species-node:<graphId>:<nodeId>")
+  .option("--type <relationshipType>", "relationship type, including custom:<name>", "references")
+  .option("--direction <direction>", "source-to-target, bidirectional, or reference-only", "source-to-target")
+  .option("--description <description>", "relationship description", "")
+  .option("--transfer-rule <text>", "design transfer rule")
+  .option("--must-preserve <text>", "contract item that must be preserved", collect, [])
+  .option("--must-avoid <text>", "contract item that must be avoided", collect, [])
+  .option("--divergence-rule <text>", "intentional divergence rule")
+  .option("--review-question <text>", "review question for this relationship", collect, [])
+  .option("--status <status>", "relationship status", "draft")
+  .option("--metadata <key=value>", "relationship metadata", collect, [])
+  .option("--allow-parallel", "allow another relationship with the same endpoints when semantics are independent")
   .action((options, command) => {
     const store = openStore(command);
     const services = createDnaServices(store);
-    const result = services.lineage.createEdge(
+    const result = services.relationship.createRelationship(
       {
-        graphId: requiredUnlessChangeSetApply(options.graph, "--graph", command),
-        edgeId: requiredUnlessChangeSetApply(options.id, "--id", command),
-        fromNodeId: requiredUnlessChangeSetApply(options.from, "--from", command),
-        toNodeId: requiredUnlessChangeSetApply(options.to, "--to", command),
-        edgeType: options.type,
+        relationshipId: requiredUnlessChangeSetApply(options.id, "--id", command),
+        source: isChangeSetApply(command)
+          ? { type: "graph", graphId: "" }
+          : parseRelationshipEndpoint(requiredUnlessChangeSetApply(options.source, "--source", command)),
+        target: isChangeSetApply(command)
+          ? { type: "graph", graphId: "target" }
+          : parseRelationshipEndpoint(requiredUnlessChangeSetApply(options.target, "--target", command)),
+        relationshipType: options.type,
         direction: options.direction,
-        operation: options.operation,
-        deltaGenes: parseKeyValue(options.delta),
-        valueResolution: parseKeyValue(options.valueResolution),
-        mustPreserve: options.preserve,
-        mustAvoid: options.avoid
+        description: options.description,
+        designContract: {
+          transferRule: options.transferRule,
+          mustPreserve: options.mustPreserve,
+          mustAvoid: options.mustAvoid,
+          divergenceRule: options.divergenceRule,
+          reviewQuestions: options.reviewQuestion
+        },
+        status: options.status,
+        metadata: parseKeyValue(options.metadata),
+        allowParallel: Boolean(options.allowParallel)
       },
       writeOptions(command)
     );
     if (result.changeSet.status === "preview") {
       printChangeSet(result.changeSet);
     } else {
-      console.log(`created edge ${result.value.edge.edgeId}`);
+      console.log(`created design relationship ${result.value.relationshipId}`);
     }
     store.close();
   });
-edge.command("list").requiredOption("--graph <graphId>", "graph id").action((options, command) => {
+relationship.command("list").option("--graph <graphId>", "filter by graph id").action((options, command) => {
   const store = openStore(command);
-  console.log(JSON.stringify(store.edges.listByGraph(options.graph), null, 2));
+  const values = options.graph ? store.designRelationships.listByGraph(options.graph) : store.designRelationships.list();
   store.close();
+  console.log(JSON.stringify(values, null, 2));
 });
-edge.command("show").requiredOption("--id <edgeId>", "edge id").action((options, command) => {
+relationship.command("show").requiredOption("--id <relationshipId>", "design relationship id").option("--format <format>", "output format: json or text", "text").action((options, command) => {
   const store = openStore(command);
-  const value = store.edges.get(options.id);
-  if (!value) throw new Error(`edge not found: ${options.id}`);
-  console.log(JSON.stringify(value, null, 2));
+  const value = store.designRelationships.get(options.id);
+  if (!value) throw new Error(`design relationship not found: ${options.id}`);
   store.close();
+  if (options.format === "json") {
+    console.log(JSON.stringify(value, null, 2));
+  } else if (options.format === "text") {
+    process.stdout.write(formatRelationshipText(value));
+  } else {
+    throw new Error(`unknown relationship format: ${options.format}`);
+  }
 });
 
-const group = program.command("group").description("Manage graph-local species groups and weak group relations");
+const group = program.command("group").description("Manage graph-local species groups");
 group
   .command("create")
   .option("--graph <graphId>", "graph id")
@@ -513,43 +540,6 @@ groupMember
     store.close();
   });
 
-const groupRelation = group.command("relation").description("Manage weak relations between species groups");
-groupRelation
-  .command("add")
-  .option("--id <relationId>", "relation id")
-  .option("--graph <graphId>", "graph id")
-  .option("--source <groupId>", "source species group id")
-  .option("--target <groupId>", "target species group id")
-  .option("--type <relationType>", "relation type, including custom:<name>", "references")
-  .option("--description <description>", "relation description", "")
-  .option("--status <status>", "relation status", "draft")
-  .option("--extension <key=value>", "custom extension field", collect, [])
-  .option("--allow-parallel", "allow a second relation for the same source and target when the semantics are independent")
-  .action((options, command) => {
-    const store = openStore(command);
-    const services = createDnaServices(store);
-    const result = services.group.createRelation(
-      {
-        relationId: requiredUnlessChangeSetApply(options.id, "--id", command),
-        graphId: requiredUnlessChangeSetApply(options.graph, "--graph", command),
-        sourceGroupId: requiredUnlessChangeSetApply(options.source, "--source", command),
-        targetGroupId: requiredUnlessChangeSetApply(options.target, "--target", command),
-        relationType: options.type,
-        description: options.description,
-        status: options.status,
-        extensions: parseKeyValue(options.extension),
-        allowParallel: Boolean(options.allowParallel)
-      },
-      writeOptions(command)
-    );
-    if (result.changeSet.status === "preview") {
-      printChangeSet(result.changeSet);
-    } else {
-      console.log(`created species group relation ${result.value.relationId}`);
-    }
-    store.close();
-  });
-
 group
   .command("map")
   .requiredOption("--graph <graphId>", "graph id")
@@ -562,7 +552,9 @@ group
       graph: graphValue,
       groups: store.speciesGroups.listByGraph(options.graph),
       memberships: store.speciesGroupMemberships.listByGraph(options.graph),
-      relations: store.speciesGroupRelations.listByGraph(options.graph)
+      relationships: store.designRelationships
+        .listByGraph(options.graph)
+        .filter((relationshipValue) => relationshipValue.source.type === "species-group" && relationshipValue.target.type === "species-group")
     };
     if (options.format === "json") {
       console.log(JSON.stringify(groupMap, null, 2));
@@ -574,7 +566,7 @@ group
     store.close();
   });
 
-const atlas = program.command("atlas").description("Manage multi-graph atlases and graph bridges");
+const atlas = program.command("atlas").description("Manage multi-graph atlases");
 atlas
   .command("create")
   .option("--id <atlasId>", "atlas id")
@@ -632,43 +624,6 @@ atlas
     store.close();
   });
 
-const atlasBridge = atlas.command("bridge").description("Manage graph bridges in an atlas");
-atlasBridge
-  .command("add")
-  .option("--id <bridgeId>", "bridge id")
-  .option("--atlas <atlasId>", "atlas id")
-  .option("--source <graphId>", "source graph id")
-  .option("--target <graphId>", "target graph id")
-  .option("--type <bridgeType>", "bridge type, including custom:<name>", "references-species")
-  .option("--description <description>", "bridge description", "")
-  .option("--status <status>", "bridge status", "draft")
-  .option("--extension <key=value>", "custom extension field", collect, [])
-  .option("--allow-parallel", "allow a second bridge for the same source and target when the semantics are independent")
-  .action((options, command) => {
-    const store = openStore(command);
-    const services = createDnaServices(store);
-    const result = services.atlas.createBridge(
-      {
-        bridgeId: requiredUnlessChangeSetApply(options.id, "--id", command),
-        atlasId: requiredUnlessChangeSetApply(options.atlas, "--atlas", command),
-        sourceGraphId: requiredUnlessChangeSetApply(options.source, "--source", command),
-        targetGraphId: requiredUnlessChangeSetApply(options.target, "--target", command),
-        bridgeType: options.type,
-        description: options.description,
-        status: options.status,
-        extensions: parseKeyValue(options.extension),
-        allowParallel: Boolean(options.allowParallel)
-      },
-      writeOptions(command)
-    );
-    if (result.changeSet.status === "preview") {
-      printChangeSet(result.changeSet);
-    } else {
-      console.log(`created graph bridge ${result.value.bridgeId}`);
-    }
-    store.close();
-  });
-
 atlas
   .command("map")
   .requiredOption("--id <atlasId>", "atlas id")
@@ -680,7 +635,15 @@ atlas
     const atlasMap = {
       atlas: atlasValue,
       graphs: atlasValue.graphIds.map((graphId) => store.graphs.get(graphId)).filter(Boolean),
-      bridges: store.graphBridges.listByAtlas(options.id)
+      relationships: store.designRelationships
+        .list()
+        .filter(
+          (relationshipValue) =>
+            relationshipValue.source.type === "graph" &&
+            relationshipValue.target.type === "graph" &&
+            atlasValue.graphIds.includes(relationshipValue.source.graphId) &&
+            atlasValue.graphIds.includes(relationshipValue.target.graphId)
+        )
     };
     if (options.format === "json") {
       console.log(JSON.stringify(atlasMap, null, 2));
@@ -1541,39 +1504,38 @@ impact
   .command("check")
   .requiredOption("--graph <graphId>", "graph id")
   .option("--node <nodeId>", "changed node id")
-  .option("--edge <edgeId>", "changed edge id")
+  .option("--relationship <relationshipId>", "changed design relationship id")
   .option("--group <groupId>", "changed species group id")
-  .option("--bridge <bridgeId>", "changed graph bridge id")
   .option("--context <contextId>", "changed design context id")
   .option("--changed-version <versionId>", "changed version id", "latest")
   .action((options, command) => {
   const store = openStore(command);
-  const selected = [options.node, options.edge, options.group, options.bridge, options.context].filter(Boolean);
+  const selected = [options.node, options.relationship, options.group, options.context].filter(Boolean);
   if (selected.length !== 1) {
     store.close();
-    throw new Error("Provide exactly one of --node, --edge, --group, --bridge, or --context");
+    throw new Error("Provide exactly one of --node, --relationship, --group, or --context");
   }
-  const changed = options.edge
-    ? ({ type: "edge", id: options.edge, versionId: options.changedVersion } as const)
+  const changed = options.relationship
+    ? ({ type: "design-relationship", id: options.relationship, versionId: options.changedVersion } as const)
     : options.node
       ? ({ type: "node", id: options.node, versionId: options.changedVersion } as const)
       : undefined;
   const lineageImpacts = collectLineageImpact(store, {
     graphId: options.graph,
     nodeId: options.node,
-    edgeId: options.edge,
+    relationshipId: options.relationship,
     changedVersionId: options.changedVersion
   });
   const impacts: ApplicationImpactSummary[] =
     lineageImpacts ??
     (options.group
       ? collectGroupImpact(store, { graphId: options.graph, groupId: options.group })
-      : options.bridge
-        ? collectGraphBridgeImpact(store, { bridgeId: options.bridge })
+      : options.relationship
+        ? collectDesignRelationshipImpact(store, { relationshipId: options.relationship })
         : collectContextImpact(store, { graphId: options.graph, contextId: options.context }));
   if (shouldApply(command)) {
-    const changedObjectType = options.group ? "species-group" : options.bridge ? "graph-bridge" : "design-context";
-    const changedObjectId = options.group ?? options.bridge ?? options.context;
+    const changedObjectType = options.group ? "species-group" : options.relationship ? "design-relationship" : "design-context";
+    const changedObjectId = options.group ?? options.relationship ?? options.context;
     const records = changed && lineageImpacts
       ? createImpactRecords({ graphId: options.graph, changed, impacts: lineageImpacts })
       : impacts.map((impactValue: { objectType: "graph" | "node" | "species-group" | "phenotype-version"; objectId: string; reason: string }, index: number) =>
@@ -1600,7 +1562,7 @@ impact
   store.close();
 });
 impact.command("list").requiredOption("--type <objectType>", "node or edge").requiredOption("--id <objectId>", "changed object id").action((options, command) => {
-  if (options.type !== "node" && options.type !== "edge") throw new Error("--type must be node or edge");
+  if (options.type !== "node" && options.type !== "design-relationship") throw new Error("--type must be node or design-relationship");
   const store = openStore(command);
   console.log(JSON.stringify(store.impacts.listByChangedObject(options.type, options.id), null, 2));
   store.close();
@@ -2014,7 +1976,12 @@ function formatGroupMapText(input: {
   graph: { graphId: string; name: string };
   groups: Array<{ groupId: string; name: string; groupType: string; sharedFacts: string[]; facetSchemaIds: string[] }>;
   memberships: Array<{ membershipId: string; groupId: string; nodeId: string; role: string }>;
-  relations: Array<{ sourceGroupId: string; targetGroupId: string; relationType: string; description: string }>;
+  relationships: Array<{
+    source: { type: string; groupId?: string };
+    target: { type: string; groupId?: string };
+    relationshipType: string;
+    description: string;
+  }>;
 }) {
   const lines = [`Group Map: ${input.graph.name} (${input.graph.graphId})`, "Groups:"];
   for (const groupValue of input.groups) {
@@ -2026,13 +1993,13 @@ function formatGroupMapText(input: {
     if (groupValue.sharedFacts.length) lines.push(`  shared facts: ${groupValue.sharedFacts.join(", ")}`);
     if (groupValue.facetSchemaIds.length) lines.push(`  facet schemas: ${groupValue.facetSchemaIds.join(", ")}`);
   }
-  lines.push("Relations:");
-  if (!input.relations.length) {
+  lines.push("Design Relationships:");
+  if (!input.relationships.length) {
     lines.push("- none");
   } else {
-    for (const relation of input.relations) {
-      const description = relation.description ? ` - ${relation.description}` : "";
-      lines.push(`- ${relation.sourceGroupId} -> ${relation.targetGroupId} [${relation.relationType}]${description}`);
+    for (const relationshipValue of input.relationships) {
+      const description = relationshipValue.description ? ` - ${relationshipValue.description}` : "";
+      lines.push(`- ${relationshipValue.source.groupId} -> ${relationshipValue.target.groupId} [${relationshipValue.relationshipType}]${description}`);
     }
   }
   return `${lines.join("\n")}\n`;
@@ -2041,7 +2008,19 @@ function formatGroupMapText(input: {
 function formatAtlasMapText(input: {
   atlas: { atlasId: string; name: string; graphIds: string[] };
   graphs: Array<{ graphId: string; name: string } | undefined>;
-  bridges: Array<{ sourceGraphId: string; targetGraphId: string; bridgeType: string; description: string }>;
+  relationships: Array<{
+    source: { type: string; graphId?: string };
+    target: { type: string; graphId?: string };
+    relationshipType: string;
+    description: string;
+    designContract: {
+      transferRule?: string;
+      mustPreserve: string[];
+      mustAvoid: string[];
+      divergenceRule?: string;
+      reviewQuestions: string[];
+    };
+  }>;
 }) {
   const lines = [`Atlas Map: ${input.atlas.name} (${input.atlas.atlasId})`, "Graphs:"];
   const graphById = new Map(input.graphs.filter((graphValue): graphValue is { graphId: string; name: string } => Boolean(graphValue)).map((graphValue) => [graphValue.graphId, graphValue]));
@@ -2049,15 +2028,78 @@ function formatAtlasMapText(input: {
     const graphValue = graphById.get(graphId);
     lines.push(`- ${graphValue?.name ?? graphId} (${graphId})`);
   }
-  lines.push("Bridges:");
-  if (!input.bridges.length) {
+  lines.push("Design Relationships:");
+  if (!input.relationships.length) {
     lines.push("- none");
   } else {
-    for (const bridge of input.bridges) {
-      const description = bridge.description ? ` - ${bridge.description}` : "";
-      lines.push(`- ${bridge.sourceGraphId} -> ${bridge.targetGraphId} [${bridge.bridgeType}]${description}`);
+    for (const relationshipValue of input.relationships) {
+      const description = relationshipValue.description ? ` - ${relationshipValue.description}` : "";
+      lines.push(`- graph:${relationshipValue.source.graphId} -> graph:${relationshipValue.target.graphId} [${relationshipValue.relationshipType}]${description}`);
+      if (relationshipValue.designContract.transferRule) lines.push(`  Transfer Rule: ${relationshipValue.designContract.transferRule}`);
+      if (relationshipValue.designContract.mustPreserve.length) {
+        lines.push(`  Must Preserve: ${relationshipValue.designContract.mustPreserve.join(", ")}`);
+      }
+      if (relationshipValue.designContract.mustAvoid.length) {
+        lines.push(`  Must Avoid: ${relationshipValue.designContract.mustAvoid.join(", ")}`);
+      }
+      if (relationshipValue.designContract.divergenceRule) lines.push(`  Divergence Rule: ${relationshipValue.designContract.divergenceRule}`);
+      if (relationshipValue.designContract.reviewQuestions.length) {
+        lines.push(`  Review Questions: ${relationshipValue.designContract.reviewQuestions.join("; ")}`);
+      }
     }
   }
+  return `${lines.join("\n")}\n`;
+}
+
+function parseRelationshipEndpoint(value: string) {
+  const parts = value.split(":");
+  if (parts[0] === "graph" && parts.length === 2 && parts[1]) return { type: "graph" as const, graphId: parts[1] };
+  if (parts[0] === "species-group" && parts.length === 3 && parts[1] && parts[2]) {
+    return { type: "species-group" as const, graphId: parts[1], groupId: parts[2] };
+  }
+  if (parts[0] === "species-node" && parts.length === 3 && parts[1] && parts[2]) {
+    return { type: "species-node" as const, graphId: parts[1], nodeId: parts[2] };
+  }
+  throw new Error(`invalid design relationship endpoint: ${value}`);
+}
+
+function formatRelationshipEndpoint(endpoint: ReturnType<typeof parseRelationshipEndpoint>) {
+  if (endpoint.type === "graph") return `graph:${endpoint.graphId}`;
+  if (endpoint.type === "species-group") return `species-group:${endpoint.graphId}:${endpoint.groupId}`;
+  return `species-node:${endpoint.graphId}:${endpoint.nodeId}`;
+}
+
+function formatRelationshipText(relationshipValue: {
+  relationshipId: string;
+  source: ReturnType<typeof parseRelationshipEndpoint>;
+  target: ReturnType<typeof parseRelationshipEndpoint>;
+  relationshipType: string;
+  direction: string;
+  description: string;
+  designContract: {
+    transferRule?: string;
+    mustPreserve: string[];
+    mustAvoid: string[];
+    divergenceRule?: string;
+    reviewQuestions: string[];
+  };
+}) {
+  const lines = [
+    `Design Relationship: ${relationshipValue.relationshipId}`,
+    `Endpoints: ${formatRelationshipEndpoint(relationshipValue.source)} -> ${formatRelationshipEndpoint(relationshipValue.target)}`,
+    `Type: ${relationshipValue.relationshipType}`,
+    `Direction: ${relationshipValue.direction}`,
+    `Description: ${relationshipValue.description}`
+  ];
+  lines.push(`Transfer Rule: ${relationshipValue.designContract.transferRule ?? "none"}`);
+  lines.push(
+    `Must Preserve: ${relationshipValue.designContract.mustPreserve.length ? relationshipValue.designContract.mustPreserve.join(", ") : "none"}`
+  );
+  lines.push(`Must Avoid: ${relationshipValue.designContract.mustAvoid.length ? relationshipValue.designContract.mustAvoid.join(", ") : "none"}`);
+  lines.push(`Divergence Rule: ${relationshipValue.designContract.divergenceRule ?? "none"}`);
+  lines.push(
+    `Review Questions: ${relationshipValue.designContract.reviewQuestions.length ? relationshipValue.designContract.reviewQuestions.join("; ") : "none"}`
+  );
   return `${lines.join("\n")}\n`;
 }
 

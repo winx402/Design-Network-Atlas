@@ -93,8 +93,7 @@ Phase 0-16 已完成并由测试覆盖。本文件保留为历史执行计划、
 - `GeneTemplate`
 - `SpeciesNode`
 - `NodeVersion`
-- `EvolutionEdge`
-- `EdgeVersion`
+- `DesignRelationship`
 - `Phenotype`
 - `PhenotypeVersion`
 - `AssetIndex`
@@ -323,7 +322,7 @@ Phase 0-16 已完成并由测试覆盖。本文件保留为历史执行计划、
 测试：
 
 - 不保留浅层 `dna` 路由/CLI 说明 skill，CLI 说明由 `dna --help` 承担。
-- 图谱建模 skill 能覆盖 SpeciesNode、EvolutionEdge、facets、Phenotype、phenotype library 和写入策略。
+- 图谱建模 skill 能覆盖 SpeciesNode、DesignRelationship、facets、Phenotype、phenotype library 和写入策略。
 - 图谱编辑 skill 能覆盖当前图谱、合理性、影响分析、风险等级、outdated、替代方案和写入策略。
 - Skill 不直接写数据库内部结构、导出目录或外部素材库。
 - Skill 不保存 API key 或敏感链接。
@@ -508,7 +507,7 @@ E2E 场景：
 
 交付：
 
-- Core：`buildGraphTree`，把 `Graph`、`SpeciesNode[]`、`EvolutionEdge[]` 投影成稳定树结构。
+- Core：`buildGraphTree`，把 `Graph`、`SpeciesNode[]`、`DesignRelationship[]` 投影成稳定树结构。
 - Core：`formatGraphTreeText`，输出 CLI 可读文本树。
 - CLI：`dna graph tree --id <graph_id>`。
 - CLI：`dna graph tree --id <graph_id> --format json`。

@@ -1,7 +1,7 @@
 import {
   buildSpeciesCompileInput,
   collectContextImpact,
-  collectGraphBridgeImpact,
+  collectDesignRelationshipImpact,
   collectGroupImpact,
   preparePhenotypeGeneration,
   updatePhenotypeVersionStatus
@@ -13,14 +13,12 @@ import {
   createDefaultContextAttachment,
   createDefaultContextFact,
   createDefaultDesignContext,
-  createDefaultEvolutionEdge,
+  createDefaultDesignRelationship,
   createDefaultGraph,
-  createDefaultGraphBridge,
   createDefaultNodeVersion,
   createDefaultPhenotypeVersion,
   createDefaultSpeciesGroup,
   createDefaultSpeciesGroupMembership,
-  createDefaultSpeciesGroupRelation,
   createDefaultSpeciesNode
 } from "@dna/core";
 import { InMemoryDnaStore } from "@dna/storage";
@@ -37,14 +35,14 @@ describe("Phase 21 PRD-11 application services", () => {
       name: "Child",
       parentNodes: [parent.nodeId],
       primaryParent: parent.nodeId,
-      incomingEdges: ["edge-parent-child"]
+      incomingEdges: ["rel-parent-child"]
     });
-    const edge = createDefaultEvolutionEdge({
-      graphId: graph.graphId,
-      edgeId: "edge-parent-child",
-      fromNodeId: parent.nodeId,
-      toNodeId: child.nodeId,
-      deltaGenes: { color: "red" }
+    const relationship = createDefaultDesignRelationship({
+      relationshipId: "rel-parent-child",
+      source: { type: "species-node", graphId: graph.graphId, nodeId: parent.nodeId },
+      target: { type: "species-node", graphId: graph.graphId, nodeId: child.nodeId },
+      relationshipType: "derives-from",
+      metadata: { deltaGenes: { color: "red" } }
     });
     const group = createDefaultSpeciesGroup({ graphId: graph.graphId, groupId: "group-app", name: "Group" });
     const context = createDefaultDesignContext({
@@ -59,19 +57,7 @@ describe("Phase 21 PRD-11 application services", () => {
     store.nodes.create(parent);
     store.nodes.create(child);
     store.nodeVersions.create(createDefaultNodeVersion({ graphId: graph.graphId, nodeId: parent.nodeId, nodeVersionId: "node-parent@1.0.0", resolvedGeneSnapshot: { motif: "ring" } }));
-    store.edges.create(edge);
-    store.edgeVersions.create({
-      edgeVersionId: "edge-parent-child@1.0.0",
-      edgeId: edge.edgeId,
-      graphId: graph.graphId,
-      version: "1.0.0",
-      deltaGenes: { color: "red" },
-      valueResolution: {},
-      mustPreserve: [],
-      mustAvoid: [],
-      changeSummary: "initial",
-      createdAt: "2026-06-27T00:00:00.000Z"
-    });
+    store.designRelationships.create(relationship);
     store.speciesGroups.create(group);
     store.speciesGroupMemberships.create(
       createDefaultSpeciesGroupMembership({ graphId: graph.graphId, groupId: group.groupId, nodeId: child.nodeId, membershipId: "mem-app" })
@@ -92,13 +78,13 @@ describe("Phase 21 PRD-11 application services", () => {
     expect(input.graph.graphId).toBe(graph.graphId);
     expect(input.node.nodeId).toBe(child.nodeId);
     expect(input.parentSnapshots).toEqual([{ parentNodeId: parent.nodeId, nodeVersionId: "node-parent@1.0.0", snapshot: { motif: "ring" } }]);
-    expect(input.edgeDeltas).toEqual([{ edgeVersionId: "edge-parent-child@1.0.0", delta: { color: "red" } }]);
+    expect(input.relationshipDeltas).toEqual([{ relationshipId: "rel-parent-child", delta: { color: "red" } }]);
     expect(input.speciesGroups.map((value) => value.groupId)).toEqual([group.groupId]);
     expect(input.designContexts.map((value) => value.contextId)).toEqual([context.contextId]);
     expect(input.contextFacts.map((value) => value.factId)).toEqual([fact.factId]);
   });
 
-  test("impact services collect group, bridge, context, and status behavior without CLI", () => {
+  test("impact services collect group, design relationship, context, and status behavior without CLI", () => {
     const store = new InMemoryDnaStore();
     const sourceGraph = createDefaultGraph({ graphId: "graph-source", name: "Source", purpose: "source" });
     const targetGraph = createDefaultGraph({ graphId: "graph-target", name: "Target", purpose: "target" });
@@ -108,12 +94,12 @@ describe("Phase 21 PRD-11 application services", () => {
     const otherGroup = createDefaultSpeciesGroup({ graphId: sourceGraph.graphId, groupId: "group-other", name: "Other Group" });
     const context = createDefaultDesignContext({ contextId: "ctx-impact", name: "Impact Context", contextType: "worldview" });
     const atlas = createDefaultAtlas({ atlasId: "atlas-impact", name: "Atlas" });
-    const bridge = createDefaultGraphBridge({
-      bridgeId: "bridge-impact",
-      atlasId: atlas.atlasId,
-      sourceGraphId: sourceGraph.graphId,
-      targetGraphId: targetGraph.graphId,
-      bridgeType: "theme-transfer"
+    const graphRelationship = createDefaultDesignRelationship({
+      relationshipId: "rel-impact-graph",
+      source: { type: "graph", graphId: sourceGraph.graphId },
+      target: { type: "graph", graphId: targetGraph.graphId },
+      relationshipType: "translates-to",
+      metadata: { atlasId: atlas.atlasId }
     });
     const version = createDefaultPhenotypeVersion({
       phenotypeVersionId: "pv-impact@1.0.0",
@@ -131,13 +117,12 @@ describe("Phase 21 PRD-11 application services", () => {
     store.speciesGroupMemberships.create(
       createDefaultSpeciesGroupMembership({ graphId: sourceGraph.graphId, groupId: group.groupId, nodeId: node.nodeId, membershipId: "mem-impact" })
     );
-    store.speciesGroupRelations.create(
-      createDefaultSpeciesGroupRelation({
-        graphId: sourceGraph.graphId,
-        relationId: "rel-impact",
-        sourceGroupId: group.groupId,
-        targetGroupId: otherGroup.groupId,
-        relationType: "related-system"
+    store.designRelationships.create(
+      createDefaultDesignRelationship({
+        relationshipId: "rel-impact-groups",
+        source: { type: "species-group", graphId: sourceGraph.graphId, groupId: group.groupId },
+        target: { type: "species-group", graphId: sourceGraph.graphId, groupId: otherGroup.groupId },
+        relationshipType: "references"
       })
     );
     store.designContexts.create(context);
@@ -145,7 +130,7 @@ describe("Phase 21 PRD-11 application services", () => {
       createDefaultContextAttachment({ attachmentId: "att-impact", contextId: context.contextId, targetType: "species-node", targetId: node.nodeId })
     );
     store.atlases.create(atlas);
-    store.graphBridges.create(bridge);
+    store.designRelationships.create(graphRelationship);
     store.phenotypeVersions.create(version);
     store.phenotypeVersions.create(
       createDefaultPhenotypeVersion({
@@ -161,7 +146,9 @@ describe("Phase 21 PRD-11 application services", () => {
       version.phenotypeVersionId,
       otherGroup.groupId
     ]);
-    expect(collectGraphBridgeImpact(store, { bridgeId: bridge.bridgeId }).map((impact) => impact.objectId)).toContain(targetGraph.graphId);
+    expect(collectDesignRelationshipImpact(store, { relationshipId: graphRelationship.relationshipId }).map((impact) => impact.objectId)).toContain(
+      targetGraph.graphId
+    );
     expect(collectContextImpact(store, { graphId: sourceGraph.graphId, contextId: context.contextId }).map((impact) => impact.objectId)).toContain(
       version.phenotypeVersionId
     );

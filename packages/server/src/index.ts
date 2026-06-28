@@ -75,7 +75,7 @@ export function createDnaHttpHandler(store: SqliteDnaStore, options: DnaHttpHand
         buildGraphTree({
           graph,
           nodes: store.nodes.listByGraph(graphId),
-          edges: store.edges.listByGraph(graphId)
+          relationships: store.designRelationships.listByGraph(graphId)
         })
       );
     }

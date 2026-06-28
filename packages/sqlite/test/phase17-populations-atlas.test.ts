@@ -1,4 +1,5 @@
 import { mkdirSync, rmSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
@@ -22,8 +23,8 @@ function tempDb(name: string) {
   return dbPath;
 }
 
-describe("Phase 17 PRD-01 SQLite storage", () => {
-  test("migration creates population, atlas, and facet tables", () => {
+describe("Phase 17 SQLite storage", () => {
+  test("migration creates population, atlas, relationship, and facet tables", () => {
     const store = new SqliteDnaStore(tempDb("tables"));
     store.migrate();
 
@@ -36,22 +37,21 @@ describe("Phase 17 PRD-01 SQLite storage", () => {
       "facet_assignments",
       "species_groups",
       "species_group_memberships",
-      "species_group_relations",
-      "atlases",
-      "graph_bridges"
+      "design_relationships",
+      "atlases"
     ]) {
       expect(names.has(table), table).toBe(true);
     }
     store.close();
   });
 
-  test("persists species groups, memberships, relations, atlases, graph bridges, and facets", () => {
+  test("persists species groups, memberships, design relationships, atlases, and facets", () => {
     const store = new SqliteDnaStore(tempDb("crud"));
     store.migrate();
     const services = createDnaServices(store);
 
     store.graphs.create(createDefaultGraph({ graphId: "graph-a", name: "Graph A", purpose: "group test" }));
-    store.graphs.create(createDefaultGraph({ graphId: "graph-b", name: "Graph B", purpose: "bridge test" }));
+    store.graphs.create(createDefaultGraph({ graphId: "graph-b", name: "Graph B", purpose: "relationship test" }));
     store.nodes.create(createDefaultSpeciesNode({ graphId: "graph-a", nodeId: "node-root", name: "Root" }));
 
     store.facetDefinitions.create(createDefaultFacetDefinition({ facetId: "facet-density", name: "Density" }));
@@ -98,96 +98,77 @@ describe("Phase 17 PRD-01 SQLite storage", () => {
       { mode: "preview-confirm", apply: true }
     );
     services.group.createGroup(
-      {
-        graphId: "graph-a",
-        groupId: "group-icons",
-        name: "Icon Family",
-        groupType: "family"
-      },
+      { graphId: "graph-a", groupId: "group-icons", name: "Icon Family", groupType: "family" },
       { mode: "preview-confirm", apply: true }
     );
     services.group.addMember(
-      {
-        membershipId: "member-root-ui",
-        graphId: "graph-a",
-        groupId: "group-ui",
-        nodeId: "node-root",
-        role: "primary"
-      },
+      { membershipId: "member-root-ui", graphId: "graph-a", groupId: "group-ui", nodeId: "node-root", role: "primary" },
       { mode: "preview-confirm", apply: true }
     );
-    services.group.createRelation(
+    services.relationship.createRelationship(
       {
-        relationId: "rel-ui-icons",
-        graphId: "graph-a",
-        sourceGroupId: "group-ui",
-        targetGroupId: "group-icons",
-        relationType: "adapts-from",
-        description: "Icons adapt UI readability.",
-        extensions: { scope: "toolbar" }
+        relationshipId: "rel-ui-icons",
+        source: { type: "species-group", graphId: "graph-a", groupId: "group-ui" },
+        target: { type: "species-group", graphId: "graph-a", groupId: "group-icons" },
+        relationshipType: "aligns-with",
+        description: "Icons align with UI readability.",
+        metadata: { scope: "toolbar" }
       },
       { mode: "preview-confirm", apply: true }
     );
 
     expect(() =>
-      services.group.createRelation(
+      services.relationship.createRelationship(
         {
-          relationId: "rel-ui-icons-extra",
-          graphId: "graph-a",
-          sourceGroupId: "group-ui",
-          targetGroupId: "group-icons",
-          relationType: "references"
+          relationshipId: "rel-ui-icons-extra",
+          source: { type: "species-group", graphId: "graph-a", groupId: "group-ui" },
+          target: { type: "species-group", graphId: "graph-a", groupId: "group-icons" },
+          relationshipType: "references"
         },
         { mode: "preview-confirm", apply: true }
       )
-    ).toThrow(/parallel group relation/);
+    ).toThrow(/parallel design relationship/);
 
-    services.group.createRelation(
+    services.relationship.createRelationship(
       {
-        relationId: "rel-ui-icons-custom",
-        graphId: "graph-a",
-        sourceGroupId: "group-ui",
-        targetGroupId: "group-icons",
-        relationType: "custom:screen-density",
+        relationshipId: "rel-ui-icons-custom",
+        source: { type: "species-group", graphId: "graph-a", groupId: "group-ui" },
+        target: { type: "species-group", graphId: "graph-a", groupId: "group-icons" },
+        relationshipType: "custom:screen-density",
         allowParallel: true
       },
       { mode: "preview-confirm", apply: true }
     );
 
     services.atlas.createAtlas(
-      {
-        atlasId: "atlas-a",
-        name: "Atlas A",
-        purpose: "multi graph",
-        graphIds: ["graph-a", "graph-b"]
-      },
+      { atlasId: "atlas-a", name: "Atlas A", purpose: "multi graph", graphIds: ["graph-a", "graph-b"] },
       { mode: "preview-confirm", apply: true }
     );
-    services.atlas.createBridge(
+    services.relationship.createRelationship(
       {
-        bridgeId: "bridge-a-b",
-        atlasId: "atlas-a",
-        sourceGraphId: "graph-a",
-        targetGraphId: "graph-b",
-        bridgeType: "style-aligned-with",
-        description: "Keep graph B aligned with graph A."
+        relationshipId: "rel-a-b",
+        source: { type: "graph", graphId: "graph-a" },
+        target: { type: "graph", graphId: "graph-b" },
+        relationshipType: "aligns-with",
+        description: "Keep graph B aligned with graph A.",
+        metadata: { atlasId: "atlas-a" }
       },
       { mode: "preview-confirm", apply: true }
     );
 
     expect(store.speciesGroups.listByGraph("graph-a").map((group) => group.groupId)).toEqual(["group-ui", "group-icons"]);
     expect(store.speciesGroupMemberships.listByGroup("group-ui").map((membership) => membership.nodeId)).toEqual(["node-root"]);
-    expect(store.speciesGroupRelations.listByGraph("graph-a").map((relation) => relation.relationId)).toEqual([
+    expect(store.designRelationships.listByGraph("graph-a").map((relationship) => relationship.relationshipId)).toEqual([
       "rel-ui-icons",
-      "rel-ui-icons-custom"
+      "rel-ui-icons-custom",
+      "rel-a-b"
     ]);
     expect(store.atlases.get("atlas-a")?.graphIds).toEqual(["graph-a", "graph-b"]);
-    expect(store.graphBridges.listByAtlas("atlas-a").map((bridge) => bridge.bridgeId)).toEqual(["bridge-a-b"]);
     expect(store.facetAssignments.listByTarget("species-group", "group-ui")).toHaveLength(1);
     store.close();
   });
 
-  test("exports and imports PRD-01 objects through the Git directory format", () => {
+  test("exports and imports objects through the Git directory format", () => {
     const source = new SqliteDnaStore(tempDb("source"));
     source.migrate();
     const services = createDnaServices(source);
@@ -198,31 +179,15 @@ describe("Phase 17 PRD-01 SQLite storage", () => {
     source.facetDefinitions.create(createDefaultFacetDefinition({ facetId: "facet-export", name: "Export Facet" }));
     source.facetSchemas.create(createDefaultFacetSchema({ facetSchemaId: "facet-schema-export", name: "Export Schema", facetIds: ["facet-export"] }));
     services.group.createGroup(
-      {
-        graphId: "graph-export-a",
-        groupId: "group-export",
-        name: "Export Group",
-        facetSchemaIds: ["facet-schema-export"]
-      },
+      { graphId: "graph-export-a", groupId: "group-export", name: "Export Group", facetSchemaIds: ["facet-schema-export"] },
       { mode: "preview-confirm", apply: true }
     );
     services.group.addMember(
-      {
-        membershipId: "member-export",
-        graphId: "graph-export-a",
-        groupId: "group-export",
-        nodeId: "node-export",
-        role: "primary"
-      },
+      { membershipId: "member-export", graphId: "graph-export-a", groupId: "group-export", nodeId: "node-export", role: "primary" },
       { mode: "preview-confirm", apply: true }
     );
     services.atlas.createAtlas(
-      {
-        atlasId: "atlas-export",
-        name: "Export Atlas",
-        purpose: "roundtrip",
-        graphIds: ["graph-export-a", "graph-export-b"]
-      },
+      { atlasId: "atlas-export", name: "Export Atlas", purpose: "roundtrip", graphIds: ["graph-export-a", "graph-export-b"] },
       { mode: "preview-confirm", apply: true }
     );
     source.facetAssignments.create(
@@ -233,19 +198,19 @@ describe("Phase 17 PRD-01 SQLite storage", () => {
         values: { "facet-export": "atlas-level" }
       })
     );
-    services.atlas.createBridge(
+    services.relationship.createRelationship(
       {
-        bridgeId: "bridge-export",
-        atlasId: "atlas-export",
-        sourceGraphId: "graph-export-a",
-        targetGraphId: "graph-export-b",
-        bridgeType: "references-species"
+        relationshipId: "rel-export",
+        source: { type: "graph", graphId: "graph-export-a" },
+        target: { type: "graph", graphId: "graph-export-b" },
+        relationshipType: "references"
       },
       { mode: "preview-confirm", apply: true }
     );
 
     const outDir = tempPath("export-dir");
     exportProject(source, outDir);
+    expect(existsSync(join(outDir, "relationships", "rel-export.json"))).toBe(true);
 
     const target = new SqliteDnaStore(tempDb("target"));
     target.migrate();
@@ -256,7 +221,7 @@ describe("Phase 17 PRD-01 SQLite storage", () => {
     expect(target.speciesGroupMemberships.listByGroup("group-export")).toHaveLength(1);
     expect(target.atlases.get("atlas-export")?.graphIds).toEqual(["graph-export-a", "graph-export-b"]);
     expect(target.facetAssignments.listByTarget("atlas", "atlas-export")).toHaveLength(1);
-    expect(target.graphBridges.get("bridge-export")?.bridgeType).toBe("references-species");
+    expect(target.designRelationships.get("rel-export")?.relationshipType).toBe("references");
 
     source.close();
     target.close();

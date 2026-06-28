@@ -11,8 +11,7 @@ import {
   ContextReviewRubric,
   DesignContext,
   DesignPrinciple,
-  EvolutionEdge,
-  EdgeVersion,
+  DesignRelationship,
   ExternalLibraryMapping,
   FacetAssignment,
   FacetDefinition,
@@ -20,7 +19,6 @@ import {
   GeneTemplate,
   GenerationJob,
   Graph,
-  GraphBridge,
   ImpactRecord,
   LibraryRoutingPolicy,
   NodeVersion,
@@ -35,7 +33,6 @@ import {
   SpeciesGroup,
   SpeciesCompileArtifact,
   SpeciesGroupMembership,
-  SpeciesGroupRelation,
   SpeciesNode,
   StorageMount,
   TemplatePack
@@ -51,8 +48,7 @@ import {
   ContextReviewRubricRepository,
   DesignContextRepository,
   DesignPrincipleRepository,
-  EdgeRepository,
-  EdgeVersionRepository,
+  DesignRelationshipRepository,
   ExternalLibraryMappingRepository,
   GraphResetSummary,
   AtlasRepository,
@@ -60,7 +56,6 @@ import {
   FacetDefinitionRepository,
   FacetSchemaRepository,
   GenerationJobRepository,
-  GraphBridgeRepository,
   GraphRepository,
   ImpactRepository,
   LibraryRoutingPolicyRepository,
@@ -76,7 +71,6 @@ import {
   ReviewRepository,
   SearchRepository,
   SpeciesGroupMembershipRepository,
-  SpeciesGroupRelationRepository,
   SpeciesGroupRepository,
   SpeciesCompileArtifactRepository,
   StorageMountRepository,
@@ -92,9 +86,8 @@ export interface DnaServiceStore extends StorageEngine {
   templates: TemplateRepository;
   speciesGroups: SpeciesGroupRepository;
   speciesGroupMemberships: SpeciesGroupMembershipRepository;
-  speciesGroupRelations: SpeciesGroupRelationRepository;
+  designRelationships: DesignRelationshipRepository;
   atlases: AtlasRepository;
-  graphBridges: GraphBridgeRepository;
   designContexts: DesignContextRepository;
   contextFacts: ContextFactRepository;
   designPrinciples: DesignPrincipleRepository;
@@ -105,8 +98,6 @@ export interface DnaServiceStore extends StorageEngine {
   contextPolicies: ContextPolicyRepository;
   nodes: LineageRepository;
   nodeVersions: NodeVersionRepository;
-  edges: EdgeRepository;
-  edgeVersions: EdgeVersionRepository;
   phenotypes: PhenotypeRepository;
   phenotypeVersions: PhenotypeVersionRepository;
   speciesCompileArtifacts: SpeciesCompileArtifactRepository;
@@ -141,9 +132,8 @@ interface MemoryState {
   geneTemplates: Map<string, GeneTemplate>;
   speciesGroups: Map<string, SpeciesGroup>;
   speciesGroupMemberships: Map<string, SpeciesGroupMembership>;
-  speciesGroupRelations: Map<string, SpeciesGroupRelation>;
+  designRelationships: Map<string, DesignRelationship>;
   atlases: Map<string, Atlas>;
-  graphBridges: Map<string, GraphBridge>;
   designContexts: Map<string, DesignContext>;
   contextFacts: Map<string, ContextFact>;
   designPrinciples: Map<string, DesignPrinciple>;
@@ -154,8 +144,6 @@ interface MemoryState {
   contextPolicies: Map<string, ContextPolicy>;
   nodes: Map<string, SpeciesNode>;
   nodeVersions: Map<string, NodeVersion>;
-  edges: Map<string, EvolutionEdge>;
-  edgeVersions: Map<string, EdgeVersion>;
   phenotypes: Map<string, Phenotype>;
   phenotypeVersions: Map<string, PhenotypeVersion>;
   speciesCompileArtifacts: Map<string, SpeciesCompileArtifact>;
@@ -183,9 +171,8 @@ export class InMemoryDnaStore implements DnaServiceStore {
   readonly templates: TemplateRepository;
   readonly speciesGroups: SpeciesGroupRepository;
   readonly speciesGroupMemberships: SpeciesGroupMembershipRepository;
-  readonly speciesGroupRelations: SpeciesGroupRelationRepository;
+  readonly designRelationships: DesignRelationshipRepository;
   readonly atlases: AtlasRepository;
-  readonly graphBridges: GraphBridgeRepository;
   readonly designContexts: DesignContextRepository;
   readonly contextFacts: ContextFactRepository;
   readonly designPrinciples: DesignPrincipleRepository;
@@ -196,8 +183,6 @@ export class InMemoryDnaStore implements DnaServiceStore {
   readonly contextPolicies: ContextPolicyRepository;
   readonly nodes: LineageRepository;
   readonly nodeVersions: NodeVersionRepository;
-  readonly edges: EdgeRepository;
-  readonly edgeVersions: EdgeVersionRepository;
   readonly phenotypes: PhenotypeRepository;
   readonly phenotypeVersions: PhenotypeVersionRepository;
   readonly speciesCompileArtifacts: SpeciesCompileArtifactRepository;
@@ -270,25 +255,25 @@ export class InMemoryDnaStore implements DnaServiceStore {
       listByGroup: (groupId) => [...this.state.speciesGroupMemberships.values()].filter((membership) => membership.groupId === groupId),
       listByNode: (nodeId) => [...this.state.speciesGroupMemberships.values()].filter((membership) => membership.nodeId === nodeId)
     };
-    this.speciesGroupRelations = {
-      create: (relation) => this.state.speciesGroupRelations.set(relation.relationId, relation),
-      update: (relation) => this.state.speciesGroupRelations.set(relation.relationId, relation),
-      get: (relationId) => this.state.speciesGroupRelations.get(relationId),
-      listByGraph: (graphId) => [...this.state.speciesGroupRelations.values()].filter((relation) => relation.graphId === graphId)
+    this.designRelationships = {
+      create: (relationship) => this.state.designRelationships.set(relationship.relationshipId, relationship),
+      update: (relationship) => this.state.designRelationships.set(relationship.relationshipId, relationship),
+      get: (relationshipId) => this.state.designRelationships.get(relationshipId),
+      list: () => [...this.state.designRelationships.values()].sort((left, right) => left.relationshipId.localeCompare(right.relationshipId)),
+      listByGraph: (graphId) =>
+        [...this.state.designRelationships.values()]
+          .filter((relationship) => relationshipEndpointGraphIds(relationship).includes(graphId))
+          .sort((left, right) => left.relationshipId.localeCompare(right.relationshipId)),
+      listByEndpoint: (type, id) =>
+        [...this.state.designRelationships.values()]
+          .filter((relationship) => relationshipEndpointId(relationship.source) === `${type}:${id}` || relationshipEndpointId(relationship.target) === `${type}:${id}`)
+          .sort((left, right) => left.relationshipId.localeCompare(right.relationshipId))
     };
     this.atlases = {
       create: (atlas) => this.state.atlases.set(atlas.atlasId, atlas),
       update: (atlas) => this.state.atlases.set(atlas.atlasId, atlas),
       get: (atlasId) => this.state.atlases.get(atlasId),
       list: () => [...this.state.atlases.values()]
-    };
-    this.graphBridges = {
-      create: (bridge) => this.state.graphBridges.set(bridge.bridgeId, bridge),
-      update: (bridge) => this.state.graphBridges.set(bridge.bridgeId, bridge),
-      get: (bridgeId) => this.state.graphBridges.get(bridgeId),
-      listByAtlas: (atlasId) => [...this.state.graphBridges.values()].filter((bridge) => bridge.atlasId === atlasId),
-      listByGraph: (graphId) =>
-        [...this.state.graphBridges.values()].filter((bridge) => bridge.sourceGraphId === graphId || bridge.targetGraphId === graphId)
     };
     this.designContexts = {
       create: (context) => this.state.designContexts.set(context.contextId, context),
@@ -357,17 +342,6 @@ export class InMemoryDnaStore implements DnaServiceStore {
       },
       get: (nodeVersionId) => this.state.nodeVersions.get(nodeVersionId),
       listByNode: (nodeId) => [...this.state.nodeVersions.values()].filter((version) => version.nodeId === nodeId)
-    };
-    this.edges = {
-      create: (edge) => this.state.edges.set(edge.edgeId, edge),
-      update: (edge) => this.state.edges.set(edge.edgeId, edge),
-      get: (edgeId) => this.state.edges.get(edgeId),
-      listByGraph: (graphId) => [...this.state.edges.values()].filter((edge) => edge.graphId === graphId)
-    };
-    this.edgeVersions = {
-      create: (version) => this.state.edgeVersions.set(version.edgeVersionId, version),
-      get: (edgeVersionId) => this.state.edgeVersions.get(edgeVersionId),
-      listByEdge: (edgeId) => [...this.state.edgeVersions.values()].filter((version) => version.edgeId === edgeId)
     };
     this.phenotypes = {
       create: (phenotype) => this.state.phenotypes.set(phenotype.phenotypeId, phenotype),
@@ -559,9 +533,8 @@ function createState(): MemoryState {
     geneTemplates: new Map(),
     speciesGroups: new Map(),
     speciesGroupMemberships: new Map(),
-    speciesGroupRelations: new Map(),
+    designRelationships: new Map(),
     atlases: new Map(),
-    graphBridges: new Map(),
     designContexts: new Map(),
     contextFacts: new Map(),
     designPrinciples: new Map(),
@@ -572,8 +545,6 @@ function createState(): MemoryState {
     contextPolicies: new Map(),
     nodes: new Map(),
     nodeVersions: new Map(),
-    edges: new Map(),
-    edgeVersions: new Map(),
     phenotypes: new Map(),
     phenotypeVersions: new Map(),
     speciesCompileArtifacts: new Map(),
@@ -603,9 +574,8 @@ function cloneState(state: MemoryState): MemoryState {
     geneTemplates: new Map(state.geneTemplates),
     speciesGroups: new Map(state.speciesGroups),
     speciesGroupMemberships: new Map(state.speciesGroupMemberships),
-    speciesGroupRelations: new Map(state.speciesGroupRelations),
+    designRelationships: new Map(state.designRelationships),
     atlases: new Map(state.atlases),
-    graphBridges: new Map(state.graphBridges),
     designContexts: new Map(state.designContexts),
     contextFacts: new Map(state.contextFacts),
     designPrinciples: new Map(state.designPrinciples),
@@ -616,8 +586,6 @@ function cloneState(state: MemoryState): MemoryState {
     contextPolicies: new Map(state.contextPolicies),
     nodes: new Map(state.nodes),
     nodeVersions: new Map(state.nodeVersions),
-    edges: new Map(state.edges),
-    edgeVersions: new Map(state.edgeVersions),
     phenotypes: new Map(state.phenotypes),
     phenotypeVersions: new Map(state.phenotypeVersions),
     speciesCompileArtifacts: new Map(state.speciesCompileArtifacts),
@@ -653,11 +621,9 @@ function summarizeMemoryGraphReset(state: MemoryState, graphId: string): GraphRe
     graphs: state.graphs.has(graphId) ? 1 : 0,
     nodes: ids.nodeIds.size,
     nodeVersions: ids.nodeVersionIds.size,
-    edges: ids.edgeIds.size,
-    edgeVersions: ids.edgeVersionIds.size,
+    designRelationships: ids.relationshipIds.size,
     speciesGroups: ids.groupIds.size,
     speciesGroupMemberships: ids.membershipIds.size,
-    speciesGroupRelations: ids.relationIds.size,
     speciesCompileArtifacts: ids.speciesArtifactIds.size,
     phenotypeCompileArtifacts: ids.phenotypeArtifactIds.size,
     phenotypes: ids.phenotypeIds.size,
@@ -668,7 +634,6 @@ function summarizeMemoryGraphReset(state: MemoryState, graphId: string): GraphRe
     outputReferences: ids.outputReferenceIds.size,
     reviewRecords: ids.reviewRecordIds.size,
     impactRecords: ids.impactRecordIds.size,
-    graphBridges: ids.graphBridgeIds.size,
     atlasGraphLinks: ids.atlasIds.size,
     phenotypeLibraryGraphBindings: ids.libraryBindingIds.size,
     phenotypeLibraryGraphIds: ids.libraryIds.size,
@@ -694,12 +659,9 @@ function applyMemoryGraphReset(state: MemoryState, graphId: string) {
   for (const id of ids.speciesArtifactIds) state.speciesCompileArtifacts.delete(id);
   for (const id of ids.phenotypeArtifactIds) state.phenotypeCompileArtifacts.delete(id);
   for (const id of ids.nodeVersionIds) state.nodeVersions.delete(id);
-  for (const id of ids.edgeVersionIds) state.edgeVersions.delete(id);
-  for (const id of ids.edgeIds) state.edges.delete(id);
+  for (const id of ids.relationshipIds) state.designRelationships.delete(id);
   for (const id of ids.membershipIds) state.speciesGroupMemberships.delete(id);
-  for (const id of ids.relationIds) state.speciesGroupRelations.delete(id);
   for (const id of ids.groupIds) state.speciesGroups.delete(id);
-  for (const id of ids.graphBridgeIds) state.graphBridges.delete(id);
   for (const atlasId of ids.atlasIds) {
     const atlas = state.atlases.get(atlasId);
     if (atlas) state.atlases.set(atlasId, { ...atlas, graphIds: atlas.graphIds.filter((id) => id !== graphId), updatedAt: new Date().toISOString() });
@@ -721,18 +683,20 @@ function applyMemoryGraphReset(state: MemoryState, graphId: string) {
 
 function collectMemoryGraphResetIds(state: MemoryState, graphId: string) {
   const nodeIds = new Set([...state.nodes.values()].filter((node) => node.graphId === graphId).map((node) => node.nodeId));
-  const edgeIds = new Set([...state.edges.values()].filter((edge) => edge.graphId === graphId).map((edge) => edge.edgeId));
   const groupIds = new Set([...state.speciesGroups.values()].filter((group) => group.graphId === graphId).map((group) => group.groupId));
   const membershipIds = new Set(
     [...state.speciesGroupMemberships.values()].filter((membership) => membership.graphId === graphId).map((membership) => membership.membershipId)
   );
-  const relationIds = new Set([...state.speciesGroupRelations.values()].filter((relation) => relation.graphId === graphId).map((relation) => relation.relationId));
+  const relationshipIds = new Set(
+    [...state.designRelationships.values()]
+      .filter((relationship) => relationshipEndpointGraphIds(relationship).includes(graphId))
+      .map((relationship) => relationship.relationshipId)
+  );
   const phenotypeIds = new Set([...state.phenotypes.values()].filter((phenotype) => phenotype.graphId === graphId).map((phenotype) => phenotype.phenotypeId));
   const phenotypeVersionIds = new Set(
     [...state.phenotypeVersions.values()].filter((version) => version.graphId === graphId).map((version) => version.phenotypeVersionId)
   );
   const nodeVersionIds = new Set([...state.nodeVersions.values()].filter((version) => version.graphId === graphId).map((version) => version.nodeVersionId));
-  const edgeVersionIds = new Set([...state.edgeVersions.values()].filter((version) => version.graphId === graphId).map((version) => version.edgeVersionId));
   const speciesArtifactIds = new Set(
     [...state.speciesCompileArtifacts.values()].filter((artifact) => artifact.graphId === graphId).map((artifact) => artifact.artifactId)
   );
@@ -745,11 +709,6 @@ function collectMemoryGraphResetIds(state: MemoryState, graphId: string) {
   );
   const reviewRecordIds = new Set([...state.reviews.values()].filter((review) => review.graphId === graphId).map((review) => review.reviewRecordId));
   const impactRecordIds = new Set([...state.impacts.values()].filter((impact) => impact.graphId === graphId).map((impact) => impact.impactRecordId));
-  const graphBridgeIds = new Set(
-    [...state.graphBridges.values()]
-      .filter((bridge) => bridge.sourceGraphId === graphId || bridge.targetGraphId === graphId)
-      .map((bridge) => bridge.bridgeId)
-  );
   const atlasIds = new Set([...state.atlases.values()].filter((atlas) => atlas.graphIds.includes(graphId)).map((atlas) => atlas.atlasId));
   const libraryBindingIds = new Set(
     [...state.phenotypeLibraryGraphBindings.values()].filter((binding) => binding.graphId === graphId).map((binding) => binding.bindingId)
@@ -758,16 +717,14 @@ function collectMemoryGraphResetIds(state: MemoryState, graphId: string) {
   const deletedObjectIds = new Set([
     graphId,
     ...nodeIds,
-    ...edgeIds,
+    ...relationshipIds,
     ...groupIds,
     ...membershipIds,
-    ...relationIds,
     ...phenotypeIds,
     ...phenotypeVersionIds,
     ...speciesArtifactIds,
     ...phenotypeArtifactIds,
-    ...generationJobIds,
-    ...graphBridgeIds
+    ...generationJobIds
   ]);
   const assetIds = new Set([...state.assets.values()].filter((asset) => deletedObjectIds.has(asset.linkedObjectId)).map((asset) => asset.assetId));
   const contextAttachmentIds = new Set(
@@ -789,11 +746,9 @@ function collectMemoryGraphResetIds(state: MemoryState, graphId: string) {
   return {
     nodeIds,
     nodeVersionIds,
-    edgeIds,
-    edgeVersionIds,
+    relationshipIds,
     groupIds,
     membershipIds,
-    relationIds,
     speciesArtifactIds,
     phenotypeArtifactIds,
     phenotypeIds,
@@ -804,7 +759,6 @@ function collectMemoryGraphResetIds(state: MemoryState, graphId: string) {
     outputReferenceIds,
     reviewRecordIds,
     impactRecordIds,
-    graphBridgeIds,
     atlasIds,
     libraryBindingIds,
     libraryIds,
@@ -822,23 +776,29 @@ function changeSetTouchesGraph(changeSet: ChangeSet, graphId: string, deletedObj
   const payload = changeSet.payload as Record<string, unknown>;
   const graph = payload.graph as Graph | undefined;
   const node = payload.node as SpeciesNode | undefined;
-  const edge = payload.edge as EvolutionEdge | undefined;
+  const relationship = payload.relationship as DesignRelationship | undefined;
   const group = payload.group as SpeciesGroup | undefined;
   const membership = payload.membership as SpeciesGroupMembership | undefined;
-  const relation = payload.relation as SpeciesGroupRelation | undefined;
   const atlas = payload.atlas as Atlas | undefined;
-  const bridge = payload.bridge as GraphBridge | undefined;
   const attachment = payload.attachment as ContextAttachment | undefined;
   return Boolean(
     graph?.graphId === graphId ||
       node?.graphId === graphId ||
-      edge?.graphId === graphId ||
+      relationshipEndpointGraphIds(relationship).includes(graphId) ||
       group?.graphId === graphId ||
       membership?.graphId === graphId ||
-      relation?.graphId === graphId ||
       atlas?.graphIds?.includes(graphId) ||
-      bridge?.sourceGraphId === graphId ||
-      bridge?.targetGraphId === graphId ||
       (attachment && deletedObjectIds.has(attachment.targetId))
   );
+}
+
+function relationshipEndpointGraphIds(relationship: DesignRelationship | undefined): string[] {
+  if (!relationship) return [];
+  return [relationship.source.graphId, relationship.target.graphId];
+}
+
+function relationshipEndpointId(endpoint: DesignRelationship["source"]): string {
+  if (endpoint.type === "graph") return `graph:${endpoint.graphId}`;
+  if (endpoint.type === "species-group") return `species-group:${endpoint.groupId}`;
+  return `species-node:${endpoint.nodeId}`;
 }

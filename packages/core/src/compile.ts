@@ -8,16 +8,15 @@ import {
   ContextReviewRubric,
   DesignContext,
   DesignPrinciple,
+  DesignRelationship,
   ContextMotif,
   Graph,
-  GraphBridge,
   GeneTemplate,
   FacetAssignment,
   FacetDefinition,
   FacetSchema,
   PhenotypeCompileArtifact,
   SpeciesGroup,
-  SpeciesGroupRelation,
   SpeciesCompileArtifact,
   TraceEntry,
   SpeciesNode
@@ -36,10 +35,9 @@ export interface CompileSpeciesInput {
   graph: Graph;
   node: SpeciesNode;
   parentSnapshots?: Array<{ nodeVersionId: string; parentNodeId?: string; role?: string; snapshot: Record<string, unknown> }>;
-  edgeDeltas?: Array<{ edgeVersionId: string; delta: Record<string, unknown> }>;
+  relationshipDeltas?: Array<{ relationshipId: string; delta: Record<string, unknown> }>;
   speciesGroups?: SpeciesGroup[];
-  groupRelations?: SpeciesGroupRelation[];
-  graphBridges?: GraphBridge[];
+  designRelationships?: DesignRelationship[];
   designContexts?: DesignContext[];
   contextAttachments?: ContextAttachment[];
   contextPolicies?: ContextPolicy[];
@@ -49,7 +47,7 @@ export interface CompileSpeciesInput {
 }
 
 export interface CompileContextTraceItem {
-  sourceType: "species-group" | "species-group-relation" | "graph-bridge" | "design-context";
+  sourceType: "species-group" | "design-relationship" | "design-context";
   sourceId: string;
   relationType?: string;
   compileLayer?: string;
@@ -67,7 +65,7 @@ export interface CompileSpeciesResult {
   contextTrace: CompileContextTraceItem[];
   prompt: string;
   brief: string;
-  edgeVersionTrace: string[];
+  relationshipTrace: string[];
 }
 
 export interface CompileSpeciesSnapshotInput {
@@ -81,10 +79,9 @@ export interface CompileSpeciesSnapshotInput {
   inputSummary?: Record<string, unknown>;
   compileScope?: Partial<CompileScope>;
   parentSnapshots?: Array<{ nodeVersionId: string; parentNodeId?: string; role?: string; snapshot: Record<string, unknown> }>;
-  edgeDeltas?: Array<{ edgeVersionId: string; delta: Record<string, unknown> }>;
+  relationshipDeltas?: Array<{ relationshipId: string; delta: Record<string, unknown> }>;
   speciesGroups?: SpeciesGroup[];
-  groupRelations?: SpeciesGroupRelation[];
-  graphBridges?: GraphBridge[];
+  designRelationships?: DesignRelationship[];
   designContexts?: DesignContext[];
   contextAttachments?: ContextAttachment[];
   contextPolicies?: ContextPolicy[];
@@ -156,8 +153,7 @@ function defaultCompileScope(input?: Partial<CompileScope>): CompileScope {
   return {
     includeDirectAttachments: input?.includeDirectAttachments ?? true,
     includeInheritedContext: input?.includeInheritedContext ?? true,
-    includeGroupRelations: input?.includeGroupRelations ?? true,
-    includeGraphBridges: input?.includeGraphBridges ?? true,
+    includeDesignRelationships: input?.includeDesignRelationships ?? true,
     includeReferencedPhenotypes: input?.includeReferencedPhenotypes ?? false,
     atlasScope: input?.atlasScope ?? "none",
     maxReferenceDepth: input?.maxReferenceDepth ?? 1,
@@ -211,7 +207,7 @@ function compileLayerFromContextAttachment(attachment?: ContextAttachment): Trac
   if (attachment.compileLayer === "atlas-context") return "atlas-context";
   if (attachment.compileLayer === "graph-context") return "graph-context";
   if (attachment.compileLayer === "group-context") return "group-context";
-  if (attachment.compileLayer === "bridge-context") return "graph-bridge-facts";
+  if (attachment.compileLayer === "relationship-context") return "design-relationship-facts";
   return "phenotype-context";
 }
 
@@ -298,33 +294,22 @@ export function compileSpeciesSnapshot(input: CompileSpeciesSnapshotInput): Spec
     }
   }
 
-  if (compileScope.includeGroupRelations) {
-    for (const relation of input.groupRelations ?? []) {
+  if (compileScope.includeDesignRelationships) {
+    for (const relationship of input.designRelationships ?? []) {
       sourceTrace.push(
         trace({
-          objectType: "species-group-relation",
-          objectId: relation.relationId,
-          layer: "group-context",
+          objectType: "design-relationship",
+          objectId: relationship.relationshipId,
+          layer: relationship.source.type === "species-node" ? "design-relationship-contracts" : "design-relationship-facts",
           fieldPath: "description",
-          valueSummary: `[${relation.relationType}] ${relation.description}`,
-          decision: isFixedRuleEligibleRelation(relation.relationType) ? "included" : "llm-suggested",
-          metadata: { relationType: relation.relationType, fixedRuleEligible: isFixedRuleEligibleRelation(relation.relationType) }
-        })
-      );
-    }
-  }
-
-  if (compileScope.includeGraphBridges) {
-    for (const bridge of input.graphBridges ?? []) {
-      sourceTrace.push(
-        trace({
-          objectType: "graph-bridge",
-          objectId: bridge.bridgeId,
-          layer: "graph-bridge-facts",
-          fieldPath: "description",
-          valueSummary: `[${bridge.bridgeType}] ${bridge.description}`,
-          decision: "included",
-          metadata: { bridgeType: bridge.bridgeType, sourceGraphId: bridge.sourceGraphId, targetGraphId: bridge.targetGraphId }
+          valueSummary: `[${relationship.relationshipType}] ${relationship.description}`,
+          decision: isFixedRuleEligibleRelation(relationship.relationshipType) ? "included" : "llm-suggested",
+          metadata: {
+            relationshipType: relationship.relationshipType,
+            source: relationship.source,
+            target: relationship.target,
+            fixedRuleEligible: isFixedRuleEligibleRelation(relationship.relationshipType)
+          }
         })
       );
     }
@@ -347,17 +332,16 @@ export function compileSpeciesSnapshot(input: CompileSpeciesSnapshotInput): Spec
     });
   }
 
-  for (const edge of input.edgeDeltas ?? []) {
+  for (const relationship of input.relationshipDeltas ?? []) {
     mergeArtifactGenes({
       target: resolvedGeneSnapshot,
-      next: edge.delta,
-      source: `edge:${edge.edgeVersionId}`,
-      layer: "evolution-edge-deltas",
+      next: relationship.delta,
+      source: `relationship:${relationship.relationshipId}`,
+      layer: "design-relationship-contracts",
       conflicts: conflictReport,
       sourceTrace,
-      objectType: "edge-version",
-      objectId: edge.edgeVersionId,
-      versionId: edge.edgeVersionId
+      objectType: "design-relationship",
+      objectId: relationship.relationshipId
     });
   }
 
@@ -697,8 +681,8 @@ export function compileSpecies(input: CompileSpeciesInput): CompileSpeciesResult
     for (const parent of input.parentSnapshots ?? []) {
       mergeWithConflicts(resolved, parent.snapshot, `parent:${parent.nodeVersionId}`, conflicts);
     }
-    for (const edge of input.edgeDeltas ?? []) {
-      mergeWithConflicts(resolved, edge.delta, `edge:${edge.edgeVersionId}`, conflicts);
+    for (const relationship of input.relationshipDeltas ?? []) {
+      mergeWithConflicts(resolved, relationship.delta, `relationship:${relationship.relationshipId}`, conflicts);
     }
     mergeWithConflicts(resolved, input.node.constraints, `node:${input.node.nodeId}`, conflicts);
     if (input.node.motifs.length > 0) {
@@ -735,7 +719,7 @@ export function compileSpecies(input: CompileSpeciesInput): CompileSpeciesResult
     contextTrace,
     prompt,
     brief: `Produce ${input.phenotypeType} for ${input.node.name}: ${input.taskBrief}`,
-    edgeVersionTrace: (input.edgeDeltas ?? []).map((edge) => edge.edgeVersionId)
+    relationshipTrace: (input.relationshipDeltas ?? []).map((relationship) => relationship.relationshipId)
   };
 }
 
@@ -751,22 +735,13 @@ function buildCompileContextTrace(input: CompileSpeciesInput): CompileContextTra
       fixedRuleEligible: true
     });
   }
-  for (const relation of input.groupRelations ?? []) {
+  for (const relationship of input.designRelationships ?? []) {
     traces.push({
-      sourceType: "species-group-relation",
-      sourceId: relation.relationId,
-      relationType: relation.relationType,
-      summary: `[${relation.relationType}] ${relation.sourceGroupId} -> ${relation.targetGroupId}. ${relation.description}`.trim(),
-      fixedRuleEligible: isFixedRuleEligibleRelation(relation.relationType)
-    });
-  }
-  for (const bridge of input.graphBridges ?? []) {
-    traces.push({
-      sourceType: "graph-bridge",
-      sourceId: bridge.bridgeId,
-      relationType: bridge.bridgeType,
-      summary: `[${bridge.bridgeType}] ${bridge.sourceGraphId} -> ${bridge.targetGraphId}. ${bridge.description}`.trim(),
-      fixedRuleEligible: isFixedRuleEligibleRelation(bridge.bridgeType)
+      sourceType: "design-relationship",
+      sourceId: relationship.relationshipId,
+      relationType: relationship.relationshipType,
+      summary: `[${relationship.relationshipType}] ${formatRelationshipEndpoint(relationship.source)} -> ${formatRelationshipEndpoint(relationship.target)}. ${relationship.description}`.trim(),
+      fixedRuleEligible: isFixedRuleEligibleRelation(relationship.relationshipType)
     });
   }
   for (const context of input.designContexts ?? []) {
@@ -799,4 +774,10 @@ function buildCompileContextTrace(input: CompileSpeciesInput): CompileContextTra
     }
   }
   return traces;
+}
+
+function formatRelationshipEndpoint(endpoint: DesignRelationship["source"]): string {
+  if (endpoint.type === "graph") return `graph:${endpoint.graphId}`;
+  if (endpoint.type === "species-group") return `species-group:${endpoint.graphId}:${endpoint.groupId}`;
+  return `species-node:${endpoint.graphId}:${endpoint.nodeId}`;
 }

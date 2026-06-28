@@ -57,7 +57,7 @@ describe("Phase 4 CLI local workflow", () => {
     expect(list).toContain("ui-icon-asset");
   }, CLI_TIMEOUT);
 
-  test("species-first node can be completed by adding a parent edge", () => {
+  test("species-first node can be completed by adding a design relationship", () => {
     const db = join(tempDir("cli-lineage"), "dna.sqlite");
     runDna(["--db", db, "graph", "create", "--id", "graph-lineage", "--name", "Lineage", "--purpose", "lineage", "--yes"]);
     runDna([
@@ -93,31 +93,29 @@ describe("Phase 4 CLI local workflow", () => {
       "--yes"
     ]);
 
-    const beforeEdge = runDna(["--db", db, "node", "show", "--id", "node-child"]);
-    expect(beforeEdge).toContain('"lineageStatus": "needs-edge"');
+    const beforeRelationship = runDna(["--db", db, "node", "show", "--id", "node-child"]);
+    expect(beforeRelationship).toContain('"lineageStatus": "needs-edge"');
 
     runDna([
       "--db",
       db,
-      "edge",
+      "relationship",
       "create",
-      "--graph",
-      "graph-lineage",
       "--id",
-      "edge-root-child",
-      "--from",
-      "node-root",
-      "--to",
-      "node-child",
+      "rel-root-child",
+      "--source",
+      "species-node:graph-lineage:node-root",
+      "--target",
+      "species-node:graph-lineage:node-child",
       "--type",
-      "inherit",
-      "--delta",
+      "derives-from",
+      "--transfer-rule",
       "color=red",
       "--yes"
     ]);
-    const afterEdge = runDna(["--db", db, "node", "show", "--id", "node-child"]);
-    expect(afterEdge).toContain('"lineageStatus": "complete"');
-    expect(afterEdge).toContain("edge-root-child");
+    const afterRelationship = runDna(["--db", db, "node", "show", "--id", "node-child"]);
+    expect(afterRelationship).toContain('"lineageStatus": "complete"');
+    expect(afterRelationship).toContain("rel-root-child");
   }, CLI_TIMEOUT);
 
   test("exported Git directory can be imported into a fresh database", () => {

@@ -21,7 +21,7 @@ function speciesNode() {
     parentNodes: ["node-root"],
     primaryParent: "node-root",
     parentRoles: { "node-root": "primary" },
-    incomingEdges: ["edge-warning"],
+    incomingEdges: ["rel-warning"],
     relatedNodes: [],
     currentVersion: "1.0.0",
     status: "active",
@@ -43,7 +43,7 @@ function phenotypeVersion() {
     graphId: "graph-review",
     nodeId: "node-warning",
     nodeVersionId: "node-warning@1.0.0",
-    edgeVersionTrace: ["edge-warning@1.0.0"],
+    relationshipTrace: ["rel-warning"],
     resolvedGeneSnapshot: {
       color: "amber",
       motifs: ["broken-ring"],
@@ -107,16 +107,16 @@ describe("Phase 6 review and impact analysis", () => {
     expect(distance.summary).toContain("motif differences");
   });
 
-  test("edge changes impact the target species, its phenotype versions, and downstream descendants", () => {
+  test("design relationship changes impact the target species, its phenotype versions, and downstream descendants", () => {
     const impacts = collectImpact({
-      changed: { type: "edge", id: "edge-root-warning", versionId: "edge-root-warning@2.0.0" },
+      changed: { type: "design-relationship", id: "rel-root-warning", versionId: "rel-root-warning@2.0.0" },
       nodes: [
         { nodeId: "node-warning", phenotypeVersionIds: ["pv-warning"] },
         { nodeId: "node-alert", phenotypeVersionIds: ["pv-alert"] }
       ],
-      edges: [
-        { edgeId: "edge-root-warning", fromNodeId: "node-root", toNodeId: "node-warning" },
-        { edgeId: "edge-warning-alert", fromNodeId: "node-warning", toNodeId: "node-alert" }
+      relationships: [
+        { relationshipId: "rel-root-warning", fromNodeId: "node-root", toNodeId: "node-warning" },
+        { relationshipId: "rel-warning-alert", fromNodeId: "node-warning", toNodeId: "node-alert" }
       ]
     });
 
@@ -130,9 +130,9 @@ describe("Phase 6 review and impact analysis", () => {
         { nodeId: "node-warning", phenotypeVersionIds: ["pv-warning"] },
         { nodeId: "node-alert", phenotypeVersionIds: ["pv-alert"] }
       ],
-      edges: [
-        { edgeId: "edge-root-warning", fromNodeId: "node-root", toNodeId: "node-warning" },
-        { edgeId: "edge-warning-alert", fromNodeId: "node-warning", toNodeId: "node-alert" }
+      relationships: [
+        { relationshipId: "rel-root-warning", fromNodeId: "node-root", toNodeId: "node-warning" },
+        { relationshipId: "rel-warning-alert", fromNodeId: "node-warning", toNodeId: "node-alert" }
       ]
     });
 

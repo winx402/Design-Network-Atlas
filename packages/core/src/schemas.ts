@@ -6,7 +6,6 @@ export const IsoDateSchema = z.string().datetime();
 
 export const GraphStatusSchema = z.enum(["draft", "active", "archived"]);
 export const NodeStatusSchema = z.enum(["draft", "active", "deprecated", "archived"]);
-export const EdgeStatusSchema = z.enum(["draft", "active", "deprecated", "archived"]);
 export const LineageStatusSchema = z.enum(["complete", "species-first", "needs-edge", "needs-review", "multi-origin"]);
 export const ParentRoleSchema = z.enum([
   "primary",
@@ -17,17 +16,6 @@ export const ParentRoleSchema = z.enum([
   "constraint",
   "variant-source"
 ]);
-export const EdgeTypeSchema = z.enum([
-  "inherit",
-  "specialize",
-  "variant",
-  "reference",
-  "fusion",
-  "constraint",
-  "deprecate",
-  "remix"
-]);
-export const EvolutionStrengthSchema = z.enum(["low", "medium", "high"]);
 export const PhenotypeTypeSourceSchema = z.enum(["built-in", "template", "custom"]);
 export const PhenotypeStatusSchema = z.enum(["active", "archived", "deleted"]);
 export const PhenotypeVersionStatusSchema = z.enum([
@@ -123,10 +111,8 @@ export const ContextAttachmentTargetTypeSchema = z.enum([
   "atlas",
   "graph",
   "species-group",
-  "species-group-relation",
-  "graph-bridge",
+  "design-relationship",
   "species-node",
-  "evolution-edge",
   "gene-template",
   "phenotype-type",
   "phenotype",
@@ -138,7 +124,7 @@ export const ContextCompileLayerSchema = z.enum([
   "atlas-context",
   "graph-context",
   "group-context",
-  "bridge-context",
+  "relationship-context",
   "node-context",
   "phenotype-context"
 ]);
@@ -155,13 +141,13 @@ export const CompileLayerSchema = z.enum([
   "atlas-context",
   "graph-foundation",
   "graph-context",
-  "graph-bridge-facts",
+  "design-relationship-facts",
   "species-group-rules",
   "group-context",
   "context-references",
   "template-dimensions",
   "parent-snapshots",
-  "evolution-edge-deltas",
+  "design-relationship-contracts",
   "node-own-genes",
   "phenotype-type-requirements",
   "phenotype-context",
@@ -177,42 +163,22 @@ export const FacetAssignmentTargetTypeSchema = z.enum([
   "graph",
   "species-group",
   "species-node",
-  "graph-bridge",
+  "design-relationship",
   "phenotype-type",
   "phenotype",
   "phenotype-version"
 ]);
-export const BuiltInSpeciesGroupRelationTypes = [
-  "shares-facts",
-  "shares-context",
-  "shares-template",
-  "shares-facet-schema",
-  "style-aligned-with",
-  "feeds-output-to",
-  "consumes-output-from",
+export const BuiltInDesignRelationshipTypes = [
+  "derives-from",
+  "translates-to",
+  "aligns-with",
+  "diverges-from",
   "references",
-  "depends-on",
-  "adapts-from",
-  "must-diverge-from",
-  "exports-to"
-] as const;
-export const BuiltInGraphBridgeTypes = [
-  "inherits-foundation",
-  "shares-context",
-  "shares-template",
-  "shares-facet-schema",
-  "references-group",
-  "references-species",
-  "uses-phenotype",
-  "style-aligned-with",
-  "depends-on",
-  "maps-taxonomy-to",
-  "must-diverge-from",
-  "exports-to"
+  "constrains"
 ] as const;
 const CustomRelationTypeSchema = z.string().regex(/^custom:[A-Za-z0-9][A-Za-z0-9_-]*$/);
-export const SpeciesGroupRelationTypeSchema = z.union([z.enum(BuiltInSpeciesGroupRelationTypes), CustomRelationTypeSchema]);
-export const GraphBridgeTypeSchema = z.union([z.enum(BuiltInGraphBridgeTypes), CustomRelationTypeSchema]);
+export const DesignRelationshipTypeSchema = z.union([z.enum(BuiltInDesignRelationshipTypes), CustomRelationTypeSchema]);
+export const DesignRelationshipDirectionSchema = z.enum(["source-to-target", "bidirectional", "reference-only"]);
 export const OutputReferenceTypeSchema = z.enum([
   "local-file",
   "url",
@@ -369,29 +335,6 @@ export const SpeciesGroupMembershipSchema = z.object({
   updatedAt: IsoDateSchema
 });
 
-export const SpeciesGroupRelationSchema = z
-  .object({
-    relationId: z.string().min(1),
-    graphId: z.string().min(1),
-    sourceGroupId: z.string().min(1),
-    targetGroupId: z.string().min(1),
-    relationType: SpeciesGroupRelationTypeSchema,
-    description: z.string().default(""),
-    status: SharedObjectStatusSchema,
-    extensions: JsonRecordSchema,
-    createdAt: IsoDateSchema,
-    updatedAt: IsoDateSchema
-  })
-  .superRefine((relation, ctx) => {
-    if (relation.sourceGroupId === relation.targetGroupId) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["targetGroupId"],
-        message: "targetGroupId must differ from sourceGroupId"
-      });
-    }
-  });
-
 export const AtlasSchema = z.object({
   atlasId: z.string().min(1),
   name: z.string().min(1),
@@ -403,28 +346,69 @@ export const AtlasSchema = z.object({
   updatedAt: IsoDateSchema
 });
 
-export const GraphBridgeSchema = z
+export const DesignRelationshipEndpointSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("graph"), graphId: z.string().min(1) }),
+  z.object({ type: z.literal("species-group"), graphId: z.string().min(1), groupId: z.string().min(1) }),
+  z.object({ type: z.literal("species-node"), graphId: z.string().min(1), nodeId: z.string().min(1) })
+]);
+
+export const DesignRelationshipContractSchema = z.object({
+  transferRule: z.string().default(""),
+  mustPreserve: z.array(z.string()).default([]),
+  mustAvoid: z.array(z.string()).default([]),
+  divergenceRule: z.string().default(""),
+  reviewQuestions: z.array(z.string()).default([])
+});
+
+export const DesignRelationshipAuxiliaryRefsSchema = z.object({
+  contextIds: z.array(z.string()).default([]),
+  motifIds: z.array(z.string()).default([]),
+  principleIds: z.array(z.string()).default([]),
+  facetIds: z.array(z.string()).default([]),
+  rubricIds: z.array(z.string()).default([]),
+  referenceIds: z.array(z.string()).default([])
+});
+
+export const DesignRelationshipSchema = z
   .object({
-    bridgeId: z.string().min(1),
-    atlasId: z.string().min(1),
-    sourceGraphId: z.string().min(1),
-    targetGraphId: z.string().min(1),
-    bridgeType: GraphBridgeTypeSchema,
+    relationshipId: z.string().min(1),
+    source: DesignRelationshipEndpointSchema,
+    target: DesignRelationshipEndpointSchema,
+    relationshipType: DesignRelationshipTypeSchema,
+    direction: DesignRelationshipDirectionSchema,
     description: z.string().default(""),
+    designContract: DesignRelationshipContractSchema.default({}),
+    auxiliaryRefs: DesignRelationshipAuxiliaryRefsSchema.default({}),
     status: SharedObjectStatusSchema,
-    extensions: JsonRecordSchema,
+    metadata: JsonRecordSchema,
     createdAt: IsoDateSchema,
     updatedAt: IsoDateSchema
   })
-  .superRefine((bridge, ctx) => {
-    if (bridge.sourceGraphId === bridge.targetGraphId) {
+  .superRefine((relationship, ctx) => {
+    if (relationship.source.type !== relationship.target.type) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ["targetGraphId"],
-        message: "targetGraphId must differ from sourceGraphId"
+        path: ["target"],
+        message: "DesignRelationship endpoints must be same-level core entities"
+      });
+      return;
+    }
+    const sourceKey = entityRefKey(relationship.source);
+    const targetKey = entityRefKey(relationship.target);
+    if (sourceKey === targetKey) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["target"],
+        message: "DesignRelationship target must differ from source"
       });
     }
   });
+
+function entityRefKey(endpoint: z.infer<typeof DesignRelationshipEndpointSchema>) {
+  if (endpoint.type === "graph") return `graph:${endpoint.graphId}`;
+  if (endpoint.type === "species-group") return `species-group:${endpoint.graphId}:${endpoint.groupId}`;
+  return `species-node:${endpoint.graphId}:${endpoint.nodeId}`;
+}
 
 export const DesignContextSchema = z.object({
   contextId: z.string().min(1),
@@ -630,7 +614,7 @@ export const NodeVersionSchema = z.object({
   version: z.string().min(1),
   baseTemplateVersions: z.array(z.string()).default([]),
   parentNodeVersions: z.array(z.string()).default([]),
-  incomingEdgeVersions: z.array(z.string()).default([]),
+  incomingRelationshipIds: z.array(z.string()).default([]),
   ownGeneDelta: JsonRecordSchema,
   resolvedGeneSnapshot: JsonRecordSchema,
   constraintSnapshot: JsonRecordSchema,
@@ -638,40 +622,6 @@ export const NodeVersionSchema = z.object({
   compileSnapshot: JsonRecordSchema,
   changeSummary: z.string().default(""),
   impactNotes: z.string().default(""),
-  createdAt: IsoDateSchema
-});
-
-export const EvolutionEdgeSchema = z.object({
-  edgeId: z.string().min(1),
-  graphId: z.string().min(1),
-  fromNodeId: z.string().min(1),
-  toNodeId: z.string().min(1),
-  edgeType: EdgeTypeSchema,
-  direction: z.string().min(1),
-  operation: z.string().min(1),
-  evolutionStrength: EvolutionStrengthSchema,
-  deltaGenes: JsonRecordSchema,
-  valueResolution: JsonRecordSchema,
-  mustPreserve: z.array(z.string()).default([]),
-  mustAvoid: z.array(z.string()).default([]),
-  designRationale: z.string().default(""),
-  currentVersion: z.string().min(1),
-  status: EdgeStatusSchema,
-  facets: FacetsSchema,
-  createdAt: IsoDateSchema,
-  updatedAt: IsoDateSchema
-});
-
-export const EdgeVersionSchema = z.object({
-  edgeVersionId: z.string().min(1),
-  edgeId: z.string().min(1),
-  graphId: z.string().min(1),
-  version: z.string().min(1),
-  deltaGenes: JsonRecordSchema,
-  valueResolution: JsonRecordSchema,
-  mustPreserve: z.array(z.string()).default([]),
-  mustAvoid: z.array(z.string()).default([]),
-  changeSummary: z.string().default(""),
   createdAt: IsoDateSchema
 });
 
@@ -697,7 +647,7 @@ export const PhenotypeVersionSchema = z.object({
   graphId: z.string().min(1),
   nodeId: z.string().min(1),
   nodeVersionId: z.string().min(1),
-  edgeVersionTrace: z.array(z.string()).default([]),
+  relationshipTrace: z.array(z.string()).default([]),
   resolvedGeneSnapshot: JsonRecordSchema,
   generationRecipe: JsonRecordSchema,
   generationBrief: z.string().default(""),
@@ -717,8 +667,7 @@ export const PhenotypeVersionSchema = z.object({
 export const CompileScopeSchema = z.object({
   includeDirectAttachments: z.boolean().default(true),
   includeInheritedContext: z.boolean().default(true),
-  includeGroupRelations: z.boolean().default(true),
-  includeGraphBridges: z.boolean().default(true),
+  includeDesignRelationships: z.boolean().default(true),
   includeReferencedPhenotypes: z.boolean().default(false),
   atlasScope: AtlasScopeSchema.default("none"),
   maxReferenceDepth: z.number().int().min(0).default(1),
@@ -822,11 +771,9 @@ export const AssetIndexSchema = z.object({
     "graph",
     "template",
     "node",
-    "edge",
     "species-group",
-    "species-group-relation",
+    "design-relationship",
     "atlas",
-    "graph-bridge",
     "facet-definition",
     "facet-schema",
     "phenotype",
@@ -988,11 +935,9 @@ export const ReviewRecordSchema = z.object({
   graphId: z.string().min(1),
   objectType: z.enum([
     "node",
-    "edge",
     "species-group",
-    "species-group-relation",
     "atlas",
-    "graph-bridge",
+    "design-relationship",
     "phenotype-version",
     "design-context",
     "context-fact",
@@ -1018,7 +963,7 @@ export const ReviewRecordSchema = z.object({
 export const ImpactRecordSchema = z.object({
   impactRecordId: z.string().min(1),
   graphId: z.string().min(1),
-  changedObjectType: z.enum(["node", "edge", "species-group", "graph-bridge", "design-context"]),
+  changedObjectType: z.enum(["node", "design-relationship", "species-group", "design-context"]),
   changedObjectId: z.string().min(1),
   changedVersionId: z.string().min(1),
   objectType: z.enum(["graph", "node", "species-group", "phenotype-version", "species-compile-artifact", "phenotype-compile-artifact"]),
@@ -1063,9 +1008,11 @@ export type FacetSchema = z.infer<typeof FacetSchemaSchema>;
 export type FacetAssignment = z.infer<typeof FacetAssignmentSchema>;
 export type SpeciesGroup = z.infer<typeof SpeciesGroupSchema>;
 export type SpeciesGroupMembership = z.infer<typeof SpeciesGroupMembershipSchema>;
-export type SpeciesGroupRelation = z.infer<typeof SpeciesGroupRelationSchema>;
 export type Atlas = z.infer<typeof AtlasSchema>;
-export type GraphBridge = z.infer<typeof GraphBridgeSchema>;
+export type DesignRelationshipEndpoint = z.infer<typeof DesignRelationshipEndpointSchema>;
+export type DesignRelationshipContract = z.infer<typeof DesignRelationshipContractSchema>;
+export type DesignRelationshipAuxiliaryRefs = z.infer<typeof DesignRelationshipAuxiliaryRefsSchema>;
+export type DesignRelationship = z.infer<typeof DesignRelationshipSchema>;
 export type DesignContext = z.infer<typeof DesignContextSchema>;
 export type ContextFact = z.infer<typeof ContextFactSchema>;
 export type DesignPrinciple = z.infer<typeof DesignPrincipleSchema>;
@@ -1078,8 +1025,6 @@ export type TemplatePack = z.infer<typeof TemplatePackSchema>;
 export type GeneTemplate = z.infer<typeof GeneTemplateSchema>;
 export type SpeciesNode = z.infer<typeof SpeciesNodeSchema>;
 export type NodeVersion = z.infer<typeof NodeVersionSchema>;
-export type EvolutionEdge = z.infer<typeof EvolutionEdgeSchema>;
-export type EdgeVersion = z.infer<typeof EdgeVersionSchema>;
 export type Phenotype = z.infer<typeof PhenotypeSchema>;
 export type PhenotypeVersion = z.infer<typeof PhenotypeVersionSchema>;
 export type CompileScope = z.infer<typeof CompileScopeSchema>;

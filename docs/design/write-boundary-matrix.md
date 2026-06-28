@@ -22,7 +22,7 @@ Web remains read-only in the current product baseline. It must not expose graph,
 
 | Class | Examples | Default write mode | Required boundary |
 | --- | --- | --- | --- |
-| Formal graph facts | `Graph`, `SpeciesNode`, `NodeVersion`, `EvolutionEdge`, `EdgeVersion`, groups, memberships, group relations, atlases, graph bridges | preview/change-set | application/service change-set |
+| Formal graph facts | `Graph`, `SpeciesNode`, `NodeVersion`, `SpeciesGroup`, memberships, atlases, `DesignRelationship` | preview/change-set | application/service change-set |
 | Formal design context facts | `DesignContext`, facts, principles, motifs, references, rubrics, attachments, policies | preview/change-set | application/service change-set |
 | Facet taxonomy and assignments | `FacetDefinition`, `FacetSchema`, `FacetAssignment` | preview/change-set for user-authored taxonomy; direct only for imported fixtures | application/service change-set |
 | Generated trace artifacts | `SpeciesCompileArtifact`, `PhenotypeCompileArtifact` | preview for standalone compile; direct audit write during formal generation apply | application service |

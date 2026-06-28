@@ -7,6 +7,7 @@ import {
   createGenerationJob,
   makeId,
   type ContextAttachment,
+  type DesignRelationship,
   type DesignContext,
   type GenerationJob,
   type Graph,
@@ -26,9 +27,7 @@ import type {
   ContextReviewRubricRepository,
   DesignContextRepository,
   DesignPrincipleRepository,
-  EdgeRepository,
-  EdgeVersionRepository,
-  GraphBridgeRepository,
+  DesignRelationshipRepository,
   GraphRepository,
   LineageRepository,
   NodeVersionRepository,
@@ -37,7 +36,6 @@ import type {
   PhenotypeVersionRepository,
   SpeciesCompileArtifactRepository,
   SpeciesGroupMembershipRepository,
-  SpeciesGroupRelationRepository,
   SpeciesGroupRepository
 } from "@dna/storage";
 
@@ -52,12 +50,9 @@ export interface SpeciesCompileInputRepositories {
   graphs: Pick<GraphRepository, "get">;
   nodes: Pick<LineageRepository, "get">;
   nodeVersions: Pick<NodeVersionRepository, "listByNode">;
-  edges: Pick<EdgeRepository, "get">;
-  edgeVersions: Pick<EdgeVersionRepository, "listByEdge">;
+  designRelationships: Pick<DesignRelationshipRepository, "listByGraph">;
   speciesGroups: Pick<SpeciesGroupRepository, "get">;
   speciesGroupMemberships: Pick<SpeciesGroupMembershipRepository, "listByNode">;
-  speciesGroupRelations: Pick<SpeciesGroupRelationRepository, "listByGraph">;
-  graphBridges: Pick<GraphBridgeRepository, "listByGraph">;
   designContexts: Pick<DesignContextRepository, "get">;
   contextFacts: Pick<ContextFactRepository, "get">;
   designPrinciples: Pick<DesignPrincipleRepository, "get">;
@@ -76,12 +71,10 @@ export interface PhenotypeGenerationRepositories extends SpeciesCompileInputRepo
 
 export interface ImpactRepositories {
   nodes: Pick<LineageRepository, "get" | "listByGraph">;
-  edges: Pick<EdgeRepository, "listByGraph">;
+  designRelationships: Pick<DesignRelationshipRepository, "get" | "listByGraph">;
   phenotypeVersions: Pick<PhenotypeVersionRepository, "get" | "listByNode" | "updateStatus">;
   speciesGroups: Pick<SpeciesGroupRepository, "get">;
   speciesGroupMemberships: Pick<SpeciesGroupMembershipRepository, "listByGroup">;
-  speciesGroupRelations: Pick<SpeciesGroupRelationRepository, "listByGraph">;
-  graphBridges: Pick<GraphBridgeRepository, "get">;
   designContexts: Pick<DesignContextRepository, "get">;
   contextAttachments: Pick<ContextAttachmentRepository, "listByContext">;
 }
@@ -138,10 +131,18 @@ export function buildSpeciesCompileInput(store: SpeciesCompileInputRepositories,
       return { parentNodeId, nodeVersionId: version.nodeVersionId, snapshot: version.resolvedGeneSnapshot };
     })
     .filter((value): value is { parentNodeId: string; nodeVersionId: string; snapshot: Record<string, unknown> } => Boolean(value));
-  const edgeDeltas = node.incomingEdges
-    .map((edgeId) => store.edgeVersions.listByEdge(edgeId).at(-1))
-    .filter((version): version is NonNullable<typeof version> => Boolean(version))
-    .map((version) => ({ edgeVersionId: version.edgeVersionId, delta: version.deltaGenes }));
+  const designRelationships = store.designRelationships.listByGraph(options.graphId);
+  const relationshipDeltas = designRelationships
+    .filter(
+      (relationship) =>
+        relationship.source.type === "species-node" &&
+        relationship.target.type === "species-node" &&
+        relationship.target.nodeId === options.nodeId
+    )
+    .map((relationship) => ({
+      relationshipId: relationship.relationshipId,
+      delta: relationDeltaFromContract(relationship)
+    }));
   const speciesGroups = store.speciesGroupMemberships
     .listByNode(options.nodeId)
     .map((membership) => store.speciesGroups.get(membership.groupId))
@@ -161,10 +162,9 @@ export function buildSpeciesCompileInput(store: SpeciesCompileInputRepositories,
     node,
     nodeVersionId,
     parentSnapshots,
-    edgeDeltas,
+    relationshipDeltas,
     speciesGroups,
-    groupRelations: store.speciesGroupRelations.listByGraph(options.graphId),
-    graphBridges: store.graphBridges.listByGraph(options.graphId),
+    designRelationships,
     designContexts,
     contextAttachments,
     contextPolicies: contextIds.flatMap((contextId) => store.contextPolicies.listByContext(contextId)),
@@ -255,7 +255,7 @@ export function preparePhenotypeGeneration(
     phenotypeId,
     phenotypeVersionId,
     nodeVersionId: phenotypeArtifact.nodeVersionId,
-    edgeVersionTrace: edgeVersionTraceFromArtifact(phenotypeArtifact),
+    relationshipTrace: relationshipTraceFromArtifact(phenotypeArtifact),
     resolvedGeneSnapshot: phenotypeArtifact.resolvedGeneSnapshot,
     generationRecipe: {
       compilePolicy: phenotypeArtifact.compilePolicy,
@@ -313,22 +313,35 @@ export function preparePhenotypeGeneration(
   };
 }
 
-export function collectLineageImpact(store: ImpactRepositories, options: { graphId: string; nodeId?: string; edgeId?: string; changedVersionId: string }) {
+export function collectLineageImpact(
+  store: ImpactRepositories,
+  options: { graphId: string; nodeId?: string; relationshipId?: string; changedVersionId: string }
+) {
   const nodes = store.nodes.listByGraph(options.graphId).map((nodeValue) => ({
     nodeId: nodeValue.nodeId,
     phenotypeVersionIds: store.phenotypeVersions.listByNode(nodeValue.nodeId).map((version) => version.phenotypeVersionId)
   }));
-  const edges = store.edges.listByGraph(options.graphId).map((edgeValue) => ({
-    edgeId: edgeValue.edgeId,
-    fromNodeId: edgeValue.fromNodeId,
-    toNodeId: edgeValue.toNodeId
-  }));
-  const changed = options.edgeId
-    ? ({ type: "edge", id: options.edgeId, versionId: options.changedVersionId } as const)
+  const relationships = store.designRelationships
+    .listByGraph(options.graphId)
+    .filter((relationship) => relationship.source.type === "species-node" && relationship.target.type === "species-node")
+    .map((relationship) => ({
+      relationshipId: relationship.relationshipId,
+      fromNodeId: relationship.source.type === "species-node" ? relationship.source.nodeId : "",
+      toNodeId: relationship.target.type === "species-node" ? relationship.target.nodeId : ""
+    }));
+  const changedRelationship = options.relationshipId ? store.designRelationships.get(options.relationshipId) : undefined;
+  if (
+    options.relationshipId &&
+    (!changedRelationship || changedRelationship.source.type !== "species-node" || changedRelationship.target.type !== "species-node")
+  ) {
+    return undefined;
+  }
+  const changed = options.relationshipId
+    ? ({ type: "design-relationship", id: options.relationshipId, versionId: options.changedVersionId } as const)
     : options.nodeId
       ? ({ type: "node", id: options.nodeId, versionId: options.changedVersionId } as const)
       : undefined;
-  return changed ? collectImpact({ changed, nodes, edges }) : undefined;
+  return changed ? collectImpact({ changed, nodes, relationships }) : undefined;
 }
 
 export function collectGroupImpact(store: ImpactRepositories, options: { graphId: string; groupId: string }): ApplicationImpactSummary[] {
@@ -349,45 +362,68 @@ export function collectGroupImpact(store: ImpactRepositories, options: { graphId
       });
     }
   }
-  for (const relation of store.speciesGroupRelations.listByGraph(options.graphId)) {
-    if (relation.sourceGroupId !== options.groupId && relation.targetGroupId !== options.groupId) continue;
-    const otherGroupId = relation.sourceGroupId === options.groupId ? relation.targetGroupId : relation.sourceGroupId;
+  for (const relation of store.designRelationships.listByGraph(options.graphId)) {
+    if (relation.source.type !== "species-group" || relation.target.type !== "species-group") continue;
+    if (relation.source.groupId !== options.groupId && relation.target.groupId !== options.groupId) continue;
+    const otherGroupId = relation.source.groupId === options.groupId ? relation.target.groupId : relation.source.groupId;
     impacts.push({
       objectType: "species-group",
       objectId: otherGroupId,
-      reason: `${otherGroupId} is connected to changed species group ${options.groupId} by ${relation.relationType}`,
+      reason: `${otherGroupId} is connected to changed species group ${options.groupId} by ${relation.relationshipType}`,
       suggestedAction: "review-or-regenerate"
     });
   }
   return impacts;
 }
 
-export function collectGraphBridgeImpact(store: ImpactRepositories, options: { bridgeId: string }): ApplicationImpactSummary[] {
-  const bridge = store.graphBridges.get(options.bridgeId);
-  if (!bridge) throw new Error(`graph bridge not found: ${options.bridgeId}`);
-  const impacts: ApplicationImpactSummary[] = [
-    {
-      objectType: "graph",
-      objectId: bridge.targetGraphId,
-      reason: `${bridge.targetGraphId} is the target graph of changed bridge ${options.bridgeId}`,
-      suggestedAction: "review-or-regenerate"
-    }
-  ];
-  for (const node of store.nodes.listByGraph(bridge.targetGraphId)) {
+export function collectDesignRelationshipImpact(store: ImpactRepositories, options: { relationshipId: string }): ApplicationImpactSummary[] {
+  const relationship = store.designRelationships.get(options.relationshipId);
+  if (!relationship) throw new Error(`design relationship not found: ${options.relationshipId}`);
+  const impacts: ApplicationImpactSummary[] = [];
+  if (relationship.target.type === "graph") {
     impacts.push({
-      objectType: "node",
-      objectId: node.nodeId,
-      reason: `${node.nodeId} belongs to target graph ${bridge.targetGraphId} of changed bridge ${options.bridgeId}`,
+      objectType: "graph",
+      objectId: relationship.target.graphId,
+      reason: `${relationship.target.graphId} is the target graph of changed design relationship ${options.relationshipId}`,
       suggestedAction: "review-or-regenerate"
     });
-    for (const version of store.phenotypeVersions.listByNode(node.nodeId)) {
+    for (const node of store.nodes.listByGraph(relationship.target.graphId)) {
       impacts.push({
-        objectType: "phenotype-version",
-        objectId: version.phenotypeVersionId,
-        reason: `${version.phenotypeVersionId} was generated from node ${node.nodeId} in target graph ${bridge.targetGraphId}`,
+        objectType: "node",
+        objectId: node.nodeId,
+        reason: `${node.nodeId} belongs to target graph ${relationship.target.graphId} of changed design relationship ${options.relationshipId}`,
         suggestedAction: "review-or-regenerate"
       });
+      for (const version of store.phenotypeVersions.listByNode(node.nodeId)) {
+        impacts.push({
+          objectType: "phenotype-version",
+          objectId: version.phenotypeVersionId,
+          reason: `${version.phenotypeVersionId} was generated from node ${node.nodeId} in target graph ${relationship.target.graphId}`,
+          suggestedAction: "review-or-regenerate"
+        });
+      }
     }
+    return impacts;
+  }
+  if (relationship.target.type === "species-group") {
+    return collectGroupImpact(store, { graphId: relationship.target.graphId, groupId: relationship.target.groupId });
+  }
+  if (relationship.target.type !== "species-node") return impacts;
+  const node = store.nodes.get(relationship.target.nodeId);
+  if (!node) return impacts;
+  impacts.push({
+    objectType: "node",
+    objectId: node.nodeId,
+    reason: `${node.nodeId} is the target node of changed design relationship ${options.relationshipId}`,
+    suggestedAction: "review-or-regenerate"
+  });
+  for (const version of store.phenotypeVersions.listByNode(node.nodeId)) {
+    impacts.push({
+      objectType: "phenotype-version",
+      objectId: version.phenotypeVersionId,
+      reason: `${version.phenotypeVersionId} was generated from target node ${node.nodeId} of changed design relationship ${options.relationshipId}`,
+      suggestedAction: "review-or-regenerate"
+    });
   }
   return impacts;
 }
@@ -457,12 +493,24 @@ function validatePhenotypeArtifact(
   }
 }
 
-function edgeVersionTraceFromArtifact(artifact: PhenotypeCompileArtifact) {
+function relationshipTraceFromArtifact(artifact: PhenotypeCompileArtifact) {
   return unique(
     artifact.sourceTrace
-      .filter((entry) => entry.objectType === "edge-version")
-      .map((entry) => entry.versionId ?? entry.objectId)
+      .filter((entry) => entry.objectType === "design-relationship")
+      .map((entry) => entry.objectId)
   );
+}
+
+function relationDeltaFromContract(relationship: DesignRelationship) {
+  const metadataDelta = relationship.metadata.deltaGenes;
+  return typeof metadataDelta === "object" && metadataDelta !== null && !Array.isArray(metadataDelta)
+    ? (metadataDelta as Record<string, unknown>)
+    : {
+        transferRule: relationship.designContract.transferRule,
+        divergenceRule: relationship.designContract.divergenceRule,
+        mustPreserve: relationship.designContract.mustPreserve,
+        mustAvoid: relationship.designContract.mustAvoid
+      };
 }
 
 function countTraceEntries(traceEntries: TraceEntry[]) {

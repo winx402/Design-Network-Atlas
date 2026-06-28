@@ -1,23 +1,23 @@
 import { describe, expect, test } from "vitest";
 import {
   AtlasSchema,
+  DesignRelationshipSchema,
   FacetAssignmentSchema,
   FacetDefinitionSchema,
   FacetSchemaSchema,
-  GraphBridgeSchema,
   SpeciesGroupMembershipSchema,
-  SpeciesGroupRelationSchema,
   SpeciesGroupSchema,
   compileSpecies,
+  createDefaultDesignRelationship,
   createDefaultGraph,
   createDefaultSpeciesGroup,
   createDefaultSpeciesNode,
-  validateSpeciesGroupRelationSet
+  validateDesignRelationshipSet
 } from "@dna/core";
 
 const now = "2026-06-27T00:00:00.000Z";
 
-describe("Phase 17 PRD-01 core schemas", () => {
+describe("Phase 17 core schemas", () => {
   test("models a species group with shared facts and referenced facet schemas", () => {
     const group = SpeciesGroupSchema.parse({
       groupId: "group-ui",
@@ -93,66 +93,7 @@ describe("Phase 17 PRD-01 core schemas", () => {
     expect(() => SpeciesGroupMembershipSchema.parse({ ...membership, role: "owner" })).toThrow();
   });
 
-  test("allows built-in and custom group relation types without rule-engine fields", () => {
-    const builtIn = SpeciesGroupRelationSchema.parse({
-      relationId: "rel-ui-icon",
-      graphId: "graph-butian",
-      sourceGroupId: "group-ui",
-      targetGroupId: "group-icons",
-      relationType: "adapts-from",
-      description: "Icon group adapts UI readability rules.",
-      status: "active",
-      extensions: { rationale: "same screen surface" },
-      createdAt: now,
-      updatedAt: now
-    });
-    const custom = SpeciesGroupRelationSchema.parse({
-      ...builtIn,
-      relationId: "rel-ui-icon-custom",
-      relationType: "custom:shares-screen-density"
-    });
-
-    expect(builtIn).not.toHaveProperty("compileParticipation");
-    expect(custom.relationType).toBe("custom:shares-screen-density");
-    expect(() => SpeciesGroupRelationSchema.parse({ ...builtIn, relationType: "custom:" })).toThrow();
-  });
-
-  test("defaults to one primary relation per source and target unless parallel semantics are explicit", () => {
-    const relations = [
-      SpeciesGroupRelationSchema.parse({
-        relationId: "rel-primary",
-        graphId: "graph-butian",
-        sourceGroupId: "group-character",
-        targetGroupId: "group-icon",
-        relationType: "adapts-from",
-        description: "Icons adapt character identity.",
-        status: "active",
-        extensions: {},
-        createdAt: now,
-        updatedAt: now
-      }),
-      SpeciesGroupRelationSchema.parse({
-        relationId: "rel-duplicate",
-        graphId: "graph-butian",
-        sourceGroupId: "group-character",
-        targetGroupId: "group-icon",
-        relationType: "references",
-        description: "Extra note that should be description unless allowed.",
-        status: "active",
-        extensions: {},
-        createdAt: now,
-        updatedAt: now
-      })
-    ];
-
-    expect(validateSpeciesGroupRelationSet(relations, { allowParallel: false }).valid).toBe(false);
-    expect(validateSpeciesGroupRelationSet(relations, { allowParallel: true }).valid).toBe(true);
-    expect(validateSpeciesGroupRelationSet([relations[0]!, { ...relations[0]!, relationId: "rel-same-type" }], { allowParallel: true }).valid).toBe(
-      false
-    );
-  });
-
-  test("models atlases and graph bridges with built-in and custom bridge types", () => {
+  test("models design relationships at graph, group, and node levels", () => {
     const atlas = AtlasSchema.parse({
       atlasId: "atlas-butian",
       name: "Butian Design Atlas",
@@ -163,30 +104,69 @@ describe("Phase 17 PRD-01 core schemas", () => {
       createdAt: now,
       updatedAt: now
     });
-    const bridge = GraphBridgeSchema.parse({
-      bridgeId: "bridge-character-ui",
-      atlasId: atlas.atlasId,
-      sourceGraphId: "graph-character",
-      targetGraphId: "graph-ui",
-      bridgeType: "references-species",
-      description: "UI icons reference character visual identity.",
+    const graphRelationship = DesignRelationshipSchema.parse({
+      relationshipId: "rel-character-ui",
+      source: { type: "graph", graphId: "graph-character" },
+      target: { type: "graph", graphId: "graph-ui" },
+      relationshipType: "translates-to",
+      direction: "source-to-target",
+      description: "UI icons translate character visual identity.",
+      designContract: { mustPreserve: ["faction silhouette"], mustAvoid: [], reviewQuestions: [] },
       status: "active",
-      extensions: { sourceTrace: "character graph" },
+      metadata: { atlasId: atlas.atlasId },
       createdAt: now,
       updatedAt: now
     });
+    const groupRelationship = DesignRelationshipSchema.parse({
+      ...graphRelationship,
+      relationshipId: "rel-ui-icons",
+      source: { type: "species-group", graphId: "graph-ui", groupId: "group-ui" },
+      target: { type: "species-group", graphId: "graph-ui", groupId: "group-icons" },
+      relationshipType: "aligns-with"
+    });
+    const nodeRelationship = DesignRelationshipSchema.parse({
+      ...graphRelationship,
+      relationshipId: "rel-icon-root",
+      source: { type: "species-node", graphId: "graph-ui", nodeId: "node-icon" },
+      target: { type: "species-node", graphId: "graph-ui", nodeId: "node-root" },
+      relationshipType: "derives-from"
+    });
 
-    expect(atlas.graphIds).toEqual(["graph-character", "graph-ui"]);
-    expect(bridge.bridgeType).toBe("references-species");
-    expect(GraphBridgeSchema.parse({ ...bridge, bridgeId: "bridge-custom", bridgeType: "custom:campaign-link" }).bridgeType).toBe(
-      "custom:campaign-link"
-    );
-    expect(() => GraphBridgeSchema.parse({ ...bridge, bridgeType: "custom:" })).toThrow();
+    expect(graphRelationship.relationshipType).toBe("translates-to");
+    expect(groupRelationship.source.type).toBe("species-group");
+    expect(nodeRelationship.designContract.mustPreserve).toEqual(["faction silhouette"]);
+    expect(() =>
+      DesignRelationshipSchema.parse({
+        ...nodeRelationship,
+        target: { type: "species-group", graphId: "graph-ui", groupId: "group-icons" }
+      })
+    ).toThrow();
+  });
+
+  test("defaults to one relationship per source, target, and type unless parallel semantics are explicit", () => {
+    const relationships = [
+      createDefaultDesignRelationship({
+        relationshipId: "rel-primary",
+        source: { type: "species-group", graphId: "graph-butian", groupId: "group-character" },
+        target: { type: "species-group", graphId: "graph-butian", groupId: "group-icon" },
+        relationshipType: "references"
+      }),
+      createDefaultDesignRelationship({
+        relationshipId: "rel-duplicate",
+        source: { type: "species-group", graphId: "graph-butian", groupId: "group-character" },
+        target: { type: "species-group", graphId: "graph-butian", groupId: "group-icon" },
+        relationshipType: "aligns-with"
+      })
+    ];
+
+    expect(validateDesignRelationshipSet(relationships, { allowParallel: false }).valid).toBe(false);
+    expect(validateDesignRelationshipSet(relationships, { allowParallel: true }).valid).toBe(true);
+    expect(validateDesignRelationshipSet([relationships[0]!, { ...relationships[0]!, relationshipId: "rel-same-type" }], { allowParallel: true }).valid).toBe(false);
   });
 });
 
-describe("Phase 17 PRD-01 compile context hooks", () => {
-  test("adds group relations and graph bridges to compile context without treating custom relations as fixed rules", () => {
+describe("Phase 17 compile context hooks", () => {
+  test("adds design relationships to compile context without treating custom relations as fixed rules", () => {
     const graph = createDefaultGraph({ graphId: "graph-ui", name: "UI Graph", purpose: "ui production" });
     const node = createDefaultSpeciesNode({
       graphId: graph.graphId,
@@ -203,48 +183,37 @@ describe("Phase 17 PRD-01 compile context hooks", () => {
       facetSchemaIds: ["facet-schema-ui"],
       phenotypeTypeSuggestions: ["ui-icon"]
     });
-    const relation = SpeciesGroupRelationSchema.parse({
-      relationId: "rel-custom",
-      graphId: graph.graphId,
-      sourceGroupId: "group-world",
-      targetGroupId: "group-ui",
-      relationType: "custom:inherits-worldview-symbols",
-      description: "Use world-view symbols as LLM context only.",
-      status: "active",
-      extensions: {},
-      createdAt: now,
-      updatedAt: now
+    const relationship = createDefaultDesignRelationship({
+      relationshipId: "rel-custom",
+      source: { type: "species-group", graphId: graph.graphId, groupId: "group-world" },
+      target: { type: "species-group", graphId: graph.graphId, groupId: "group-ui" },
+      relationshipType: "custom:inherits-worldview-symbols",
+      description: "Use world-view symbols as LLM context only."
     });
-    const bridge = GraphBridgeSchema.parse({
-      bridgeId: "bridge-style",
-      atlasId: "atlas-butian",
-      sourceGraphId: "graph-style",
-      targetGraphId: graph.graphId,
-      bridgeType: "style-aligned-with",
-      description: "Align UI graph with the visual foundation graph.",
-      status: "active",
-      extensions: {},
-      createdAt: now,
-      updatedAt: now
+    const graphRelationship = createDefaultDesignRelationship({
+      relationshipId: "rel-style",
+      source: { type: "graph", graphId: "graph-style" },
+      target: { type: "graph", graphId: graph.graphId },
+      relationshipType: "aligns-with",
+      description: "Align UI graph with the visual foundation graph."
     });
 
     const compiled = compileSpecies({
       graph,
       node,
       parentSnapshots: [],
-      edgeDeltas: [],
+      relationshipDeltas: [],
       taskBrief: "create a warning icon",
       phenotypeType: "ui-icon",
       speciesGroups: [group],
-      groupRelations: [relation],
-      graphBridges: [bridge]
+      designRelationships: [relationship, graphRelationship]
     });
 
     expect(compiled.contextTrace).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ sourceType: "species-group", sourceId: "group-ui", fixedRuleEligible: true }),
-        expect.objectContaining({ sourceType: "species-group-relation", sourceId: "rel-custom", fixedRuleEligible: false }),
-        expect.objectContaining({ sourceType: "graph-bridge", sourceId: "bridge-style", fixedRuleEligible: true })
+        expect.objectContaining({ sourceType: "design-relationship", sourceId: "rel-custom", fixedRuleEligible: false }),
+        expect.objectContaining({ sourceType: "design-relationship", sourceId: "rel-style", fixedRuleEligible: true })
       ])
     );
     expect(compiled.prompt).toContain("Use world-view symbols as LLM context only.");

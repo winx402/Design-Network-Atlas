@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   AssetIndexSchema,
   ChangeSetSchema,
-  EvolutionEdgeSchema,
+  DesignRelationshipSchema,
   GeneTemplateSchema,
   GenerationJobSchema,
   GraphSchema,
@@ -82,31 +82,29 @@ describe("Phase 1 domain object coverage", () => {
     expect(template.phenotypeTypeSuggestions).toEqual(["image-prompt", "svg-spec", "review-checklist"]);
   });
 
-  test("evolution edge schema accepts all planned edge types with value handling fields", () => {
-    const edgeTypes = ["inherit", "specialize", "variant", "reference", "fusion", "constraint", "deprecate", "remix"];
-    for (const edgeType of edgeTypes) {
-      const edge = EvolutionEdgeSchema.parse({
-        edgeId: `edge-${edgeType}`,
-        graphId: "graph-edge",
-        fromNodeId: "node-parent",
-        toNodeId: "node-child",
-        edgeType,
-        direction: "more symbolic",
-        operation: "merge",
-        evolutionStrength: "medium",
-        deltaGenes: { color: "red" },
-        valueResolution: { color: "override" },
-        mustPreserve: ["broken-ring"],
-        mustAvoid: ["photorealistic"],
-        designRationale: "test",
-        currentVersion: "1.0.0",
+  test("design relationship schema accepts planned types with contract fields", () => {
+    const relationshipTypes = ["derives-from", "translates-to", "aligns-with", "diverges-from", "references", "constrains", "custom:campaign-link"];
+    for (const relationshipType of relationshipTypes) {
+      const relationship = DesignRelationshipSchema.parse({
+        relationshipId: `rel-${relationshipType.replace(":", "-")}`,
+        source: { type: "species-node", graphId: "graph-design", nodeId: "node-child" },
+        target: { type: "species-node", graphId: "graph-design", nodeId: "node-parent" },
+        relationshipType,
+        direction: "source-to-target",
+        description: "test design relation",
+        designContract: {
+          transferRule: "child keeps parent silhouette while changing color",
+          mustPreserve: ["broken-ring"],
+          mustAvoid: ["photorealistic"],
+          reviewQuestions: ["Does the child preserve the parent motif?"]
+        },
         status: "active",
-        facets: {},
+        metadata: {},
         createdAt: now,
         updatedAt: now
       });
-      expect(edge.valueResolution).toEqual({ color: "override" });
-      expect(edge.mustPreserve).toEqual(["broken-ring"]);
+      expect(relationship.designContract.transferRule).toContain("silhouette");
+      expect(relationship.designContract.mustPreserve).toEqual(["broken-ring"]);
     }
   });
 

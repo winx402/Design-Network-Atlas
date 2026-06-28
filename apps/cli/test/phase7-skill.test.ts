@@ -27,7 +27,7 @@ describe("Phase 7 Codex scenario skills", () => {
 
     expectFrontmatter(content, "dna-graph-modeling");
     expect(content).toContain("SpeciesNode");
-    expect(content).toContain("EvolutionEdge");
+    expect(content).toContain("DesignRelationship");
     expect(content).toContain("facets");
     expect(content).toContain("Phenotype");
     expect(content).toContain("phenotype library");

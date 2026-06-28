@@ -1,11 +1,11 @@
-import { EvolutionEdge, Graph, SpeciesGroup, SpeciesGroupMembership, SpeciesGroupRelation, SpeciesNode } from "./schemas.js";
+import { DesignRelationship, Graph, SpeciesGroup, SpeciesGroupMembership, SpeciesNode } from "./schemas.js";
 
 export interface GraphTreeRelation {
   fromNodeId: string;
   toNodeId: string;
-  edgeId?: string;
-  edgeType?: EvolutionEdge["edgeType"];
-  direction?: string;
+  relationshipId?: string;
+  relationshipType?: DesignRelationship["relationshipType"];
+  direction?: DesignRelationship["direction"];
   parentRole?: SpeciesNode["parentRoles"][string];
   primary: boolean;
 }
@@ -20,8 +20,8 @@ export interface GraphTreeNode {
   parentNodes: string[];
   primaryParent?: string | null;
   incomingEdges: string[];
-  edgeId?: string;
-  edgeType?: EvolutionEdge["edgeType"];
+  relationshipId?: string;
+  relationshipType?: DesignRelationship["relationshipType"];
   parentRole?: SpeciesNode["parentRoles"][string];
   children: GraphTreeNode[];
 }
@@ -37,7 +37,7 @@ export interface GraphTree {
 export interface GraphGroupOverlay {
   groups: SpeciesGroup[];
   memberships: SpeciesGroupMembership[];
-  groupRelations: SpeciesGroupRelation[];
+  groupRelations: DesignRelationship[];
   membershipsByNodeId: Record<string, SpeciesGroupMembership[]>;
   ungroupedNodeIds: string[];
 }
@@ -46,9 +46,15 @@ export interface GraphTreeWithGroupOverlay extends GraphTree {
   groupOverlay: GraphGroupOverlay;
 }
 
-export function buildGraphTree(input: { graph: Graph; nodes: SpeciesNode[]; edges: EvolutionEdge[] }): GraphTree {
+export function buildGraphTree(input: { graph: Graph; nodes: SpeciesNode[]; relationships?: DesignRelationship[] }): GraphTree {
   const nodes = input.nodes.filter((node) => node.graphId === input.graph.graphId);
-  const edges = input.edges.filter((edge) => edge.graphId === input.graph.graphId);
+  const relationships = (input.relationships ?? []).filter(
+    (relationship) =>
+      relationship.source.type === "species-node" &&
+      relationship.target.type === "species-node" &&
+      relationship.source.graphId === input.graph.graphId &&
+      relationship.target.graphId === input.graph.graphId
+  );
   const nodeById = new Map(nodes.map((node) => [node.nodeId, node]));
   const nodeOrder = new Map(nodes.map((node, index) => [node.nodeId, index]));
   const relationByPair = new Map<string, GraphTreeRelation>();
@@ -64,16 +70,18 @@ export function buildGraphTree(input: { graph: Graph; nodes: SpeciesNode[]; edge
     }
   }
 
-  for (const edge of edges) {
-    upsertRelation(relationByPair, edge.fromNodeId, edge.toNodeId, {
-      edgeId: edge.edgeId,
-      edgeType: edge.edgeType,
-      direction: edge.direction,
-      parentRole: nodeById.get(edge.toNodeId)?.parentRoles[edge.fromNodeId],
+  for (const relationship of relationships) {
+    const sourceId = relationship.source.type === "species-node" ? relationship.source.nodeId : "";
+    const targetId = relationship.target.type === "species-node" ? relationship.target.nodeId : "";
+    upsertRelation(relationByPair, sourceId, targetId, {
+      relationshipId: relationship.relationshipId,
+      relationshipType: relationship.relationshipType,
+      direction: relationship.direction,
+      parentRole: nodeById.get(targetId)?.parentRoles[sourceId],
       primary: false
     });
-    if (!nodeById.has(edge.fromNodeId)) missingNodeIds.add(edge.fromNodeId);
-    if (!nodeById.has(edge.toNodeId)) missingNodeIds.add(edge.toNodeId);
+    if (!nodeById.has(sourceId)) missingNodeIds.add(sourceId);
+    if (!nodeById.has(targetId)) missingNodeIds.add(targetId);
   }
 
   const relations = [...relationByPair.values()].filter((relation) => nodeById.has(relation.fromNodeId) && nodeById.has(relation.toNodeId));
@@ -156,7 +164,7 @@ export function buildGraphGroupOverlay(input: {
   nodes: SpeciesNode[];
   groups: SpeciesGroup[];
   memberships: SpeciesGroupMembership[];
-  groupRelations: SpeciesGroupRelation[];
+  relationships: DesignRelationship[];
 }): GraphGroupOverlay {
   const nodeIds = new Set(input.nodes.filter((node) => node.graphId === input.graph.graphId).map((node) => node.nodeId));
   const groups = input.groups.filter((group) => group.graphId === input.graph.graphId).sort((left, right) => left.groupId.localeCompare(right.groupId));
@@ -164,17 +172,17 @@ export function buildGraphGroupOverlay(input: {
   const memberships = input.memberships
     .filter((membership) => membership.graphId === input.graph.graphId && nodeIds.has(membership.nodeId) && groupIds.has(membership.groupId))
     .sort((left, right) => left.groupId.localeCompare(right.groupId) || left.nodeId.localeCompare(right.nodeId) || left.membershipId.localeCompare(right.membershipId));
-  const groupRelations = input.groupRelations
+  const groupRelations = input.relationships
     .filter(
-      (relation) =>
-        relation.graphId === input.graph.graphId && groupIds.has(relation.sourceGroupId) && groupIds.has(relation.targetGroupId)
+      (relationship) =>
+        relationship.source.type === "species-group" &&
+        relationship.target.type === "species-group" &&
+        relationship.source.graphId === input.graph.graphId &&
+        relationship.target.graphId === input.graph.graphId &&
+        groupIds.has(relationship.source.groupId) &&
+        groupIds.has(relationship.target.groupId)
     )
-    .sort(
-      (left, right) =>
-        left.sourceGroupId.localeCompare(right.sourceGroupId) ||
-        left.targetGroupId.localeCompare(right.targetGroupId) ||
-        left.relationId.localeCompare(right.relationId)
-    );
+    .sort((left, right) => endpointGroupId(left.source).localeCompare(endpointGroupId(right.source)) || endpointGroupId(left.target).localeCompare(endpointGroupId(right.target)) || left.relationshipId.localeCompare(right.relationshipId));
   const membershipsByNodeId: Record<string, SpeciesGroupMembership[]> = {};
   for (const membership of memberships) {
     membershipsByNodeId[membership.nodeId] = membershipsByNodeId[membership.nodeId] ?? [];
@@ -232,17 +240,23 @@ export function formatGraphTreeWithGroupsText(tree: GraphTree, overlay: GraphGro
   if (overlay.groupRelations.length === 0) {
     lines.push("- none");
   } else {
-    for (const relation of overlay.groupRelations) {
-      const source = groupById.get(relation.sourceGroupId);
-      const target = groupById.get(relation.targetGroupId);
-      const description = relation.description ? ` ${relation.description}` : "";
+    for (const relationship of overlay.groupRelations) {
+      const sourceId = endpointGroupId(relationship.source);
+      const targetId = endpointGroupId(relationship.target);
+      const source = groupById.get(sourceId);
+      const target = groupById.get(targetId);
+      const description = relationship.description ? ` ${relationship.description}` : "";
       lines.push(
-        `- ${source?.name ?? relation.sourceGroupId} (${relation.sourceGroupId}) -> ${target?.name ?? relation.targetGroupId} (${relation.targetGroupId}) [${relation.relationType}, ${relation.relationId}]${description}`
+        `- ${source?.name ?? sourceId} (${sourceId}) -> ${target?.name ?? targetId} (${targetId}) [${relationship.relationshipType}, ${relationship.relationshipId}]${description}`
       );
     }
   }
 
   return `${lines.join("\n")}\n`;
+}
+
+function endpointGroupId(endpoint: DesignRelationship["source"]) {
+  return endpoint.type === "species-group" ? endpoint.groupId : "";
 }
 
 function upsertRelation(
@@ -256,8 +270,8 @@ function upsertRelation(
   relationByPair.set(key, {
     fromNodeId,
     toNodeId,
-    edgeId: patch.edgeId ?? existing?.edgeId,
-    edgeType: patch.edgeType ?? existing?.edgeType,
+    relationshipId: patch.relationshipId ?? existing?.relationshipId,
+    relationshipType: patch.relationshipType ?? existing?.relationshipType,
     direction: patch.direction ?? existing?.direction,
     parentRole: patch.parentRole ?? existing?.parentRole,
     primary: existing?.primary ?? patch.primary ?? false
@@ -310,8 +324,8 @@ function buildTreeNode(
     if (!child) continue;
     children.push({
       ...buildTreeNode(child, childrenByParent, nodeById, nextAncestors),
-      edgeId: relation.edgeId,
-      edgeType: relation.edgeType,
+      relationshipId: relation.relationshipId,
+      relationshipType: relation.relationshipType,
       parentRole: relation.parentRole
     });
   }
@@ -341,7 +355,7 @@ function appendNodeLines(lines: string[], node: GraphTreeNode, depth: number) {
 function formatRelationLine(tree: GraphTree, relation: GraphTreeRelation) {
   const from = findTreeNode(tree.roots, relation.fromNodeId);
   const to = findTreeNode(tree.roots, relation.toNodeId);
-  const labels = [relation.edgeType ?? relation.parentRole, relation.edgeId].filter((value): value is string => Boolean(value));
+  const labels = [relation.relationshipType ?? relation.parentRole, relation.relationshipId].filter((value): value is string => Boolean(value));
   const suffix = labels.length ? ` [${labels.join(", ")}]` : "";
   return `- ${from?.name ?? relation.fromNodeId} (${relation.fromNodeId}) -> ${to?.name ?? relation.toNodeId} (${relation.toNodeId})${suffix}`;
 }

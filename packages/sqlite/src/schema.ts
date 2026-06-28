@@ -82,18 +82,6 @@ export const speciesGroupMemberships = sqliteTable("species_group_memberships", 
   updatedAt: text("updated_at").notNull()
 });
 
-export const speciesGroupRelations = sqliteTable("species_group_relations", {
-  relationId: text("relation_id").primaryKey(),
-  graphId: text("graph_id").notNull(),
-  sourceGroupId: text("source_group_id").notNull(),
-  targetGroupId: text("target_group_id").notNull(),
-  relationType: text("relation_type").notNull(),
-  status: text("status").notNull(),
-  payload: text("payload", { mode: "json" }).notNull(),
-  createdAt: text("created_at").notNull(),
-  updatedAt: text("updated_at").notNull()
-});
-
 export const atlases = sqliteTable("atlases", {
   atlasId: text("atlas_id").primaryKey(),
   name: text("name").notNull(),
@@ -103,12 +91,12 @@ export const atlases = sqliteTable("atlases", {
   updatedAt: text("updated_at").notNull()
 });
 
-export const graphBridges = sqliteTable("graph_bridges", {
-  bridgeId: text("bridge_id").primaryKey(),
-  atlasId: text("atlas_id").notNull(),
+export const designRelationships = sqliteTable("design_relationships", {
+  relationshipId: text("relationship_id").primaryKey(),
   sourceGraphId: text("source_graph_id").notNull(),
   targetGraphId: text("target_graph_id").notNull(),
-  bridgeType: text("bridge_type").notNull(),
+  endpointLevel: text("endpoint_level").notNull(),
+  relationshipType: text("relationship_type").notNull(),
   status: text("status").notNull(),
   payload: text("payload", { mode: "json" }).notNull(),
   createdAt: text("created_at").notNull(),
@@ -212,19 +200,6 @@ export const nodeVersions = sqliteTable("node_versions", {
   version: text("version").notNull(),
   payload: text("payload", { mode: "json" }).notNull(),
   createdAt: text("created_at").notNull()
-});
-
-export const edges = sqliteTable("edges", {
-  edgeId: text("edge_id").primaryKey(),
-  graphId: text("graph_id").notNull(),
-  fromNodeId: text("from_node_id").notNull(),
-  toNodeId: text("to_node_id").notNull(),
-  edgeType: text("edge_type").notNull(),
-  status: text("status").notNull(),
-  currentVersion: text("current_version").notNull(),
-  payload: text("payload", { mode: "json" }).notNull(),
-  createdAt: text("created_at").notNull(),
-  updatedAt: text("updated_at").notNull()
 });
 
 export const phenotypes = sqliteTable("phenotypes", {

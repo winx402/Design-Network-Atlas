@@ -8,14 +8,13 @@ import {
   ContextReference,
   ContextReviewRubric,
   DesignContext,
+  DesignRelationship,
   DesignPrinciple,
-  EvolutionEdge,
   ExternalLibraryMapping,
   FacetAssignment,
   FacetDefinition,
   FacetSchema,
   GenerationJob,
-  GraphBridge,
   Graph,
   ImpactRecord,
   LibraryRoutingPolicy,
@@ -29,7 +28,6 @@ import {
   ReviewRecord,
   SpeciesGroup,
   SpeciesGroupMembership,
-  SpeciesGroupRelation,
   SpeciesNode,
   StorageMount
 } from "./schemas.js";
@@ -160,25 +158,6 @@ export function createDefaultSpeciesGroupMembership(
   };
 }
 
-export function createDefaultSpeciesGroupRelation(
-  input: Partial<SpeciesGroupRelation> &
-    Pick<SpeciesGroupRelation, "relationId" | "graphId" | "sourceGroupId" | "targetGroupId" | "relationType">
-): SpeciesGroupRelation {
-  const timestamp = nowIso();
-  return {
-    relationId: input.relationId,
-    graphId: input.graphId,
-    sourceGroupId: input.sourceGroupId,
-    targetGroupId: input.targetGroupId,
-    relationType: input.relationType,
-    description: input.description ?? "",
-    status: input.status ?? "draft",
-    extensions: input.extensions ?? {},
-    createdAt: input.createdAt ?? timestamp,
-    updatedAt: input.updatedAt ?? timestamp
-  };
-}
-
 export function createDefaultAtlas(input: Partial<Atlas> & Pick<Atlas, "atlasId" | "name" | "purpose">): Atlas {
   const timestamp = nowIso();
   return {
@@ -193,19 +172,35 @@ export function createDefaultAtlas(input: Partial<Atlas> & Pick<Atlas, "atlasId"
   };
 }
 
-export function createDefaultGraphBridge(
-  input: Partial<GraphBridge> & Pick<GraphBridge, "bridgeId" | "atlasId" | "sourceGraphId" | "targetGraphId" | "bridgeType">
-): GraphBridge {
+export function createDefaultDesignRelationship(
+  input: Partial<DesignRelationship> &
+    Pick<DesignRelationship, "relationshipId" | "source" | "target" | "relationshipType">
+): DesignRelationship {
   const timestamp = nowIso();
   return {
-    bridgeId: input.bridgeId,
-    atlasId: input.atlasId,
-    sourceGraphId: input.sourceGraphId,
-    targetGraphId: input.targetGraphId,
-    bridgeType: input.bridgeType,
+    relationshipId: input.relationshipId,
+    source: input.source,
+    target: input.target,
+    relationshipType: input.relationshipType,
+    direction: input.direction ?? "source-to-target",
     description: input.description ?? "",
+    designContract: {
+      transferRule: input.designContract?.transferRule ?? "",
+      mustPreserve: input.designContract?.mustPreserve ?? [],
+      mustAvoid: input.designContract?.mustAvoid ?? [],
+      divergenceRule: input.designContract?.divergenceRule ?? "",
+      reviewQuestions: input.designContract?.reviewQuestions ?? []
+    },
+    auxiliaryRefs: {
+      contextIds: input.auxiliaryRefs?.contextIds ?? [],
+      motifIds: input.auxiliaryRefs?.motifIds ?? [],
+      principleIds: input.auxiliaryRefs?.principleIds ?? [],
+      facetIds: input.auxiliaryRefs?.facetIds ?? [],
+      rubricIds: input.auxiliaryRefs?.rubricIds ?? [],
+      referenceIds: input.auxiliaryRefs?.referenceIds ?? []
+    },
     status: input.status ?? "draft",
-    extensions: input.extensions ?? {},
+    metadata: input.metadata ?? {},
     createdAt: input.createdAt ?? timestamp,
     updatedAt: input.updatedAt ?? timestamp
   };
@@ -409,7 +404,7 @@ export function createDefaultNodeVersion(
     version: input.version ?? "1.0.0",
     baseTemplateVersions: input.baseTemplateVersions ?? [],
     parentNodeVersions: input.parentNodeVersions ?? [],
-    incomingEdgeVersions: input.incomingEdgeVersions ?? [],
+    incomingRelationshipIds: input.incomingRelationshipIds ?? [],
     ownGeneDelta: input.ownGeneDelta ?? {},
     resolvedGeneSnapshot: input.resolvedGeneSnapshot ?? {},
     constraintSnapshot: input.constraintSnapshot ?? {},
@@ -418,32 +413,6 @@ export function createDefaultNodeVersion(
     changeSummary: input.changeSummary ?? "",
     impactNotes: input.impactNotes ?? "",
     createdAt: input.createdAt ?? nowIso()
-  };
-}
-
-export function createDefaultEvolutionEdge(
-  input: Partial<EvolutionEdge> & Pick<EvolutionEdge, "graphId" | "edgeId" | "fromNodeId" | "toNodeId">
-): EvolutionEdge {
-  const timestamp = nowIso();
-  return {
-    edgeId: input.edgeId,
-    graphId: input.graphId,
-    fromNodeId: input.fromNodeId,
-    toNodeId: input.toNodeId,
-    edgeType: input.edgeType ?? "inherit",
-    direction: input.direction ?? "inherits visual identity",
-    operation: input.operation ?? "merge",
-    evolutionStrength: input.evolutionStrength ?? "medium",
-    deltaGenes: input.deltaGenes ?? {},
-    valueResolution: input.valueResolution ?? { default: "override" },
-    mustPreserve: input.mustPreserve ?? [],
-    mustAvoid: input.mustAvoid ?? [],
-    designRationale: input.designRationale ?? "",
-    currentVersion: input.currentVersion ?? "1.0.0",
-    status: input.status ?? "draft",
-    facets: input.facets ?? {},
-    createdAt: input.createdAt ?? timestamp,
-    updatedAt: input.updatedAt ?? timestamp
   };
 }
 
@@ -478,7 +447,7 @@ export function createDefaultPhenotypeVersion(
     graphId: input.graphId,
     nodeId: input.nodeId,
     nodeVersionId: input.nodeVersionId ?? "unversioned",
-    edgeVersionTrace: input.edgeVersionTrace ?? [],
+    relationshipTrace: input.relationshipTrace ?? [],
     resolvedGeneSnapshot: input.resolvedGeneSnapshot ?? {},
     generationRecipe: input.generationRecipe ?? {},
     generationBrief: input.generationBrief ?? "",

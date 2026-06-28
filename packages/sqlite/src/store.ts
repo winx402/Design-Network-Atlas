@@ -15,8 +15,7 @@ import {
   createImpactRecord,
   DesignContext,
   DesignPrinciple,
-  EdgeVersion,
-  EvolutionEdge,
+  DesignRelationship,
   ExternalLibraryMapping,
   FacetAssignment,
   FacetDefinition,
@@ -24,7 +23,6 @@ import {
   GeneTemplate,
   GenerationJob,
   Graph,
-  GraphBridge,
   ImpactRecord,
   LibraryRoutingPolicy,
   NodeVersion,
@@ -40,7 +38,6 @@ import {
   SpeciesGroup,
   SpeciesCompileArtifact,
   SpeciesGroupMembership,
-  SpeciesGroupRelation,
   SpeciesNode,
   StorageMount,
   TemplatePack
@@ -57,14 +54,12 @@ import {
   ContextReviewRubricRepository,
   DesignContextRepository,
   DesignPrincipleRepository,
-  EdgeRepository,
-  EdgeVersionRepository,
+  DesignRelationshipRepository,
   ExternalLibraryMappingRepository,
   FacetAssignmentRepository,
   FacetDefinitionRepository,
   FacetSchemaRepository,
   GenerationJobRepository,
-  GraphBridgeRepository,
   GraphRepository,
   GraphResetSummary,
   ImpactRepository,
@@ -81,7 +76,6 @@ import {
   ReviewRepository,
   SearchRepository,
   SpeciesGroupMembershipRepository,
-  SpeciesGroupRelationRepository,
   SpeciesGroupRepository,
   SpeciesCompileArtifactRepository,
   StorageMountRepository,
@@ -104,9 +98,8 @@ export const RUNTIME_SQLITE_TABLES = [
   "gene_templates",
   "species_groups",
   "species_group_memberships",
-  "species_group_relations",
+  "design_relationships",
   "atlases",
-  "graph_bridges",
   "design_contexts",
   "context_facts",
   "design_principles",
@@ -117,8 +110,6 @@ export const RUNTIME_SQLITE_TABLES = [
   "context_policies",
   "nodes",
   "node_versions",
-  "edges",
-  "edge_versions",
   "node_relations",
   "phenotype_types",
   "phenotypes",
@@ -150,7 +141,7 @@ const EXCHANGE_CAPABILITIES = [
   "templates",
   "libraries",
   "atlases",
-  "graph-lineage",
+  "design-relationships",
   "species-groups",
   "compile-artifacts",
   "generation-jobs",
@@ -208,6 +199,12 @@ function parseRows<T>(rows: Row[]): T[] {
   return rows.map((row) => parsePayload<T>(row)).filter((value): value is T => Boolean(value));
 }
 
+function relationshipEndpointId(endpoint: DesignRelationship["source"]): string {
+  if (endpoint.type === "graph") return `graph:${endpoint.graphId}`;
+  if (endpoint.type === "species-group") return `species-group:${endpoint.groupId}`;
+  return `species-node:${endpoint.nodeId}`;
+}
+
 function sortOutputReferences(references: OutputReference[]): OutputReference[] {
   const rolePriority: Record<string, number> = {
     "primary-output": 0,
@@ -260,9 +257,8 @@ export class SqliteDnaStore implements StorageEngine {
   readonly templates: TemplateRepository;
   readonly speciesGroups: SpeciesGroupRepository;
   readonly speciesGroupMemberships: SpeciesGroupMembershipRepository;
-  readonly speciesGroupRelations: SpeciesGroupRelationRepository;
+  readonly designRelationships: DesignRelationshipRepository;
   readonly atlases: AtlasRepository;
-  readonly graphBridges: GraphBridgeRepository;
   readonly designContexts: DesignContextRepository;
   readonly contextFacts: ContextFactRepository;
   readonly designPrinciples: DesignPrincipleRepository;
@@ -273,8 +269,6 @@ export class SqliteDnaStore implements StorageEngine {
   readonly contextPolicies: ContextPolicyRepository;
   readonly nodes: LineageRepository;
   readonly nodeVersions: NodeVersionRepository;
-  readonly edges: EdgeRepository;
-  readonly edgeVersions: EdgeVersionRepository;
   readonly phenotypes: PhenotypeRepository;
   readonly phenotypeVersions: PhenotypeVersionRepository;
   readonly speciesCompileArtifacts: SpeciesCompileArtifactRepository;
@@ -304,9 +298,8 @@ export class SqliteDnaStore implements StorageEngine {
     this.templates = new SqliteTemplateRepository(this);
     this.speciesGroups = new SqliteSpeciesGroupRepository(this);
     this.speciesGroupMemberships = new SqliteSpeciesGroupMembershipRepository(this);
-    this.speciesGroupRelations = new SqliteSpeciesGroupRelationRepository(this);
+    this.designRelationships = new SqliteDesignRelationshipRepository(this);
     this.atlases = new SqliteAtlasRepository(this);
-    this.graphBridges = new SqliteGraphBridgeRepository(this);
     this.designContexts = new SqliteDesignContextRepository(this);
     this.contextFacts = new SqliteContextFactRepository(this);
     this.designPrinciples = new SqliteDesignPrincipleRepository(this);
@@ -317,8 +310,6 @@ export class SqliteDnaStore implements StorageEngine {
     this.contextPolicies = new SqliteContextPolicyRepository(this);
     this.nodes = new SqliteNodeRepository(this);
     this.nodeVersions = new SqliteNodeVersionRepository(this);
-    this.edges = new SqliteEdgeRepository(this);
-    this.edgeVersions = new SqliteEdgeVersionRepository(this);
     this.phenotypes = new SqlitePhenotypeRepository(this);
     this.phenotypeVersions = new SqlitePhenotypeVersionRepository(this);
     this.speciesCompileArtifacts = new SqliteSpeciesCompileArtifactRepository(this);
@@ -412,12 +403,12 @@ export class SqliteDnaStore implements StorageEngine {
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
-      CREATE TABLE IF NOT EXISTS species_group_relations (
-        relation_id TEXT PRIMARY KEY,
-        graph_id TEXT NOT NULL,
-        source_group_id TEXT NOT NULL,
-        target_group_id TEXT NOT NULL,
-        relation_type TEXT NOT NULL,
+      CREATE TABLE IF NOT EXISTS design_relationships (
+        relationship_id TEXT PRIMARY KEY,
+        source_graph_id TEXT NOT NULL,
+        target_graph_id TEXT NOT NULL,
+        endpoint_level TEXT NOT NULL,
+        relationship_type TEXT NOT NULL,
         status TEXT NOT NULL,
         payload TEXT NOT NULL,
         created_at TEXT NOT NULL,
@@ -426,17 +417,6 @@ export class SqliteDnaStore implements StorageEngine {
       CREATE TABLE IF NOT EXISTS atlases (
         atlas_id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
-        status TEXT NOT NULL,
-        payload TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      );
-      CREATE TABLE IF NOT EXISTS graph_bridges (
-        bridge_id TEXT PRIMARY KEY,
-        atlas_id TEXT NOT NULL,
-        source_graph_id TEXT NOT NULL,
-        target_graph_id TEXT NOT NULL,
-        bridge_type TEXT NOT NULL,
         status TEXT NOT NULL,
         payload TEXT NOT NULL,
         created_at TEXT NOT NULL,
@@ -526,26 +506,6 @@ export class SqliteDnaStore implements StorageEngine {
       CREATE TABLE IF NOT EXISTS node_versions (
         node_version_id TEXT PRIMARY KEY,
         node_id TEXT NOT NULL,
-        graph_id TEXT NOT NULL,
-        version TEXT NOT NULL,
-        payload TEXT NOT NULL,
-        created_at TEXT NOT NULL
-      );
-      CREATE TABLE IF NOT EXISTS edges (
-        edge_id TEXT PRIMARY KEY,
-        graph_id TEXT NOT NULL,
-        from_node_id TEXT NOT NULL,
-        to_node_id TEXT NOT NULL,
-        edge_type TEXT NOT NULL,
-        status TEXT NOT NULL,
-        current_version TEXT NOT NULL,
-        payload TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      );
-      CREATE TABLE IF NOT EXISTS edge_versions (
-        edge_version_id TEXT PRIMARY KEY,
-        edge_id TEXT NOT NULL,
         graph_id TEXT NOT NULL,
         version TEXT NOT NULL,
         payload TEXT NOT NULL,
@@ -784,11 +744,9 @@ function summarizeSqliteGraphReset(store: SqliteDnaStore, graphId: string): Grap
       graphs: store.graphs.get(graphId) ? 1 : 0,
       nodes: ids.nodeIds.size,
       nodeVersions: ids.nodeVersionIds.size,
-      edges: ids.edgeIds.size,
-      edgeVersions: ids.edgeVersionIds.size,
+      designRelationships: ids.relationshipIds.size,
       speciesGroups: ids.groupIds.size,
       speciesGroupMemberships: ids.membershipIds.size,
-      speciesGroupRelations: ids.relationIds.size,
       speciesCompileArtifacts: ids.speciesArtifactIds.size,
       phenotypeCompileArtifacts: ids.phenotypeArtifactIds.size,
       phenotypes: ids.phenotypeIds.size,
@@ -799,7 +757,6 @@ function summarizeSqliteGraphReset(store: SqliteDnaStore, graphId: string): Grap
       outputReferences: ids.outputReferenceIds.size,
       reviewRecords: ids.reviewRecordIds.size,
       impactRecords: ids.impactRecordIds.size,
-      graphBridges: ids.graphBridgeIds.size,
       atlasGraphLinks: ids.atlasIds.size,
       phenotypeLibraryGraphBindings: ids.libraryBindingIds.size,
       phenotypeLibraryGraphIds: ids.libraryIds.size,
@@ -832,12 +789,9 @@ function applySqliteGraphReset(store: SqliteDnaStore, graphId: string) {
   deleteRowsByIds(store, "species_compile_artifacts", "artifact_id", ids.speciesArtifactIds);
   deleteRowsByIds(store, "phenotype_compile_artifacts", "artifact_id", ids.phenotypeArtifactIds);
   deleteRowsByIds(store, "node_versions", "node_version_id", ids.nodeVersionIds);
-  deleteRowsByIds(store, "edge_versions", "edge_version_id", ids.edgeVersionIds);
-  deleteRowsByIds(store, "edges", "edge_id", ids.edgeIds);
+  deleteRowsByIds(store, "design_relationships", "relationship_id", ids.relationshipIds);
   deleteRowsByIds(store, "species_group_memberships", "membership_id", ids.membershipIds);
-  deleteRowsByIds(store, "species_group_relations", "relation_id", ids.relationIds);
   deleteRowsByIds(store, "species_groups", "group_id", ids.groupIds);
-  deleteRowsByIds(store, "graph_bridges", "bridge_id", ids.graphBridgeIds);
   for (const atlasId of ids.atlasIds) {
     const atlas = store.atlases.get(atlasId);
     if (atlas) store.atlases.update({ ...atlas, graphIds: atlas.graphIds.filter((id) => id !== graphId), updatedAt: new Date().toISOString() });
@@ -859,18 +813,12 @@ function applySqliteGraphReset(store: SqliteDnaStore, graphId: string) {
 
 function collectSqliteGraphResetIds(store: SqliteDnaStore, graphId: string) {
   const nodeIds = new Set(store.nodes.listByGraph(graphId).map((node) => node.nodeId));
-  const edgeIds = new Set(store.edges.listByGraph(graphId).map((edge) => edge.edgeId));
+  const relationshipIds = new Set(store.designRelationships.listByGraph(graphId).map((relationship) => relationship.relationshipId));
   const groupIds = new Set(store.speciesGroups.listByGraph(graphId).map((group) => group.groupId));
   const membershipIds = new Set(store.speciesGroupMemberships.listByGraph(graphId).map((membership) => membership.membershipId));
-  const relationIds = new Set(store.speciesGroupRelations.listByGraph(graphId).map((relation) => relation.relationId));
   const nodeVersionIds = new Set(
     parseRows<NodeVersion>(store.db.prepare("SELECT payload FROM node_versions WHERE graph_id = ?").all(graphId) as Row[]).map(
       (version) => version.nodeVersionId
-    )
-  );
-  const edgeVersionIds = new Set(
-    parseRows<EdgeVersion>(store.db.prepare("SELECT payload FROM edge_versions WHERE graph_id = ?").all(graphId) as Row[]).map(
-      (version) => version.edgeVersionId
     )
   );
   const speciesArtifactIds = new Set(store.speciesCompileArtifacts.listByGraph(graphId).map((artifact) => artifact.artifactId));
@@ -889,23 +837,20 @@ function collectSqliteGraphResetIds(store: SqliteDnaStore, graphId: string) {
   const outputReferenceIds = new Set(store.outputReferences.listByGraph(graphId).map((reference) => reference.outputReferenceId));
   const reviewRecordIds = new Set(store.reviews.listByGraph(graphId).map((review) => review.reviewRecordId));
   const impactRecordIds = new Set(store.impacts.listByGraph(graphId).map((impact) => impact.impactRecordId));
-  const graphBridgeIds = new Set(store.graphBridges.listByGraph(graphId).map((bridge) => bridge.bridgeId));
   const atlasIds = new Set(store.atlases.list().filter((atlas) => atlas.graphIds.includes(graphId)).map((atlas) => atlas.atlasId));
   const libraryBindingIds = new Set(store.phenotypeLibraryGraphBindings.listByGraph(graphId).map((binding) => binding.bindingId));
   const libraryIds = new Set(store.phenotypeLibraries.list().filter((library) => library.graphIds.includes(graphId)).map((library) => library.libraryId));
   const deletedObjectIds = new Set([
     graphId,
     ...nodeIds,
-    ...edgeIds,
+    ...relationshipIds,
     ...groupIds,
     ...membershipIds,
-    ...relationIds,
     ...phenotypeIds,
     ...phenotypeVersionIds,
     ...speciesArtifactIds,
     ...phenotypeArtifactIds,
-    ...generationJobIds,
-    ...graphBridgeIds
+    ...generationJobIds
   ]);
   const allAssets = parseRows<AssetIndex>(store.db.prepare("SELECT payload FROM assets ORDER BY created_at, asset_id").all() as Row[]);
   const assetIds = new Set(allAssets.filter((asset) => deletedObjectIds.has(asset.linkedObjectId)).map((asset) => asset.assetId));
@@ -926,12 +871,10 @@ function collectSqliteGraphResetIds(store: SqliteDnaStore, graphId: string) {
   );
   return {
     nodeIds,
-    edgeIds,
+    relationshipIds,
     groupIds,
     membershipIds,
-    relationIds,
     nodeVersionIds,
-    edgeVersionIds,
     speciesArtifactIds,
     phenotypeArtifactIds,
     phenotypeIds,
@@ -941,7 +884,6 @@ function collectSqliteGraphResetIds(store: SqliteDnaStore, graphId: string) {
     outputReferenceIds,
     reviewRecordIds,
     impactRecordIds,
-    graphBridgeIds,
     atlasIds,
     libraryBindingIds,
     libraryIds,
@@ -956,25 +898,25 @@ function changeSetTouchesResetGraph(changeSet: ChangeSet, graphId: string, delet
   const payload = changeSet.payload as Record<string, unknown>;
   const graph = payload.graph as Graph | undefined;
   const node = payload.node as SpeciesNode | undefined;
-  const edge = payload.edge as EvolutionEdge | undefined;
+  const relationship = payload.relationship as DesignRelationship | undefined;
   const group = payload.group as SpeciesGroup | undefined;
   const membership = payload.membership as SpeciesGroupMembership | undefined;
-  const relation = payload.relation as SpeciesGroupRelation | undefined;
   const atlas = payload.atlas as Atlas | undefined;
-  const bridge = payload.bridge as GraphBridge | undefined;
   const attachment = payload.attachment as ContextAttachment | undefined;
   return Boolean(
     graph?.graphId === graphId ||
       node?.graphId === graphId ||
-      edge?.graphId === graphId ||
+      relationshipEndpointGraphIds(relationship).includes(graphId) ||
       group?.graphId === graphId ||
       membership?.graphId === graphId ||
-      relation?.graphId === graphId ||
       atlas?.graphIds?.includes(graphId) ||
-      bridge?.sourceGraphId === graphId ||
-      bridge?.targetGraphId === graphId ||
       (attachment && deletedObjectIds.has(attachment.targetId))
   );
+}
+
+function relationshipEndpointGraphIds(relationship: DesignRelationship | undefined): string[] {
+  if (!relationship) return [];
+  return [relationship.source.graphId, relationship.target.graphId];
 }
 
 function deleteRowsByIds(store: SqliteDnaStore, table: string, column: string, ids: Set<string>) {
@@ -1198,42 +1140,6 @@ class SqliteSpeciesGroupMembershipRepository implements SpeciesGroupMembershipRe
   }
 }
 
-class SqliteSpeciesGroupRelationRepository implements SpeciesGroupRelationRepository {
-  constructor(private readonly store: SqliteDnaStore) {}
-  create(relation: SpeciesGroupRelation) {
-    this.store.db
-      .prepare(
-        "INSERT INTO species_group_relations (relation_id, graph_id, source_group_id, target_group_id, relation_type, status, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
-      )
-      .run(
-        relation.relationId,
-        relation.graphId,
-        relation.sourceGroupId,
-        relation.targetGroupId,
-        relation.relationType,
-        relation.status,
-        JSON.stringify(relation),
-        relation.createdAt,
-        relation.updatedAt
-      );
-  }
-  update(relation: SpeciesGroupRelation) {
-    this.store.db
-      .prepare("UPDATE species_group_relations SET relation_type = ?, status = ?, payload = ?, updated_at = ? WHERE relation_id = ?")
-      .run(relation.relationType, relation.status, JSON.stringify(relation), relation.updatedAt, relation.relationId);
-  }
-  get(relationId: string) {
-    return parsePayload<SpeciesGroupRelation>(
-      this.store.db.prepare("SELECT payload FROM species_group_relations WHERE relation_id = ?").get(relationId) as Row | undefined
-    );
-  }
-  listByGraph(graphId: string) {
-    return parseRows<SpeciesGroupRelation>(
-      this.store.db.prepare("SELECT payload FROM species_group_relations WHERE graph_id = ? ORDER BY created_at, rowid").all(graphId) as Row[]
-    );
-  }
-}
-
 class SqliteAtlasRepository implements AtlasRepository {
   constructor(private readonly store: SqliteDnaStore) {}
   create(atlas: Atlas) {
@@ -1254,45 +1160,61 @@ class SqliteAtlasRepository implements AtlasRepository {
   }
 }
 
-class SqliteGraphBridgeRepository implements GraphBridgeRepository {
+class SqliteDesignRelationshipRepository implements DesignRelationshipRepository {
   constructor(private readonly store: SqliteDnaStore) {}
-  create(bridge: GraphBridge) {
+  create(relationship: DesignRelationship) {
     this.store.db
       .prepare(
-        "INSERT INTO graph_bridges (bridge_id, atlas_id, source_graph_id, target_graph_id, bridge_type, status, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO design_relationships (relationship_id, source_graph_id, target_graph_id, endpoint_level, relationship_type, status, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
       )
       .run(
-        bridge.bridgeId,
-        bridge.atlasId,
-        bridge.sourceGraphId,
-        bridge.targetGraphId,
-        bridge.bridgeType,
-        bridge.status,
-        JSON.stringify(bridge),
-        bridge.createdAt,
-        bridge.updatedAt
+        relationship.relationshipId,
+        relationship.source.graphId,
+        relationship.target.graphId,
+        relationship.source.type,
+        relationship.relationshipType,
+        relationship.status,
+        JSON.stringify(relationship),
+        relationship.createdAt,
+        relationship.updatedAt
       );
   }
-  update(bridge: GraphBridge) {
+  update(relationship: DesignRelationship) {
     this.store.db
-      .prepare("UPDATE graph_bridges SET bridge_type = ?, status = ?, payload = ?, updated_at = ? WHERE bridge_id = ?")
-      .run(bridge.bridgeType, bridge.status, JSON.stringify(bridge), bridge.updatedAt, bridge.bridgeId);
+      .prepare(
+        "UPDATE design_relationships SET source_graph_id = ?, target_graph_id = ?, endpoint_level = ?, relationship_type = ?, status = ?, payload = ?, updated_at = ? WHERE relationship_id = ?"
+      )
+      .run(
+        relationship.source.graphId,
+        relationship.target.graphId,
+        relationship.source.type,
+        relationship.relationshipType,
+        relationship.status,
+        JSON.stringify(relationship),
+        relationship.updatedAt,
+        relationship.relationshipId
+      );
   }
-  get(bridgeId: string) {
-    return parsePayload<GraphBridge>(this.store.db.prepare("SELECT payload FROM graph_bridges WHERE bridge_id = ?").get(bridgeId) as Row | undefined);
+  get(relationshipId: string) {
+    return parsePayload<DesignRelationship>(
+      this.store.db.prepare("SELECT payload FROM design_relationships WHERE relationship_id = ?").get(relationshipId) as Row | undefined
+    );
   }
-  listByAtlas(atlasId: string) {
-    return parseRows<GraphBridge>(
-      this.store.db.prepare("SELECT payload FROM graph_bridges WHERE atlas_id = ? ORDER BY created_at, rowid").all(atlasId) as Row[]
+  list() {
+    return parseRows<DesignRelationship>(
+      this.store.db.prepare("SELECT payload FROM design_relationships ORDER BY created_at, relationship_id").all() as Row[]
     );
   }
   listByGraph(graphId: string) {
-    return parseRows<GraphBridge>(
+    return parseRows<DesignRelationship>(
       this.store.db
-        .prepare(
-          "SELECT payload FROM graph_bridges WHERE source_graph_id = ? OR target_graph_id = ? ORDER BY created_at, rowid"
-        )
+        .prepare("SELECT payload FROM design_relationships WHERE source_graph_id = ? OR target_graph_id = ? ORDER BY created_at, relationship_id")
         .all(graphId, graphId) as Row[]
+    );
+  }
+  listByEndpoint(type: DesignRelationship["source"]["type"], id: string) {
+    return this.list().filter(
+      (relationship) => relationshipEndpointId(relationship.source) === `${type}:${id}` || relationshipEndpointId(relationship.target) === `${type}:${id}`
     );
   }
 }
@@ -1552,41 +1474,6 @@ class SqliteNodeVersionRepository implements NodeVersionRepository {
   }
   listByNode(nodeId: string) {
     return parseRows<NodeVersion>(this.store.db.prepare("SELECT payload FROM node_versions WHERE node_id = ? ORDER BY created_at").all(nodeId) as Row[]);
-  }
-}
-
-class SqliteEdgeRepository implements EdgeRepository {
-  constructor(private readonly store: SqliteDnaStore) {}
-  create(edge: EvolutionEdge) {
-    this.store.db
-      .prepare("INSERT INTO edges (edge_id, graph_id, from_node_id, to_node_id, edge_type, status, current_version, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(edge.edgeId, edge.graphId, edge.fromNodeId, edge.toNodeId, edge.edgeType, edge.status, edge.currentVersion, JSON.stringify(edge), edge.createdAt, edge.updatedAt);
-  }
-  update(edge: EvolutionEdge) {
-    this.store.db
-      .prepare("UPDATE edges SET edge_type = ?, status = ?, current_version = ?, payload = ?, updated_at = ? WHERE edge_id = ?")
-      .run(edge.edgeType, edge.status, edge.currentVersion, JSON.stringify(edge), edge.updatedAt, edge.edgeId);
-  }
-  get(edgeId: string) {
-    return parsePayload<EvolutionEdge>(this.store.db.prepare("SELECT payload FROM edges WHERE edge_id = ?").get(edgeId) as Row | undefined);
-  }
-  listByGraph(graphId: string) {
-    return parseRows<EvolutionEdge>(this.store.db.prepare("SELECT payload FROM edges WHERE graph_id = ? ORDER BY created_at, edge_id").all(graphId) as Row[]);
-  }
-}
-
-class SqliteEdgeVersionRepository implements EdgeVersionRepository {
-  constructor(private readonly store: SqliteDnaStore) {}
-  create(version: EdgeVersion) {
-    this.store.db
-      .prepare("INSERT INTO edge_versions (edge_version_id, edge_id, graph_id, version, payload, created_at) VALUES (?, ?, ?, ?, ?, ?)")
-      .run(version.edgeVersionId, version.edgeId, version.graphId, version.version, JSON.stringify(version), version.createdAt);
-  }
-  get(edgeVersionId: string) {
-    return parsePayload<EdgeVersion>(this.store.db.prepare("SELECT payload FROM edge_versions WHERE edge_version_id = ?").get(edgeVersionId) as Row | undefined);
-  }
-  listByEdge(edgeId: string) {
-    return parseRows<EdgeVersion>(this.store.db.prepare("SELECT payload FROM edge_versions WHERE edge_id = ? ORDER BY created_at").all(edgeId) as Row[]);
   }
 }
 
@@ -2235,9 +2122,9 @@ export function exportProject(store: SqliteDnaStore, outDir: string, options: Ex
   for (const atlas of store.atlases.list()) {
     const atlasDir = join(outDir, "atlases", atlas.atlasId);
     writeJson(join(atlasDir, "atlas.json"), atlas);
-    for (const bridge of store.graphBridges.listByAtlas(atlas.atlasId)) {
-      writeJson(join(atlasDir, "bridges", `${bridge.bridgeId}.json`), bridge);
-    }
+  }
+  for (const relationship of store.designRelationships.list()) {
+    writeJson(join(outDir, "relationships", `${relationship.relationshipId}.json`), relationship);
   }
   for (const graph of store.graphs.list()) {
     const graphDir = join(outDir, "graphs", graph.graphId);
@@ -2248,11 +2135,7 @@ export function exportProject(store: SqliteDnaStore, outDir: string, options: Ex
     for (const membership of store.speciesGroupMemberships.listByGraph(graph.graphId)) {
       writeJson(join(graphDir, "group-memberships", `${membership.membershipId}.json`), membership);
     }
-    for (const relation of store.speciesGroupRelations.listByGraph(graph.graphId)) {
-      writeJson(join(graphDir, "group-relations", `${relation.relationId}.json`), relation);
-    }
     for (const node of store.nodes.listByGraph(graph.graphId)) writeJson(join(graphDir, "nodes", `${node.nodeId}.json`), node);
-    for (const edge of store.edges.listByGraph(graph.graphId)) writeJson(join(graphDir, "edges", `${edge.edgeId}.json`), edge);
     for (const phenotype of store.phenotypes.listByGraph(graph.graphId)) writeJson(join(graphDir, "phenotypes", `${phenotype.phenotypeId}.json`), phenotype);
     for (const phenotype of store.phenotypes.listByGraph(graph.graphId)) {
       for (const version of store.phenotypeVersions.listByPhenotype(phenotype.phenotypeId)) {
@@ -2344,12 +2227,8 @@ export function importProject(store: SqliteDnaStore, inDir: string): void {
     for (const file of listJsonFiles(join(graphDir, "group-memberships"))) {
       store.speciesGroupMemberships.create(JSON.parse(readFileSync(file, "utf8")));
     }
-    for (const file of listJsonFiles(join(graphDir, "group-relations"))) {
-      store.speciesGroupRelations.create(JSON.parse(readFileSync(file, "utf8")));
-    }
     for (const file of listJsonFiles(join(graphDir, "facets"))) store.facetAssignments.create(JSON.parse(readFileSync(file, "utf8")));
     for (const file of listJsonFiles(join(graphDir, "nodes"))) store.nodes.create(JSON.parse(readFileSync(file, "utf8")));
-    for (const file of listJsonFiles(join(graphDir, "edges"))) store.edges.create(JSON.parse(readFileSync(file, "utf8")));
     for (const file of listJsonFiles(join(graphDir, "phenotypes"))) {
       const value = JSON.parse(readFileSync(file, "utf8"));
       if ("phenotypeVersionId" in value) store.phenotypeVersions.create(value);
@@ -2372,10 +2251,8 @@ export function importProject(store: SqliteDnaStore, inDir: string): void {
   for (const atlasDir of safeReadDirs(join(inDir, "atlases"))) {
     const atlas = readJsonIfExists<Atlas>(join(atlasDir, "atlas.json"));
     if (atlas) store.atlases.create(atlas);
-    for (const file of listJsonFiles(join(atlasDir, "bridges"))) {
-      store.graphBridges.create(JSON.parse(readFileSync(file, "utf8")));
-    }
   }
+  for (const file of listJsonFiles(join(inDir, "relationships"))) store.designRelationships.create(JSON.parse(readFileSync(file, "utf8")));
 }
 
 function validateExchangeManifest(manifest: Record<string, unknown> | undefined) {
@@ -2424,7 +2301,7 @@ function listJsonFiles(path: string) {
 
 export function createImpactRecordsFromSummaries(input: {
   graphId: string;
-  changedObjectType: "node" | "edge";
+  changedObjectType: "node" | "design-relationship";
   changedObjectId: string;
   changedVersionId: string;
   summaries: Array<{ objectType: "node" | "phenotype-version"; objectId: string; reason: string }>;

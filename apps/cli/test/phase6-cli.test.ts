@@ -22,7 +22,7 @@ function runDna(args: string[]) {
 }
 
 describe("Phase 6 CLI review and impact workflow", () => {
-  test("phenotype review and edge impact can be saved and queried", () => {
+  test("phenotype review and design relationship impact can be saved and queried", () => {
     const db = join(tempDir("cli-review-impact"), "dna.sqlite");
 
     runDna(["--db", db, "graph", "create", "--id", "graph-review", "--name", "Review", "--purpose", "review", "--yes"]);
@@ -69,17 +69,17 @@ describe("Phase 6 CLI review and impact workflow", () => {
     runDna([
       "--db",
       db,
-      "edge",
+      "relationship",
       "create",
-      "--graph",
-      "graph-review",
       "--id",
-      "edge-root-warning",
-      "--from",
-      "node-root",
-      "--to",
-      "node-warning",
-      "--delta",
+      "rel-root-warning",
+      "--source",
+      "species-node:graph-review:node-root",
+      "--target",
+      "species-node:graph-review:node-warning",
+      "--type",
+      "derives-from",
+      "--transfer-rule",
       "semantic=danger",
       "--yes"
     ]);
@@ -137,16 +137,16 @@ describe("Phase 6 CLI review and impact workflow", () => {
       "check",
       "--graph",
       "graph-review",
-      "--edge",
-      "edge-root-warning",
+      "--relationship",
+      "rel-root-warning",
       "--changed-version",
-      "edge-root-warning@1.0.0",
+      "rel-root-warning@1.0.0",
       "--yes"
     ]);
     expect(impacts).toContain("node-warning");
     expect(impacts).toContain(phenotypeVersionId);
 
-    const savedImpacts = runDna(["--db", db, "impact", "list", "--type", "edge", "--id", "edge-root-warning"]);
+    const savedImpacts = runDna(["--db", db, "impact", "list", "--type", "design-relationship", "--id", "rel-root-warning"]);
     expect(savedImpacts).toContain("node-warning");
     expect(savedImpacts).toContain(phenotypeVersionId);
     expect(savedImpacts).toContain('"reviewStatus": "pending"');

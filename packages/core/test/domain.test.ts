@@ -71,7 +71,7 @@ describe("DNA core domain schemas", () => {
       graphId: "graph-ui",
       nodeId: "node-icon-root",
       nodeVersionId: "nv-1",
-      edgeVersionTrace: [],
+      relationshipTrace: [],
       resolvedGeneSnapshot: { motifs: ["broken-ring"] },
       generationRecipe: { compilePolicy: "system-rule-first" },
       generationBrief: "mobile toolbar icon",
@@ -115,7 +115,7 @@ describe("DNA core behavior", () => {
       parentNodes: ["node-parent"],
       primaryParent: "node-parent",
       parentRoles: { "node-parent": "primary" },
-      incomingEdges: ["edge-1"],
+      incomingEdges: ["rel-1"],
       relatedNodes: [],
       currentVersion: "1.0.0",
       status: "active",
@@ -132,7 +132,7 @@ describe("DNA core behavior", () => {
       graph,
       node,
       parentSnapshots: [{ nodeVersionId: "nv-parent", snapshot: { color: "blue", grid: "24px" } }],
-      edgeDeltas: [{ edgeVersionId: "ev-1", delta: { color: "red", danger: true } }],
+      relationshipDeltas: [{ relationshipId: "rel-1", delta: { color: "red", danger: true } }],
       taskBrief: "generate warning icon",
       phenotypeType: "image-prompt"
     });
@@ -181,7 +181,7 @@ describe("DNA core behavior", () => {
     expect(distance.score).toBeGreaterThan(0);
   });
 
-  test("collects downstream impact for changed nodes and edges", () => {
+  test("collects downstream impact for changed nodes and design relationships", () => {
     const impacts = collectImpact({
       changed: { type: "node", id: "node-a", versionId: "nv-2" },
       nodes: [
@@ -189,9 +189,9 @@ describe("DNA core behavior", () => {
         { nodeId: "node-b", phenotypeVersionIds: ["pv-b"] },
         { nodeId: "node-c", phenotypeVersionIds: ["pv-c"] }
       ],
-      edges: [
-        { edgeId: "edge-ab", fromNodeId: "node-a", toNodeId: "node-b" },
-        { edgeId: "edge-bc", fromNodeId: "node-b", toNodeId: "node-c" }
+      relationships: [
+        { relationshipId: "rel-ab", fromNodeId: "node-a", toNodeId: "node-b" },
+        { relationshipId: "rel-bc", fromNodeId: "node-b", toNodeId: "node-c" }
       ]
     });
 

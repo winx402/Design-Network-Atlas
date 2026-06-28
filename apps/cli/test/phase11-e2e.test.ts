@@ -105,42 +105,36 @@ describe("Phase 11 full system acceptance", () => {
       "--yes"
     ]);
 
-    const beforeEdge = runDna(["--db", db, "node", "show", "--id", "node-warning"]);
-    expect(beforeEdge).toContain('"lineageStatus": "needs-edge"');
+    const beforeRelationship = runDna(["--db", db, "node", "show", "--id", "node-warning"]);
+    expect(beforeRelationship).toContain('"lineageStatus": "needs-edge"');
 
     runDna([
       "--db",
       db,
-      "edge",
+      "relationship",
       "create",
-      "--graph",
-      "graph-ui",
       "--id",
-      "edge-root-warning",
-      "--from",
-      "node-root-a",
-      "--to",
-      "node-warning",
+      "rel-root-warning",
+      "--source",
+      "species-node:graph-ui:node-root-a",
+      "--target",
+      "species-node:graph-ui:node-warning",
       "--type",
-      "specialize",
+      "derives-from",
       "--direction",
-      "warning specialization",
-      "--operation",
-      "override",
-      "--delta",
+      "source-to-target",
+      "--transfer-rule",
       "semantic=danger",
-      "--value-resolution",
-      "color=override",
-      "--preserve",
+      "--must-preserve",
       "broken-ring",
-      "--avoid",
+      "--must-avoid",
       "photorealistic",
       "--yes"
     ]);
-    const edge = runDna(["--db", db, "edge", "show", "--id", "edge-root-warning"]);
-    expect(edge).toContain("warning specialization");
-    expect(edge).toContain("broken-ring");
-    expect(edge).toContain("photorealistic");
+    const relationship = runDna(["--db", db, "relationship", "show", "--id", "rel-root-warning"]);
+    expect(relationship).toContain("semantic=danger");
+    expect(relationship).toContain("broken-ring");
+    expect(relationship).toContain("photorealistic");
 
     const generatedOne = JSON.parse(
       runDna([

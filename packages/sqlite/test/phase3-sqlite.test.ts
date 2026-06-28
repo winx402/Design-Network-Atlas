@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { createDefaultGraph, createDefaultSpeciesNode, EdgeVersion } from "@dna/core";
+import { createDefaultDesignRelationship, createDefaultGraph, createDefaultSpeciesNode } from "@dna/core";
 import { createDnaServices } from "@dna/storage";
 import { SqliteDnaStore } from "@dna/sqlite";
 
@@ -26,8 +26,7 @@ describe("Phase 3 SQLite storage requirements", () => {
       "gene_templates",
       "nodes",
       "node_versions",
-      "edges",
-      "edge_versions",
+      "design_relationships",
       "node_relations",
       "phenotype_types",
       "phenotypes",
@@ -96,26 +95,27 @@ describe("Phase 3 SQLite storage requirements", () => {
     store.close();
   });
 
-  test("edge versions can be created and queried without mutating the edge", () => {
-    const store = new SqliteDnaStore(tempDb("edge-version"));
+  test("design relationships can be created and queried by graph", () => {
+    const store = new SqliteDnaStore(tempDb("design-relationship"));
     store.migrate();
-    const edgeVersion: EdgeVersion = {
-      edgeVersionId: "edge-1@1.0.0",
-      edgeId: "edge-1",
-      graphId: "graph-edge",
-      version: "1.0.0",
-      deltaGenes: { color: "red" },
-      valueResolution: { color: "override" },
-      mustPreserve: ["broken-ring"],
-      mustAvoid: ["photorealistic"],
-      changeSummary: "initial edge version",
-      createdAt: "2026-06-26T00:00:00.000Z"
-    };
+    const relationship = createDefaultDesignRelationship({
+      relationshipId: "rel-1",
+      source: { type: "species-node", graphId: "graph-relationship", nodeId: "node-parent" },
+      target: { type: "species-node", graphId: "graph-relationship", nodeId: "node-child" },
+      relationshipType: "derives-from",
+      designContract: {
+        transferRule: "child keeps parent silhouette",
+        mustPreserve: ["broken-ring"],
+        mustAvoid: ["photorealistic"],
+        divergenceRule: "",
+        reviewQuestions: []
+      }
+    });
 
-    store.edgeVersions.create(edgeVersion);
+    store.designRelationships.create(relationship);
 
-    expect(store.edgeVersions.get("edge-1@1.0.0")?.deltaGenes).toEqual({ color: "red" });
-    expect(store.edgeVersions.listByEdge("edge-1")).toHaveLength(1);
+    expect(store.designRelationships.get("rel-1")?.designContract.mustPreserve).toEqual(["broken-ring"]);
+    expect(store.designRelationships.listByGraph("graph-relationship")).toHaveLength(1);
     store.close();
   });
 
@@ -131,7 +131,7 @@ describe("Phase 3 SQLite storage requirements", () => {
       version: "1.0.0",
       baseTemplateVersions: [],
       parentNodeVersions: [],
-      incomingEdgeVersions: [],
+      incomingRelationshipIds: [],
       ownGeneDelta: {},
       resolvedGeneSnapshot: {},
       constraintSnapshot: {},

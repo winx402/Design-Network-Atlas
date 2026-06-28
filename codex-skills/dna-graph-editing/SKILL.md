@@ -16,7 +16,7 @@ For Chinese responses, keep these review anchors when useful: `当前图谱`, `�
 
 Read or ask for the current graph context before durable recommendations:
 
-- Graph purpose, roots, SpeciesGroup boundaries, SpeciesNode entries, EvolutionEdge links, and parent roles.
+- Graph purpose, roots, SpeciesGroup boundaries, SpeciesNode entries, DesignRelationship endpoints, and parent roles.
 - Existing facets, templates, context records, ContextReference entries, and ContextReviewRubric entries.
 - Existing Phenotype, PhenotypeVersion, SpeciesCompileArtifact, PhenotypeCompileArtifact, OutputReference, PhenotypeLibrary, and routing policy records when the change may affect generated results or storage.
 - Known review records and impact records.
@@ -28,10 +28,10 @@ If context is partial, state what cannot be assessed and keep high-risk changes 
 Classify the edit before designing the patch:
 
 - single-node: one SpeciesNode label, description, local genes, motifs, status, or tags.
-- single-edge: one EvolutionEdge delta, preservation rule, value resolution, or badcase.
+- single-relationship: one DesignRelationship contract, preservation rule, divergence rule, or badcase.
 - single-group: one SpeciesGroup membership, shared fact, or local group relation.
 - multi-group: several groups, cross-group relations, shared template revisions, or broad motif changes.
-- cross-graph: GraphBridge, atlas-level relationship, shared library, or synchronized visual family across graphs.
+- cross-graph: graph-level DesignRelationship, shared library, or synchronized visual family across graphs.
 - context: DesignContext, ContextFact, ContextMotif, DesignPrinciple, ContextReference, or ContextReviewRubric.
 - compile-policy: CompilePolicy, compileMode, fixed snapshot, resolution rule, Agent-assisted conflict handling, or artifact trace behavior.
 - storage-routing: PhenotypeLibrary binding, StorageMount, ExternalLibraryMapping, LibraryRoutingPolicy, OutputReference, or AssetIndex metadata.
@@ -52,8 +52,8 @@ Classify the edit before designing the patch:
 Use these invariants to protect existing graph meaning. This skill applies the modeling principles to edits; it does not repeat the full modeling workflow for a new graph.
 
 - phenotype readiness: New SpeciesNode additions must still be drawable, reviewable, and tied to an expected first phenotype type. If the requested node is only a prompt, file variant, output angle, or one-off deliverable, redirect it to Phenotype, PhenotypeVersion, OutputReference, AssetIndex, context, or unresolved.
-- abstraction downgrade: Abstract concepts requested as nodes, such as visual language, UI system, ecosystem, production workflow, review standard, material library, storage directory, page framework, or counter relationship, should move to DesignContext, ContextFact, ContextReviewRubric, SpeciesGroup, SpeciesGroupRelation, GraphBridge, facet/template, or phenotype library/routing when appropriate.
-- inheritance safety: Reparenting must not create fake inheritance for readability. EvolutionEdge is only valid when the child is genuinely derived, specialized, fused, or produced as a stable variant of the parent.
+- abstraction downgrade: Abstract concepts requested as nodes, such as visual language, UI system, ecosystem, production workflow, review standard, material library, storage directory, page framework, or counter relationship, should move to DesignContext, ContextFact, ContextReviewRubric, SpeciesGroup, DesignRelationship, facet/template, or phenotype library/routing when appropriate.
+- inheritance safety: Reparenting must not create fake inheritance for readability. DesignRelationship is only valid when same-level core entities have a real design-language contract.
 - storage decoupling: Storage/routing edits must not alter graph identity. LibraryRoutingPolicy, StorageMount, ExternalLibraryMapping, OutputReference, and AssetIndex changes can affect where results live, but they do not rename or redefine SpeciesNode identity.
 - impact analysis: Existing SpeciesCompileArtifact, PhenotypeCompileArtifact, PhenotypeVersion, ReviewRecord, ImpactRecord, OutputReference, and routing records must be marked stale, unaffected, or requiring review explicitly.
 - history preservation: Split, merge, rename, archive, and refactor edits must preserve stable identity and version history rather than silently overwriting what accepted outputs mean.
@@ -102,7 +102,7 @@ Return an edit proposal with these fields:
 - scopeLevel: single-node, single-edge, single-group, multi-group, cross-graph, context, compile-policy, storage-routing, or mixed.
 - reasonableness: pass, concern, or reject with rationale.
 - editInvariantCheck: phenotype readiness, abstraction downgrade, inheritance safety, storage decoupling, impact analysis, and history preservation, each marked pass, concern, reject, or not applicable with a short reason.
-- impactAnalysis: downstream SpeciesNode, EvolutionEdge, context, compile artifact, PhenotypeVersion outdated, OutputReference, review, and routing implications.
+- impactAnalysis: downstream SpeciesNode, DesignRelationship, context, compile artifact, PhenotypeVersion outdated, OutputReference, review, and routing implications.
 - riskLevel: low, medium, high, or structural with concrete reason.
 - alternatives: safer or more expressive options when risk is not low.
 - compilePlan: whether SpeciesCompileArtifact or PhenotypeCompileArtifact should be refreshed, fixed, reviewed, or left unchanged.

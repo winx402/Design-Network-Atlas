@@ -16,18 +16,17 @@ import {
   createDefaultContextReviewRubric,
   createDefaultDesignContext,
   createDefaultDesignPrinciple,
+  createDefaultDesignRelationship,
   createDefaultFacetAssignment,
   createDefaultFacetDefinition,
   createDefaultFacetSchema,
   createDefaultGraph,
-  createDefaultGraphBridge,
   createDefaultOutputReference,
   createDefaultPhenotype,
   createDefaultPhenotypeVersion,
   createDefaultProposal,
   createDefaultSpeciesGroup,
   createDefaultSpeciesGroupMembership,
-  createDefaultSpeciesGroupRelation,
   createDefaultSpeciesNode,
   createGenerationJob,
   createImpactRecord,
@@ -50,6 +49,11 @@ function seedExchangeProject(store: SqliteDnaStore) {
     name: "Exchange Graph",
     purpose: "manifest contract",
     rootNodes: ["node-exchange"]
+  });
+  const relatedGraph = createDefaultGraph({
+    graphId: "graph-exchange-related",
+    name: "Related Exchange Graph",
+    purpose: "manifest relationship target"
   });
   const node = createDefaultSpeciesNode({
     graphId: graph.graphId,
@@ -91,6 +95,7 @@ function seedExchangeProject(store: SqliteDnaStore) {
   });
 
   store.graphs.create(graph);
+  store.graphs.create(relatedGraph);
   store.nodes.create(node);
   store.facetDefinitions.create(createDefaultFacetDefinition({ facetId: "facet-tone", name: "Tone" }));
   store.facetSchemas.create(createDefaultFacetSchema({ facetSchemaId: "facet-schema-ui", name: "UI Facets", facetIds: ["facet-tone"] }));
@@ -112,23 +117,22 @@ function seedExchangeProject(store: SqliteDnaStore) {
       nodeId: node.nodeId
     })
   );
-  store.speciesGroupRelations.create(
-    createDefaultSpeciesGroupRelation({
-      relationId: "relation-exchange",
-      graphId: graph.graphId,
-      sourceGroupId: "group-a",
-      targetGroupId: "group-b",
-      relationType: "references"
+  store.designRelationships.create(
+    createDefaultDesignRelationship({
+      relationshipId: "relationship-groups-exchange",
+      source: { type: "species-group", graphId: graph.graphId, groupId: "group-a" },
+      target: { type: "species-group", graphId: graph.graphId, groupId: "group-b" },
+      relationshipType: "references"
     })
   );
-  store.atlases.create(createDefaultAtlas({ atlasId: "atlas-exchange", name: "Exchange Atlas", purpose: "portable", graphIds: [graph.graphId] }));
-  store.graphBridges.create(
-    createDefaultGraphBridge({
-      bridgeId: "bridge-exchange",
-      atlasId: "atlas-exchange",
-      sourceGraphId: graph.graphId,
-      targetGraphId: graph.graphId,
-      bridgeType: "references-species"
+  store.atlases.create(createDefaultAtlas({ atlasId: "atlas-exchange", name: "Exchange Atlas", purpose: "portable", graphIds: [graph.graphId, relatedGraph.graphId] }));
+  store.designRelationships.create(
+    createDefaultDesignRelationship({
+      relationshipId: "relationship-graph-exchange",
+      source: { type: "graph", graphId: graph.graphId },
+      target: { type: "graph", graphId: relatedGraph.graphId },
+      relationshipType: "references",
+      metadata: { atlasId: "atlas-exchange" }
     })
   );
   store.contextFacts.create(createDefaultContextFact({ factId: "fact-exchange", factType: "symbol-rule", statement: "Crescents stay readable." }));
@@ -262,6 +266,7 @@ describe("Phase 20 versioned exchange format manifest", () => {
         "facets",
         "contexts",
         "atlases",
+        "design-relationships",
         "species-groups",
         "compile-artifacts",
         "generation-jobs",
@@ -283,10 +288,9 @@ describe("Phase 20 versioned exchange format manifest", () => {
       "contexts/review-rubrics",
       "contexts/attachments",
       "contexts/policies",
-      "atlases/atlas-exchange/bridges",
+      "relationships",
       "graphs/graph-exchange/groups",
       "graphs/graph-exchange/group-memberships",
-      "graphs/graph-exchange/group-relations",
       "graphs/graph-exchange/compile/species",
       "graphs/graph-exchange/compile/phenotypes",
       "graphs/graph-exchange/generation-jobs",
@@ -302,13 +306,14 @@ describe("Phase 20 versioned exchange format manifest", () => {
     expect(target.graphs.get("graph-exchange")?.name).toBe("Exchange Graph");
     expect(target.facetAssignments.get("facet-assignment-node")?.values).toMatchObject({ "facet-tone": "restrained" });
     expect(target.designContexts.get("context-exchange")?.factIds).toEqual(["fact-exchange"]);
-    expect(target.atlases.get("atlas-exchange")?.graphIds).toEqual(["graph-exchange"]);
+    expect(target.atlases.get("atlas-exchange")?.graphIds).toEqual(["graph-exchange", "graph-exchange-related"]);
     expect(target.speciesGroups.listByGraph("graph-exchange").map((group) => group.groupId).sort()).toEqual(["group-a", "group-b"]);
     expect(target.speciesGroupMemberships.listByGraph("graph-exchange").map((membership) => membership.membershipId)).toEqual([
       "membership-exchange"
     ]);
-    expect(target.speciesGroupRelations.listByGraph("graph-exchange").map((relation) => relation.relationId)).toEqual([
-      "relation-exchange"
+    expect(target.designRelationships.listByGraph("graph-exchange").map((relationship) => relationship.relationshipId).sort()).toEqual([
+      "relationship-graph-exchange",
+      "relationship-groups-exchange"
     ]);
     expect(target.speciesCompileArtifacts.get("sca-exchange")?.compileTarget).toBe("species-snapshot");
     expect(target.phenotypeCompileArtifacts.get("pca-exchange")?.speciesCompileArtifactId).toBe("sca-exchange");
