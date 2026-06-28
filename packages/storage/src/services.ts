@@ -1392,15 +1392,15 @@ function applyDesignRelationshipChangeSet(store: DnaServiceStore, changeSet: Cha
     const targetNodeId = relationship.target.type === "species-node" ? relationship.target.nodeId : undefined;
     const target = targetNodeId ? store.nodes.get(targetNodeId) : undefined;
     if (target) {
-      const incomingEdges = target.incomingEdges.includes(relationship.relationshipId)
-      ? target.incomingEdges
-      : [...target.incomingEdges, relationship.relationshipId];
+      const incomingRelationshipIds = target.incomingRelationshipIds.includes(relationship.relationshipId)
+        ? target.incomingRelationshipIds
+        : [...target.incomingRelationshipIds, relationship.relationshipId];
       store.nodes.update({
         ...target,
-        incomingEdges,
+        incomingRelationshipIds,
         lineageStatus: resolveLineageStatus({
           parentNodes: target.parentNodes,
-          incomingEdges,
+          incomingRelationshipIds,
           primaryParent: target.primaryParent
         }),
         updatedAt: nowIso()

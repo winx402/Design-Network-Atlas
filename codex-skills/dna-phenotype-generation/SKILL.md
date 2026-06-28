@@ -5,7 +5,7 @@ description: Guide generation or registration of a DNA design output from an exi
 
 # DNA Phenotype Generation
 
-Use this formal MVP scenario skill when the graph already exists and the user wants a generated or curated design result. This skill does not build the graph. If the species, edge, facet, context, or relation model is missing, output a blocking question or recommend switching to `dna-graph-modeling` or `dna-graph-editing`.
+Use this formal MVP scenario skill when the graph already exists and the user wants a generated or curated design result. This skill does not build the graph. If the species, DesignRelationship, facet, context, or relation model is missing, output a blocking question or recommend switching to `dna-graph-modeling` or `dna-graph-editing`.
 
 The job is to orchestrate generation, review, confirmation, and registration through DNA concepts. It is not CLI help.
 

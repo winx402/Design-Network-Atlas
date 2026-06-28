@@ -6,7 +6,7 @@ export const IsoDateSchema = z.string().datetime();
 
 export const GraphStatusSchema = z.enum(["draft", "active", "archived"]);
 export const NodeStatusSchema = z.enum(["draft", "active", "deprecated", "archived"]);
-export const LineageStatusSchema = z.enum(["complete", "species-first", "needs-edge", "needs-review", "multi-origin"]);
+export const LineageStatusSchema = z.enum(["complete", "species-first", "needs-relationship", "needs-review", "multi-origin"]);
 export const ParentRoleSchema = z.enum([
   "primary",
   "style",
@@ -156,7 +156,7 @@ export const CompileLayerSchema = z.enum([
 export const ResolutionRuleSchema = z.enum(["override", "preserve", "merge", "weaken", "translate", "exclude", "manual", "llm-review"]);
 export const TraceDecisionSchema = z.enum(["included", "excluded", "weakened", "translated", "merged", "manual", "llm-suggested"]);
 export const SpeciesGroupTypeSchema = z.enum(["domain", "family", "collection", "layer", "system"]);
-export const SpeciesGroupMembershipRoleSchema = z.enum(["primary", "reference", "bridge", "source", "target"]);
+export const SpeciesGroupMembershipRoleSchema = z.enum(["primary", "reference", "connector", "source", "target"]);
 export const FacetValueTypeSchema = z.enum(["string", "number", "boolean", "enum", "json"]);
 export const FacetAssignmentTargetTypeSchema = z.enum([
   "atlas",
@@ -571,7 +571,7 @@ export const SpeciesNodeSchema = z
     parentNodes: z.array(z.string()).default([]),
     primaryParent: z.string().nullable().optional(),
     parentRoles: z.record(z.string(), ParentRoleSchema).default({}),
-    incomingEdges: z.array(z.string()).default([]),
+    incomingRelationshipIds: z.array(z.string()).default([]),
     relatedNodes: z.array(z.string()).default([]),
     currentVersion: z.string().min(1),
     status: NodeStatusSchema,

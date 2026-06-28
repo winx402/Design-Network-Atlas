@@ -21,7 +21,7 @@ function speciesNode() {
     parentNodes: ["node-root"],
     primaryParent: "node-root",
     parentRoles: { "node-root": "primary" },
-    incomingEdges: ["rel-warning"],
+    incomingRelationshipIds: ["rel-warning"],
     relatedNodes: [],
     currentVersion: "1.0.0",
     status: "active",

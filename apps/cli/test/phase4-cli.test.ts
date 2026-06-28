@@ -94,7 +94,7 @@ describe("Phase 4 CLI local workflow", () => {
     ]);
 
     const beforeRelationship = runDna(["--db", db, "node", "show", "--id", "node-child"]);
-    expect(beforeRelationship).toContain('"lineageStatus": "needs-edge"');
+    expect(beforeRelationship).toContain('"lineageStatus": "needs-relationship"');
 
     runDna([
       "--db",

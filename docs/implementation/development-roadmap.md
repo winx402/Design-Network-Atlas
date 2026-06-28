@@ -28,7 +28,7 @@ Phase 0-16 已完成并由测试覆盖。本文件保留为历史执行计划、
 | Phase 1 | 核心领域模型 | 完整实现核心对象、schema、状态机、facets | schema/unit tests |
 | Phase 2 | Service / Storage Ports | 建立 application service、repository ports、change-set | service unit tests、contract tests |
 | Phase 3 | SQLite 本地存储 | 实现 migration、repository、事务、版本不可变 | SQLite integration tests |
-| Phase 4 | CLI 本地闭环 | 实现 graph/template/node/edge/import/export | CLI integration tests |
+| Phase 4 | CLI 本地闭环 | 实现 graph/template/node/relationship/import/export | CLI integration tests |
 | Phase 5 | 编译与表型 | 实现 compile policy、generation job、phenotype/version/asset | golden tests、E2E prompt/brief |
 | Phase 6 | 审查与影响分析 | 实现 review、style distance、impact records | review/impact unit + integration |
 | Phase 7 | Codex Skill | Skill 将复杂设计场景映射到 DNA 图谱建模、编辑、审阅和写入策略 | scenario skill tests |
@@ -182,8 +182,7 @@ Phase 0-16 已完成并由测试覆盖。本文件保留为历史执行计划、
 - `gene_templates`
 - `nodes`
 - `node_versions`
-- `edges`
-- `edge_versions`
+- `design_relationships`
 - `node_relations`
 - `phenotype_types`
 - `phenotypes`
@@ -226,7 +225,7 @@ Phase 0-16 已完成并由测试覆盖。本文件保留为历史执行计划、
 - `dna graph create/list/show/archive`
 - `dna template install/list/export`
 - `dna node create/list/show/update/archive`
-- `dna edge create/list/show/update/archive`
+- `dna relationship create/list/show`
 - `dna export`
 - `dna import`
 
@@ -237,7 +236,7 @@ Phase 0-16 已完成并由测试覆盖。本文件保留为历史执行计划、
 - 安装内置模板包。
 - 创建多个 root node。
 - 创建 species-first 节点。
-- 后补 edge 使节点进入 complete。
+- 后补节点级 DesignRelationship 使节点进入 complete。
 - 多父节点和 parent role 持久化。
 - Git 目录 export/import 后对象一致。
 
@@ -282,7 +281,7 @@ Phase 0-16 已完成并由测试覆盖。本文件保留为历史执行计划、
 
 验收：
 
-- 表型版本能回答来自哪个 graph、node version、edge version trace、compile policy、prompt snapshot。
+- 表型版本能回答来自哪个 graph、node version、relationship trace、compile policy、prompt snapshot。
 
 ## Phase 6：审查与影响分析
 
@@ -301,7 +300,7 @@ Phase 0-16 已完成并由测试覆盖。本文件保留为历史执行计划、
 - 表型审查输出约束违反。
 - 风格距离输出 shared/different motifs 和 constraints。
 - 父物种变化影响子物种和表型版本。
-- edge 变化影响目标物种及下游。
+- DesignRelationship 变化影响目标物种及下游。
 - impact records 可持久化和查询。
 
 验收：
@@ -572,7 +571,7 @@ E2E 场景：
 - `dna changeset apply <changeSetId>`
 - `dna changeset discard <changeSetId>`
 - 全局 `--change-set <id>`，让 `--mode changeset-apply` 可以真正引用既有 preview change-set。
-- graph/node/edge create 在 `changeset-apply` 模式下不要求重复传入 create 参数。
+- graph/node/relationship create 在 `changeset-apply` 模式下不要求重复传入 create 参数。
 - Git-friendly export/import 增加顶层 `change-sets/`，让 pending change-sets 能进入代码审查或跨库迁移。
 
 测试：
@@ -584,6 +583,6 @@ E2E 场景：
 
 验收：
 
-- 单个 graph/node/edge preview 可以被审阅、确认或废弃。
+- 单个 graph/node/relationship preview 可以被审阅、确认或废弃。
 - 用户可以先用 preview change-set 承载物种草案，再由人工决定是否 apply。
 - 多节点/多边 proposal/batch、tree diff 和团队审批仍是后续阶段，不混入 Phase 16 完成边界。

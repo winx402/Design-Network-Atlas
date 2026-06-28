@@ -203,11 +203,13 @@ describe("Phase 1 status and version rules", () => {
     expect(canTransitionStatus("node", "archived", "active")).toBe(false);
   });
 
-  test("lineage status is derived from parent and edge completeness", () => {
-    expect(resolveLineageStatus({ parentNodes: [], incomingEdges: [], primaryParent: undefined })).toBe("species-first");
-    expect(resolveLineageStatus({ parentNodes: ["node-a"], incomingEdges: [], primaryParent: "node-a" })).toBe("needs-edge");
-    expect(resolveLineageStatus({ parentNodes: ["node-a"], incomingEdges: ["edge-a"], primaryParent: "node-a" })).toBe("complete");
-    expect(resolveLineageStatus({ parentNodes: ["node-a", "node-b"], incomingEdges: ["edge-a", "edge-b"], primaryParent: undefined })).toBe("multi-origin");
+  test("lineage status is derived from parent and design relationship completeness", () => {
+    expect(resolveLineageStatus({ parentNodes: [], incomingRelationshipIds: [], primaryParent: undefined })).toBe("species-first");
+    expect(resolveLineageStatus({ parentNodes: ["node-a"], incomingRelationshipIds: [], primaryParent: "node-a" })).toBe("needs-relationship");
+    expect(resolveLineageStatus({ parentNodes: ["node-a"], incomingRelationshipIds: ["rel-a"], primaryParent: "node-a" })).toBe("complete");
+    expect(resolveLineageStatus({ parentNodes: ["node-a", "node-b"], incomingRelationshipIds: ["rel-a", "rel-b"], primaryParent: undefined })).toBe(
+      "multi-origin"
+    );
   });
 
   test("semantic versions bump predictably and compare outdated versions", () => {

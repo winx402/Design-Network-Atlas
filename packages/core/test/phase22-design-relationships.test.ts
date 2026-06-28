@@ -102,6 +102,32 @@ describe("Phase 22 PRD-14 unified design relationships", () => {
     expect(() => schema.parse({ ...parsed, direction: "child-to-parent" })).toThrow();
   });
 
+  test("uses relationship vocabulary for node lineage readiness", () => {
+    const parsed = core.SpeciesNodeSchema.parse({
+      nodeId: "node-child",
+      graphId: "graph-ui",
+      name: "Child",
+      category: "component",
+      level: "species",
+      parentNodes: ["node-parent"],
+      incomingRelationshipIds: [],
+      currentVersion: "1.0.0",
+      status: "draft",
+      lineageStatus: "needs-relationship",
+      constraints: {},
+      facets: {},
+      createdAt: now,
+      updatedAt: now
+    });
+
+    expect(parsed.incomingRelationshipIds).toEqual([]);
+    expect((parsed as any).incomingEdges).toBeUndefined();
+    expect(core.resolveLineageStatus({ parentNodes: ["node-parent"], incomingRelationshipIds: [], primaryParent: "node-parent" })).toBe(
+      "needs-relationship"
+    );
+    expect(core.canTransitionStatus("design-relationship", "draft", "active")).toBe(true);
+  });
+
   test("no longer exposes legacy relationship schemas from the core package", () => {
     expect((core as any).EvolutionEdgeSchema).toBeUndefined();
     expect((core as any).EdgeVersionSchema).toBeUndefined();
@@ -118,21 +144,45 @@ describe("Phase 22 PRD-14 public/runtime surface scan", () => {
       "docs/design/concept-registry.md",
       "docs/design/system-architecture.md",
       "docs/design/write-boundary-matrix.md",
+      "docs/implementation/development-roadmap.md",
+      "docs/testing/test-strategy.md",
       "codex-skills/dna-graph-modeling/SKILL.md",
       "codex-skills/dna-graph-editing/SKILL.md",
+      "codex-skills/dna-phenotype-generation/SKILL.md",
       "packages/core/src/schemas.ts",
       "packages/core/src/defaults.ts",
+      "packages/core/src/status.ts",
       "packages/core/src/modeling-batch.ts",
       "packages/storage/src/index.ts",
       "packages/storage/src/services.ts",
       "packages/sqlite/src/store.ts",
       "apps/cli/src/index.ts"
     ];
-    const forbidden = ["EvolutionEdge", "EdgeVersion", "SpeciesGroupRelation", "GraphBridge", "graph-bridge", "evolution-edge", "species-group-relation"];
+    const forbidden = [
+      /\bEvolutionEdge\b/,
+      /\bEdgeVersion\b/,
+      /\bSpeciesGroupRelation\b/,
+      /\bGraphBridge\b/,
+      /\bgraph-bridge\b/,
+      /\bevolution-edge\b/,
+      /\bspecies-group-relation\b/,
+      /\bincomingEdges\b/,
+      /\bneeds-edge\b/,
+      /\bedges?\b/i,
+      /\bbridges?\b/i,
+      /\bgraph\/node\/edge\b/,
+      /\bgraph, node, and edge\b/i,
+      /\bnode and edge\b/i,
+      /\batlases\/<atlas_id>\/bridges\//,
+      /\bgraphs\/<graph_id>\/group-relations\//,
+      /\bgraphs\/<graph_id>\/edges\//,
+      /\bdna edge\b/,
+      /\bedge version trace\b/i
+    ];
 
     const matches = files.flatMap((file) => {
       const body = readFileSync(join(projectRoot, file), "utf8");
-      return forbidden.filter((term) => body.includes(term)).map((term) => `${file}: ${term}`);
+      return forbidden.filter((term) => term.test(body)).map((term) => `${file}: ${term}`);
     });
 
     expect(matches).toEqual([]);

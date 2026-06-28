@@ -516,7 +516,7 @@ groupMember
   .option("--graph <graphId>", "graph id")
   .option("--group <groupId>", "species group id")
   .option("--node <nodeId>", "species node id")
-  .option("--role <role>", "membership role: primary, reference, bridge, source, target", "primary")
+  .option("--role <role>", "membership role: primary, reference, connector, source, target", "primary")
   .option("--status <status>", "membership status", "active")
   .action((options, command) => {
     const store = openStore(command);
@@ -1561,7 +1561,7 @@ impact
   }
   store.close();
 });
-impact.command("list").requiredOption("--type <objectType>", "node or edge").requiredOption("--id <objectId>", "changed object id").action((options, command) => {
+impact.command("list").requiredOption("--type <objectType>", "node or design-relationship").requiredOption("--id <objectId>", "changed object id").action((options, command) => {
   if (options.type !== "node" && options.type !== "design-relationship") throw new Error("--type must be node or design-relationship");
   const store = openStore(command);
   console.log(JSON.stringify(store.impacts.listByChangedObject(options.type, options.id), null, 2));

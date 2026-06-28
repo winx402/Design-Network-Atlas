@@ -31,7 +31,7 @@ For Chinese responses, keep these review anchors when useful: `直接生效`, `�
 | Where will generated results or files be registered? | PhenotypeLibrary, StorageMount, OutputReference, AssetIndex |
 | What compiled package should generation/review consume? | SpeciesCompileArtifact, PhenotypeCompileArtifact |
 
-Use "phenotype library" as the plain-language bridge for `PhenotypeLibrary` when discussing generated-result storage.
+Use "phenotype library" as the plain-language connector for `PhenotypeLibrary` when discussing generated-result storage.
 
 ## Classification Matrix
 
@@ -52,7 +52,7 @@ Run these gates in order. If a gate cannot be answered, mark it as a blocking or
 1. domain-boundary gate: decide whether this is one graph, several graphs linked by graph-level DesignRelationship, or only a one-off output that should go to phenotype-generation instead.
 2. group gate: decide whether families, factions, UI systems, regions, disciplines, or asset sets need SpeciesGroup boundaries.
 3. relationship gate: decide whether group-level, graph-level, or node-level relationships are meaningful enough to record as DesignRelationship.
-4. context gate: separate worldbuilding, design rationale, cultural motif, brand principle, reference, and review rubric from node or edge genes.
+4. context gate: separate worldbuilding, design rationale, cultural motif, brand principle, reference, and review rubric from node genes or relationship contracts.
 5. species gate: create SpeciesNode only for stable design objects that can pass phenotype readiness and produce multiple outputs.
 6. relationship contract gate: create DesignRelationship only when there is a meaningful design-language contract, such as derivation, translation, alignment, divergence, reference, or constraint.
 7. facet gate: define facets only for reusable dimensions with a value strategy, not one-off notes.
@@ -78,7 +78,7 @@ Use these nine modules before listing SpeciesNode candidates. Each module contri
 - Module question: Is this one Graph, multiple Graph objects in an Atlas, or a one-off generated output?
 - Evidence to inspect: production output type, reviewer or discipline, downstream consumption path, source boundaries, and whether relationships are inheritance or only reference, drive, consume, or review relationships.
 - Decision boundary: split into multiple Graph objects when disciplines, output pipelines, or review ownership differ; connect them with graph-level DesignRelationship only when the relation spans graph boundaries without pretending to be inheritance.
-- Positive pattern: UI icon assets and character equipment can be separate graphs connected by a bridge when they share a brand principle but have different reviewers and phenotype outputs.
+- Positive pattern: UI icon assets and character equipment can be separate graphs connected by a graph-level DesignRelationship when they share a brand principle but have different reviewers and phenotype outputs.
 - Counterexample: putting every department, storage folder, or page framework into one graph hides review ownership and downstream impact.
 - Output contribution: graphScope, relationshipPlan, reviewOutline, and nonBlockingQuestions for unresolved graph boundaries.
 
@@ -113,9 +113,9 @@ Use these nine modules before listing SpeciesNode candidates. Each module contri
 
 - Module question: How should the graph be inspected by a human reviewer before writes are applied?
 - Evidence to inspect: atlas, graph boundaries, group boundaries, roots, independent nodes, DesignRelationship endpoints, and unresolved assumptions.
-- Decision boundary: reviewability is part of the model. If the graph tree is flat because nodes are independent roots, say that explicitly. If there are multiple roots with no real derivation, do not invent an edge to make the tree look tidy.
+- Decision boundary: reviewability is part of the model. If the graph tree is flat because nodes are independent roots, say that explicitly. If there are multiple roots with no real derivation, do not invent a relationship to make the tree look tidy.
 - Positive pattern: a reviewOutline lists atlas -> graphs -> groups -> species nodes, DesignRelationship endpoints, and a note that independent roots are intentionally flat.
-- Counterexample: a lineage tree that hides groups or makes fake parent edges for readability is misleading.
+- Counterexample: a lineage tree that hides groups or makes fake parent relationships for readability is misleading.
 - Output contribution: reviewOutline.
 
 ## First Slice Strategy

@@ -57,7 +57,7 @@
 - 两个 template pack。
 - 多个 root nodes。
 - 一个 species-first node。
-- 一个后补 edge 的 node。
+- 一个后补节点级 DesignRelationship 的 node。
 - 一个多父节点 node。
 - 一个 image-prompt phenotype。
 - 一个 art-brief phenotype。
@@ -118,17 +118,17 @@
 - 所有写入命令加 `--yes` 后才落库。
 - `dna graph create/list/show/archive` 覆盖图谱生命周期。
 - `dna node create` 支持 root、species-first、多父节点。
-- `dna edge create` 支持 edge type、delta、value resolution。
+- `dna relationship create` 支持 relationship type、contract、review fields。
 - `dna export/import` 可在新库重放。
 - CLI 错误时退出码非 0，并输出可读错误。
 
 ### 5.5 Phase 5 Compile / Phenotype Cases
 
-- `system-rule-first` 按父节点、edge、node、task 顺序合并基因。
+- `system-rule-first` 按父节点、DesignRelationship、node、task 顺序合并基因。
 - 冲突必须进入 conflict list，不允许静默覆盖。
 - `snapshot-fixed` 使用已保存 snapshot，不重新计算父节点链。
 - 同一物种可生成 `image-prompt`、`art-brief`、`review-checklist`。
-- 表型版本记录 graph id、node version id、edge version trace、compile policy。
+- 表型版本记录 graph id、node version id、relationship trace、compile policy。
 - 一个 phenotype version 可以关联 size、angle、format、crop 多个 asset variants。
 - golden prompt / brief 在无设计规则变更时稳定。
 
@@ -138,7 +138,7 @@
 - phenotype review 能发现 prompt / brief 缺失必须保留母题。
 - style distance 能列出 shared motifs、different motifs、different constraints。
 - 父 node 变化影响所有下游 node 和 phenotype versions。
-- edge 变化影响目标 node 及其下游。
+- DesignRelationship 变化影响目标 node 及其下游。
 - impact check 不自动创建新 phenotype version。
 - rejected / superseded phenotype version 保留 review reason。
 
@@ -230,9 +230,9 @@
 - `changeset list --status preview` 能看到待审阅 change-set。
 - `changeset show <id>` 能展示 preview summary、diff 和 payload。
 - `changeset review <id>` 能输出 pass / needs-review / fail、缺失维度、约束问题和建议动作。
-- `changeset apply <id>` 会正式写入 graph/node/edge，并把 change-set 标记为 applied。
+- `changeset apply <id>` 会正式写入 graph/node/relationship，并把 change-set 标记为 applied。
 - `changeset discard <id>` 会标记 discarded，且后续 apply 会失败。
-- `--mode changeset-apply --change-set <id>` 可在 graph/node/edge create 命令上引用既有 preview change-set，不要求重复 create 参数。
+- `--mode changeset-apply --change-set <id>` 可在 graph/node/relationship create 命令上引用既有 preview change-set，不要求重复 create 参数。
 - Git-friendly export/import 保留顶层 `change-sets/` 目录。
 - `dna export --profile review-current` 不生成 `change-sets/` 或 `proposals/`，manifest 记录省略摘要，且当前正式 state 可导入。
 - `dna export --profile proposal-review --proposal <id>` 只导出目标 proposal 与 linked change-sets，遇到缺失 change-set 必须失败。

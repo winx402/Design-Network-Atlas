@@ -64,7 +64,7 @@ Key boundaries:
 - Storage implementations are replaceable because the domain layer talks to repository ports.
 - External asset libraries are adapter targets, not hard-coded product assumptions.
 - Generated results can be recorded even when a team does not use DNA's optional result-library layer.
-- Graph lineage can be projected as a readable species tree or JSON structure without changing stored node and edge data.
+- Graph lineage can be projected as a readable species tree or JSON structure without changing stored node and design relationship data.
 - Preview change-sets can be listed, reviewed, applied, discarded, packaged in local proposals, exported, and imported as first-class review artifacts.
 
 ## Defaults First
@@ -143,7 +143,7 @@ DNA includes a local HTTP API baseline for health checks, graph tree data, and g
 
 ### Review And Confirmation Workflow
 
-`dna changeset list/show/review/apply/discard` turns preview writes into a reviewable loop. Graph, node, and edge previews remain out of the formal graph until a preview change-set is applied. `--mode changeset-apply --change-set <id>` is also supported for existing graph/node/edge create commands.
+`dna changeset list/show/review/apply/discard` turns preview writes into a reviewable loop. Graph, node, and design relationship previews remain out of the formal graph until a preview change-set is applied. `--mode changeset-apply --change-set <id>` is also supported for existing graph, node, and relationship create commands.
 
 ## Technical Data Model
 
@@ -377,7 +377,7 @@ DNA 已包含本地 HTTP API 基线，用于 health check、图谱树数据和�
 
 ### 审阅确认工作流
 
-`dna changeset list/show/review/apply/discard` 会把 preview 写入变成可审阅闭环。Graph、node、edge 预览在 apply 前不会进入正式图谱。既有 graph/node/edge create 命令也支持 `--mode changeset-apply --change-set <id>`。
+`dna changeset list/show/review/apply/discard` 会把 preview 写入变成可审阅闭环。Graph、node、DesignRelationship 预览在 apply 前不会进入正式图谱。既有 graph、node、relationship create 命令也支持 `--mode changeset-apply --change-set <id>`。
 
 ## 技术数据模型
 

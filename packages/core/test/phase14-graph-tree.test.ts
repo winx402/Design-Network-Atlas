@@ -33,7 +33,7 @@ describe("Phase 14 graph tree view", () => {
         parentNodes: ["node-root"],
         primaryParent: "node-root",
         parentRoles: { "node-root": "primary" },
-        incomingEdges: ["edge-root-child"],
+        incomingRelationshipIds: ["rel-root-child"],
         lineageStatus: "complete"
       }),
       createDefaultSpeciesNode({
@@ -43,7 +43,7 @@ describe("Phase 14 graph tree view", () => {
         parentNodes: ["node-root", "node-accent"],
         primaryParent: "node-root",
         parentRoles: { "node-root": "primary", "node-accent": "fusion" },
-        incomingEdges: ["edge-root-hybrid", "edge-accent-hybrid"],
+        incomingRelationshipIds: ["rel-root-hybrid", "rel-accent-hybrid"],
         lineageStatus: "multi-origin"
       })
     ];

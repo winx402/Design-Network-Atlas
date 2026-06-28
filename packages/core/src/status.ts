@@ -1,4 +1,4 @@
-export type StatusObjectType = "graph" | "node" | "edge" | "phenotype" | "phenotype-version" | "asset";
+export type StatusObjectType = "graph" | "node" | "design-relationship" | "phenotype" | "phenotype-version" | "asset";
 
 const statusTransitions: Record<StatusObjectType, Record<string, string[]>> = {
   graph: {
@@ -12,7 +12,7 @@ const statusTransitions: Record<StatusObjectType, Record<string, string[]>> = {
     deprecated: ["archived"],
     archived: []
   },
-  edge: {
+  "design-relationship": {
     draft: ["active", "deprecated", "archived"],
     active: ["deprecated", "archived"],
     deprecated: ["archived"],
@@ -53,11 +53,11 @@ export function assertCanTransitionStatus(objectType: StatusObjectType, from: st
 
 export function resolveLineageStatus(input: {
   parentNodes: string[];
-  incomingEdges: string[];
+  incomingRelationshipIds: string[];
   primaryParent?: string | null;
-}): "complete" | "species-first" | "needs-edge" | "multi-origin" {
+}): "complete" | "species-first" | "needs-relationship" | "multi-origin" {
   if (input.parentNodes.length === 0) return "species-first";
-  if (input.incomingEdges.length < input.parentNodes.length) return "needs-edge";
+  if (input.incomingRelationshipIds.length < input.parentNodes.length) return "needs-relationship";
   if (input.parentNodes.length > 1 && !input.primaryParent) return "multi-origin";
   return "complete";
 }

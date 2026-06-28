@@ -106,7 +106,7 @@ describe("Phase 11 full system acceptance", () => {
     ]);
 
     const beforeRelationship = runDna(["--db", db, "node", "show", "--id", "node-warning"]);
-    expect(beforeRelationship).toContain('"lineageStatus": "needs-edge"');
+    expect(beforeRelationship).toContain('"lineageStatus": "needs-relationship"');
 
     runDna([
       "--db",

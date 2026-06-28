@@ -35,7 +35,7 @@ describe("Phase 21 PRD-11 application services", () => {
       name: "Child",
       parentNodes: [parent.nodeId],
       primaryParent: parent.nodeId,
-      incomingEdges: ["rel-parent-child"]
+      incomingRelationshipIds: ["rel-parent-child"]
     });
     const relationship = createDefaultDesignRelationship({
       relationshipId: "rel-parent-child",

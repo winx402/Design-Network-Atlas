@@ -41,7 +41,7 @@ Classify the edit before designing the patch:
 | User asks to... | First consider | Watch for |
 | --- | --- | --- |
 | Add a concept | SpeciesNode, Phenotype, context, or tag | Creating species for one file |
-| Add a style that affects many objects | parent, facet, context, template, or group | Repeated edge deltas |
+| Add a style that affects many objects | parent, DesignRelationship, facet, context, template, or group | Repeated relationship deltas |
 | Move a node | reparent, add parent role, or create relation | Making old outputs misleading |
 | Split or merge nodes | archive, supersede, alias, or proposal | Destroying version history |
 | Change storage | LibraryRoutingPolicy or OutputReference | Coupling graph identity to storage |
@@ -63,13 +63,13 @@ Use these invariants to protect existing graph meaning. This skill applies the m
 1. object gate: decide whether the request belongs to graph identity, generated result, output reference, tag, context, review, template, compile policy, or routing.
 2. reasonableness gate: reject or redirect edits that would make a file, prompt, tag, or one-off output into a species.
 3. history gate: preserve understandable history; prefer archive, supersede, alias, or add over destructive rewrite when versions exist.
-4. impact gate: identify downstream nodes, edges, PhenotypeVersion outdated risk, review records, compile artifact staleness, and storage-routing effects.
+4. impact gate: identify downstream nodes, DesignRelationship records, PhenotypeVersion outdated risk, review records, compile artifact staleness, and storage-routing effects.
 5. risk gate: assign low, medium, high, or structural risk using the scope levels above.
 6. execution gate: choose no-write diagnosis, preview-confirm, change-set review, local proposal package, draft-write, or direct audit write for generated trace/output/audit records.
 
 ## Impact Rules
 
-- Parent, edge, root, shared facet, template, compile-policy, group, bridge, and context changes can invalidate SpeciesCompileArtifact and PhenotypeCompileArtifact records.
+- Parent, node-level relationship, root, shared facet, template, compile-policy, group-level relationship, graph-level relationship, and context changes can invalidate SpeciesCompileArtifact and PhenotypeCompileArtifact records.
 - Upstream visual constraint changes should mark downstream PhenotypeVersion outdated instead of silently regenerating results.
 - ContextReference and ContextReviewRubric changes may alter prompts, negative prompts, review checklists, or acceptance criteria.
 - storage-routing changes may affect where new OutputReference records go, but they should not alter species identity.
@@ -77,10 +77,10 @@ Use these invariants to protect existing graph meaning. This skill applies the m
 
 ## Risk Escalation
 
-- Low: additive single-node or single-edge change with no downstream generation impact.
+- Low: additive single-node or single-relationship change with no downstream generation impact.
 - Medium: branch-local visual change, review checklist change, context revision, or bounded routing change.
 - High: root, template, shared facet, compile-policy, group, or multi-parent change that may affect many descendants.
-- Structural: split, merge, reparent, multi-group, cross-graph, bridge, or atlas-level change.
+- Structural: split, merge, reparent, multi-group, cross-graph relationship, or atlas-level change.
 
 Escalate one level if current graph data is missing, existing outputs are accepted, or the change affects production library routing.
 
@@ -99,7 +99,7 @@ Return an edit proposal with these fields:
 
 - currentState: graph objects inspected and missing context.
 - requestedChange: normalized edit intent and affected object types.
-- scopeLevel: single-node, single-edge, single-group, multi-group, cross-graph, context, compile-policy, storage-routing, or mixed.
+- scopeLevel: single-node, single-relationship, single-group, multi-group, cross-graph, context, compile-policy, storage-routing, or mixed.
 - reasonableness: pass, concern, or reject with rationale.
 - editInvariantCheck: phenotype readiness, abstraction downgrade, inheritance safety, storage decoupling, impact analysis, and history preservation, each marked pass, concern, reject, or not applicable with a short reason.
 - impactAnalysis: downstream SpeciesNode, DesignRelationship, context, compile artifact, PhenotypeVersion outdated, OutputReference, review, and routing implications.

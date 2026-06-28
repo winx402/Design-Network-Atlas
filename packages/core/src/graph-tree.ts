@@ -19,7 +19,7 @@ export interface GraphTreeNode {
   lineageStatus: SpeciesNode["lineageStatus"];
   parentNodes: string[];
   primaryParent?: string | null;
-  incomingEdges: string[];
+  incomingRelationshipIds: string[];
   relationshipId?: string;
   relationshipType?: DesignRelationship["relationshipType"];
   parentRole?: SpeciesNode["parentRoles"][string];
@@ -338,7 +338,7 @@ function buildTreeNode(
     lineageStatus: node.lineageStatus,
     parentNodes: node.parentNodes,
     primaryParent: node.primaryParent,
-    incomingEdges: node.incomingEdges,
+    incomingRelationshipIds: node.incomingRelationshipIds,
     children
   };
 }

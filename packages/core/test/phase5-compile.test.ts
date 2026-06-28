@@ -30,7 +30,7 @@ function node() {
     parentNodes: ["node-parent"],
     primaryParent: "node-parent",
     parentRoles: { "node-parent": "primary" },
-    incomingEdges: ["rel-warning"],
+    incomingRelationshipIds: ["rel-warning"],
     relatedNodes: [],
     currentVersion: "1.0.0",
     status: "active",
@@ -71,7 +71,7 @@ describe("Phase 5 compile policies and phenotype production text", () => {
     expect(result.relationshipTrace).toEqual(["rel-warning"]);
   });
 
-  test("snapshot-fixed uses the fixed snapshot instead of recomputing parent and edge deltas", () => {
+  test("snapshot-fixed uses the fixed snapshot instead of recomputing parent and relationship deltas", () => {
     const result = compileSpecies({
       graph: graph("snapshot-fixed"),
       node: node(),
