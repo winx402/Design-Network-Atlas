@@ -10,7 +10,7 @@
 
 **Goal:** 按阶段完成 DNA 的完整系统开发，每个阶段都有独立测试和验收，所有阶段合并后形成完整产品。
 
-**Architecture:** 先固定领域模型和 service/storage ports，再实现 SQLite、本地 CLI、编译/表型、审查/影响分析、生成 adapter、资产工作台和双模式协作。每个阶段只向前扩展，不用一次性原型替代完整设计。
+**Architecture:** 先固定领域模型和 service/storage ports，再实现 SQLite、本地 CLI、编译/表型、审查/影响分析、生成 adapter、只读 Explorer 和双模式协作。每个阶段只向前扩展，不用一次性原型替代完整设计。
 
 **Tech Stack:** TypeScript, Node.js, pnpm workspace, Zod, SQLite, Commander.js, Vitest, Vite/React, local HTTP API, future hosted server adapter.
 
@@ -33,7 +33,7 @@ Phase 0-16 已完成并由测试覆盖。本文件保留为历史执行计划、
 | Phase 6 | 审查与影响分析 | 实现 review、style distance、impact records | review/impact unit + integration |
 | Phase 7 | Codex Skill | Skill 将复杂设计场景映射到 DNA 图谱建模、编辑、审阅和写入策略 | scenario skill tests |
 | Phase 8 | 生成模型 Adapter | mock provider + provider port + 安全边界 | adapter contract + security tests |
-| Phase 9 | 资产工作台 | Web 资产工作台生产流 | web unit + browser QA |
+| Phase 9 | 早期表型结果视图 | Web 结果视图基线；Phase 28 收敛为 Read-only Explorer | web unit + browser QA |
 | Phase 10 | 双模式协作 | server adapter、同步、权限、审批 | contract tests、API tests、权限 tests |
 | Phase 11 | 完整系统验收 | 跑通 PRD 全量场景和发布检查 | E2E suite、release checklist |
 | Phase 12 | 表型库与输出引用 | 可选结果库、存储挂载、外部库映射、无库输出指针 | schema、SQLite、CLI、import/export |
@@ -355,14 +355,14 @@ Phase 0-16 已完成并由测试覆盖。本文件保留为历史执行计划、
 
 - adapter 可以替换，不影响核心编译和表型模型。
 
-## Phase 9：资产工作台
+## Phase 9：早期表型结果视图
 
-目标：提供第一版只读 Web 工作台基线，优先服务表型和素材治理轨迹检查。
+目标：提供第一版只读 Web 结果视图基线，优先服务表型和素材治理轨迹检查；Phase 28 后当前默认 Web 体验已收敛为 DNA Read-only Explorer。
 
 交付：
 
 - `apps/web`
-- asset workbench。
+- early phenotype result view。
 - phenotype detail。
 - version compare。
 - review panel。
@@ -371,10 +371,10 @@ Phase 0-16 已完成并由测试覆盖。本文件保留为历史执行计划、
 
 测试：
 
-- 浏览器打开资产工作台。
+- 浏览器打开早期结果视图或后续 DNA Read-only Explorer。
 - 搜索标签和状态。
 - 查看表型版本。
-- 从本地 HTTP API 读取真实 workbench snapshot。
+- 从本地 HTTP API 读取真实 Explorer snapshot。
 - 空库和 API 失败状态可读且不破坏数据。
 - 不显示 accept / reject / archive 等 durable write 按钮。
 - 查看审查结果。
@@ -535,14 +535,14 @@ E2E 场景：
 - `LibraryRoutingPolicy` 的 `fallbackMountId`、`metadataDefaults`、`requiredMetadata` 在 resolver 和 `output-ref add` 中实际生效。
 - `library bind-graph` 后同步更新 `PhenotypeLibrary.graphIds`，避免 binding 表和 library export 出现双源状态歧义。
 - `GenerationJobRepository.listByGraph`，并把 generation jobs 纳入 Git 目录导入导出。
-- `PhenotypeGenerationPlan` / `PhenotypeGenerationTask` repositories、CLI preview/apply、task-linked generation 回写、Git 目录导入导出和只读 API/workbench snapshot。
+- `PhenotypeGenerationPlan` / `PhenotypeGenerationTask` repositories、CLI preview/apply、task-linked generation 回写、Git 目录导入导出和只读 API/Explorer snapshot。
 - SQLite migration 自动修复旧库：根据既有 `phenotype_library_graph_bindings` 回填 `PhenotypeLibrary.graphIds`。
 - `provider run-mock` 与 `provider job show`，用于本地 provider job 验证和敏感参数清理。
 - generic HTTP provider primitive，供后续真实模型 adapter 复用，不保存 API key。
 - `sync export/import`，作为显式项目目录交换命令。
 - 本地 HTTP API handler 和 `dna serve`，提供 health、graph tree、workbench generated-result 和 generation plan/task snapshot。
-- DNA 网页 HTTP 访问可开关，默认关闭；只有 `dna serve --web` 或 handler `webEnabled: true` 才返回只读工作台页面。
-- Web workbench 数据加载函数可以从本地 HTTP API 读取，而不是只使用静态样例。
+- DNA 网页 HTTP 访问可开关，默认关闭；只有 `dna serve --web` 或 handler `webEnabled: true` 才返回只读 Explorer 页面。
+- Web Explorer 数据加载函数可以从本地 HTTP API 读取，而不是只使用静态样例。
 
 测试：
 
@@ -552,7 +552,7 @@ E2E 场景：
 - provider security 覆盖 runtime API key / secret 不进入 job、DB 或导出。
 - sync E2E 覆盖 generation plans、generation tasks 和 generation jobs 随项目目录导出和导入。
 - migration test 覆盖旧库已有 binding、library.graphIds 为空、重新 migrate 后导出 graphIds 不为空。
-- HTTP API test 覆盖 health、graph tree、workbench snapshots 和 generation plan/task summaries。
+- HTTP API test 覆盖 health、graph tree、Explorer snapshots 和 generation plan/task summaries。
 - HTTP web access test 覆盖默认 `/` 为 404，显式开启后返回 HTML。
 
 验收：

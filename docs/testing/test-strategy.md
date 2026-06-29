@@ -40,7 +40,7 @@
 | Phase 6 | review/impact tests | 上游变化只生成影响记录，不覆盖下游 |
 | Phase 7 | scenario skill tests | Skill 将复杂场景映射到建模/编辑工作流，不复制 CLI help，不直接写库 |
 | Phase 8 | adapter contract + security | provider 失败不污染正式数据，API key 不落盘 |
-| Phase 9 | web unit + browser QA | 资产工作台主要流程可操作，无布局重叠 |
+| Phase 9 | web unit + browser QA | 早期结果视图主要流程可操作；Phase 28 Explorer 无布局重叠 |
 | Phase 10 | server/local contract tests | local 和 server adapter 行为一致，权限生效 |
 | Phase 11 | full E2E + release checks | PRD 13 条验收场景全通过 |
 | Phase 12 | result library schema + SQLite + CLI | 图谱和结果库多对多，输出引用可不用 DNA 结果库 |
@@ -167,11 +167,11 @@
 - API key、password、secret、private key 不进入 DB、export、log。
 - adapter 只保存 provider name、model name、非敏感参数、asset pointer。
 
-### 5.9 Phase 9 Web Workbench Cases
+### 5.9 Phase 9 Web Explorer Baseline Cases
 
-- 资产工作台可以搜索表型、标签、状态。
+- 早期表型结果视图可以搜索表型、标签、状态；Phase 28 后默认入口已收敛为 DNA Read-only Explorer。
 - 表型详情展示版本列表、素材组、review records。
-- `dna serve --web` 暴露只读本地工作台。
+- `dna serve --web` 暴露只读本地 Explorer。
 - 空 SQLite store 显示空状态，API 失败显示非破坏性错误状态。
 - Web MVP 不显示 accept / reject / archive 等持久写按钮。
 - outdated phenotype version 显示明确提示。
@@ -224,7 +224,7 @@
 - local HTTP API 能返回 graph tree 和 workbench generated-result snapshot。
 - local HTTP API 能返回 generation plan/task 只读摘要，workbench snapshot 包含 generationPlans 和 generationTasks。
 - HTTP web page access 默认关闭，访问 `/` 返回 404。
-- 显式开启 `webEnabled` 或 `dna serve --web` 后才返回只读 DNA workbench HTML 页面。
+- 显式开启 `webEnabled` 或 `dna serve --web` 后才返回只读 DNA Explorer HTML 页面。
 - `provider run-mock` 能生成 sanitized generation job。
 - generic HTTP provider 通过注入 fetcher 调用外部 endpoint，runtime headers 不进入 job。
 - `sync export/import` 能重放 graph、generation job 和相关引用。

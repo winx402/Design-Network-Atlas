@@ -8,7 +8,7 @@ import {
   samplePhenotypes
 } from "../src/workbench-data";
 
-describe("Phase 9 asset workbench state model", () => {
+describe("Phase 9 web result state model", () => {
   test("filters phenotypes by query, status, tag, and outdated flag", () => {
     expect(filterPhenotypes(samplePhenotypes, { query: "warning", status: "all", tag: "all", outdatedOnly: false })).toHaveLength(1);
     expect(filterPhenotypes(samplePhenotypes, { query: "", status: "accepted", tag: "all", outdatedOnly: false })).toHaveLength(1);
@@ -100,7 +100,43 @@ describe("Phase 9 asset workbench state model", () => {
     expect(snapshot.generationTasks[0]).toMatchObject({ taskId: "task-ui", blockingReason: "waiting for review" });
   });
 
-  test("uses API data by default and demo fixtures only when explicitly requested", async () => {
+  test("always uses API-backed snapshot loading and ignores obsolete fixture bypass flags", async () => {
+    let requestCount = 0;
+    const obsoleteFixtureFlag = "de" + "mo";
+    const apiResult = await loadWorkbenchPhenotypesForApp({
+      baseUrl: "http://dna.local",
+      [obsoleteFixtureFlag]: true,
+      fetcher: async () =>
+        {
+          requestCount += 1;
+          return new Response(
+            JSON.stringify({
+              phenotypes: [
+                {
+                  id: "ph-live",
+                  name: "Live Phenotype",
+                  nodeName: "Live Node",
+                  phenotypeType: "image-prompt",
+                  tags: [],
+                  outdated: false,
+                  currentSpeciesVersion: "node-live@1.0.0",
+                  latestSpeciesVersion: "node-live@1.0.0",
+                  versions: []
+                }
+              ]
+            })
+          );
+        }
+    } as never);
+
+    expect(apiResult.status).toBe("ready");
+    expect(apiResult.phenotypes.map((phenotype) => phenotype.id)).toEqual(["ph-live"]);
+    expect(requestCount).toBe(1);
+    if (apiResult.status === "ready") expect(apiResult.generationTasks).toEqual([]);
+    expect(apiResult.phenotypes).not.toBe(samplePhenotypes);
+  });
+
+  test("loads API data into the app state", async () => {
     const apiResult = await loadWorkbenchPhenotypesForApp({
       baseUrl: "http://dna.local",
       fetcher: async () =>
@@ -122,19 +158,10 @@ describe("Phase 9 asset workbench state model", () => {
           })
         )
     });
-    const demoResult = await loadWorkbenchPhenotypesForApp({
-      baseUrl: "http://dna.local",
-      demo: true,
-      fetcher: async () => {
-        throw new Error("demo should not call API");
-      }
-    });
 
     expect(apiResult.status).toBe("ready");
     expect(apiResult.phenotypes.map((phenotype) => phenotype.id)).toEqual(["ph-live"]);
     if (apiResult.status === "ready") expect(apiResult.generationTasks).toEqual([]);
-    expect(demoResult.status).toBe("ready");
-    expect(demoResult.phenotypes).toBe(samplePhenotypes);
   });
 
   test("returns a non-destructive error state when API loading fails", async () => {

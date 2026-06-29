@@ -34,11 +34,12 @@ const emptyState: WorkbenchAppLoadState = {
   generationTasks: []
 };
 
-export function ReadonlyWorkbench(props: { initialState?: WorkbenchAppLoadState }) {
+export function ReadonlyWorkbench(props: { initialState?: WorkbenchAppLoadState; initialModule?: ModuleId }) {
   const [loadState, setLoadState] = useState<WorkbenchAppLoadState>(props.initialState ?? emptyState);
-  const [activeModule, setActiveModule] = useState<ModuleId>("map");
+  const [activeModule, setActiveModule] = useState<ModuleId>(props.initialModule ?? "map");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [compactFilters, setCompactFilters] = useState(false);
   const [selectedGraphId, setSelectedGraphId] = useState(() => firstGraphId(props.initialState?.snapshot ?? emptyState.snapshot));
   const [inspectorDetail, setInspectorDetail] = useState<InspectorDetail>(() =>
     inspectorFromSnapshot(props.initialState?.snapshot ?? emptyState.snapshot)
@@ -53,10 +54,10 @@ export function ReadonlyWorkbench(props: { initialState?: WorkbenchAppLoadState 
     if (props.initialState) return;
     let cancelled = false;
     const params = new URLSearchParams(window.location.search);
+    setActiveModule(moduleFromValue(params.get("module")));
     void loadWorkbenchForApp({
       baseUrl: window.location.origin,
-      graphId: params.get("graphId") ?? undefined,
-      demo: params.has("demo")
+      graphId: params.get("graphId") ?? undefined
     }).then((result) => {
       if (cancelled) return;
       setLoadState(result);
@@ -68,6 +69,15 @@ export function ReadonlyWorkbench(props: { initialState?: WorkbenchAppLoadState 
     };
   }, [props.initialState]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const queryList = window.matchMedia("(max-width: 760px)");
+    const sync = () => setCompactFilters(queryList.matches);
+    sync();
+    queryList.addEventListener("change", sync);
+    return () => queryList.removeEventListener("change", sync);
+  }, []);
+
   function selectGraph(graph: WorkbenchGraphDetail) {
     setSelectedGraphId(graph.graphId);
     setInspectorDetail(inspectGraph(graph, snapshot));
@@ -78,94 +88,146 @@ export function ReadonlyWorkbench(props: { initialState?: WorkbenchAppLoadState 
     setInspectorDetail(detail);
   }
 
+  function selectGraphScope(graphId: string) {
+    const graph = snapshot.graphs.find((item) => item.graphId === graphId);
+    if (!graph) return;
+    setSelectedGraphId(graph.graphId);
+    setInspectorDetail(inspectGraph(graph, snapshot));
+  }
+
   return (
-    <main className="app-shell">
-      <header className="topbar">
+    <main className="explorer-shell" data-module={activeModule}>
+      <aside className="desktop-side-nav" aria-label="Desktop Explorer navigation">
         <div>
           <p className="product-name">DNA: Design Network Atlas</p>
           <h1>DNA Read-only Explorer</h1>
-          <p className="read-only-note">Local map-first view of design graphs, generation traces, and phenotype results. Web remains read-only.</p>
+          <p className="read-only-note">Map-first local view of design graphs, generation traces, and phenotype results.</p>
         </div>
-        <div className="snapshot-status" aria-label="Snapshot status">
-          <StatusPill label="Graphs" value={counts.graphs ?? 0} />
-          <StatusPill label="Species" value={counts.speciesNodes ?? 0} />
-          <StatusPill label="Plans/Tasks" value={`${counts.generationPlans ?? 0}/${counts.generationTasks ?? 0}`} />
-          <StatusPill label="Results" value={counts.outputReferences ?? 0} />
+        <ModuleNav activeModule={activeModule} onChange={setActiveModule} variant="desktop" />
+        <div className="side-note">
+          <StatusChip status="read-only" />
+          <span>No Web write actions. Durable writes stay behind CLI/service boundaries.</span>
         </div>
-      </header>
+      </aside>
 
-      <nav className="module-nav mobile-tabbar" aria-label="Explorer modules">
-        {moduleLabels.map((module) => (
-          <button
-            key={module.id}
-            className={activeModule === module.id ? "is-active" : ""}
-            onClick={() => setActiveModule(module.id)}
-            type="button"
-          >
-            <span className="desktop-label">{module.label}</span>
-            <span className="mobile-label">{module.shortLabel}</span>
-          </button>
-        ))}
-      </nav>
+      <section className="workspace-shell">
+        <header className="scope-bar" aria-label="Explorer scope and filters">
+          <div className="scope-title">
+            <p className="product-name">Current Scope</p>
+            <h2>{selectedGraph?.name ?? "Atlas scope"}</h2>
+            <p className="read-only-note">Snapshot source: local API /api/workbench/snapshot</p>
+          </div>
+          <details className="filter-sheet" aria-label="Read-only filters" open={!compactFilters}>
+            <summary className="filter-summary">Filters</summary>
+            <div className="filter-fields">
+              <label>
+                <span>Graph scope</span>
+                <select value={selectedGraph?.graphId ?? ""} onChange={(event) => selectGraphScope(event.target.value)}>
+                  {snapshot.graphs.length ? (
+                    snapshot.graphs.map((graph) => (
+                      <option key={graph.graphId} value={graph.graphId}>
+                        {graph.name}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="">No graph scope</option>
+                  )}
+                </select>
+              </label>
+              <label>
+                <span>Search objects</span>
+                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="graph, group, species, task, result, asset" />
+              </label>
+              <label>
+                <span>Status</span>
+                <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+                  <option value="all">All statuses</option>
+                  <option value="active">active</option>
+                  <option value="candidate">candidate</option>
+                  <option value="accepted">accepted</option>
+                  <option value="blocked">blocked</option>
+                  <option value="missing">missing</option>
+                  <option value="stale">stale</option>
+                </select>
+              </label>
+            </div>
+          </details>
+          <div className="snapshot-status" aria-label="Snapshot status">
+            <StatusPill label="Graphs" value={counts.graphs ?? 0} />
+            <StatusPill label="Species" value={counts.speciesNodes ?? 0} />
+            <StatusPill label="Plans/Tasks" value={`${counts.generationPlans ?? 0}/${counts.generationTasks ?? 0}`} />
+            <StatusPill label="Results" value={counts.outputReferences ?? 0} />
+          </div>
+        </header>
 
-      {loadState.status === "loading" ? (
-        <section className="system-state" aria-live="polite">
-          Loading read-only explorer snapshot from the local DNA API...
+        {loadState.status === "loading" ? (
+          <section className="system-state" aria-live="polite">
+            Loading read-only explorer snapshot from the local DNA API...
+          </section>
+        ) : null}
+
+        {loadState.status === "error" ? (
+          <section className="system-state error" role="alert">
+            <strong>Unable to load explorer snapshot.</strong>
+            <span>{loadState.error}</span>
+            <span>No durable DNA records were changed by this read-only page.</span>
+          </section>
+        ) : null}
+
+        {isEmpty ? (
+          <section className="system-state">
+            <strong>No DNA records found.</strong>
+            <span>Use the CLI/service boundary to add local graph or generation records, then refresh this read-only explorer.</span>
+          </section>
+        ) : null}
+
+        <section className="workspace-grid" aria-label="DNA read-only explorer">
+          <section className="module-surface" aria-label="Explorer module content">
+            <section className="module-view" aria-hidden={activeModule !== "map"} data-module-view="map">
+              <AtlasMapView snapshot={filteredSnapshot} onSelect={selectDetail} onOpenGraph={selectGraph} />
+            </section>
+            <section className="module-view" aria-hidden={activeModule !== "graph"} data-module-view="graph">
+              <GraphExplorerView graph={selectedGraph} snapshot={filteredSnapshot} onSelect={selectDetail} />
+            </section>
+            <section className="module-view" aria-hidden={activeModule !== "generation"} data-module-view="generation">
+              <GenerationBoardView snapshot={filteredSnapshot} onSelect={selectDetail} />
+            </section>
+            <section className="module-view" aria-hidden={activeModule !== "library"} data-module-view="library">
+              <PhenotypeLibraryView snapshot={filteredSnapshot} onSelect={selectDetail} />
+            </section>
+          </section>
+          <Inspector detail={inspectorDetail} />
         </section>
-      ) : null}
 
-      {loadState.status === "error" ? (
-        <section className="system-state error" role="alert">
-          <strong>Unable to load workbench snapshot.</strong>
-          <span>{loadState.error}</span>
-          <span>No durable DNA records were changed by this read-only page.</span>
-        </section>
-      ) : null}
-
-      {isEmpty ? (
-        <section className="system-state">
-          <strong>No DNA records found.</strong>
-          <span>Use the CLI/service boundary to add local graph or generation records, then refresh this read-only explorer.</span>
-        </section>
-      ) : null}
-
-      <section className="filter-sheet" aria-label="Read-only filters">
-        <label>
-          <span>Search objects</span>
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="graph, group, species, task, result, asset" />
-        </label>
-        <label>
-          <span>Status</span>
-          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-            <option value="all">All statuses</option>
-            <option value="active">active</option>
-            <option value="candidate">candidate</option>
-            <option value="accepted">accepted</option>
-            <option value="blocked">blocked</option>
-            <option value="missing">missing</option>
-            <option value="stale">stale</option>
-          </select>
-        </label>
+        <footer className="status-bar" aria-label="Explorer status">
+          <span>Read-only</span>
+          <span>API-backed snapshot</span>
+          <span>{loadState.status}</span>
+          <span>{loadState.status === "error" ? "1 error" : "0 errors"}</span>
+          <span>Credentials and private paths are redacted before display.</span>
+        </footer>
       </section>
 
-      <section className="explorer-grid" aria-label="DNA read-only explorer">
-        <section className="module-surface" aria-label="Explorer module content">
-          <section className="module-view" aria-hidden={activeModule !== "map"}>
-            <AtlasMapView snapshot={filteredSnapshot} onSelect={selectDetail} onOpenGraph={selectGraph} />
-          </section>
-          <section className="module-view" aria-hidden={activeModule !== "graph"}>
-            <GraphExplorerView graph={selectedGraph} snapshot={filteredSnapshot} onSelect={selectDetail} />
-          </section>
-          <section className="module-view" aria-hidden={activeModule !== "generation"}>
-            <GenerationBoardView snapshot={filteredSnapshot} onSelect={selectDetail} />
-          </section>
-          <section className="module-view" aria-hidden={activeModule !== "library"}>
-            <PhenotypeLibraryView snapshot={filteredSnapshot} onSelect={selectDetail} />
-          </section>
-        </section>
-        <Inspector detail={inspectorDetail} />
-      </section>
+      <ModuleNav activeModule={activeModule} onChange={setActiveModule} variant="mobile" />
     </main>
+  );
+}
+
+function ModuleNav(props: { activeModule: ModuleId; onChange: (module: ModuleId) => void; variant: "desktop" | "mobile" }) {
+  return (
+    <nav className={props.variant === "desktop" ? "desktop-module-nav" : "mobile-bottom-nav"} aria-label="Explorer modules">
+      {moduleLabels.map((module) => (
+        <button
+          key={module.id}
+          className={props.activeModule === module.id ? "is-active" : ""}
+          onClick={() => props.onChange(module.id)}
+          type="button"
+        >
+          <span className="desktop-label">{module.label}</span>
+          <span className="mobile-label">{module.shortLabel}</span>
+        </button>
+      ))}
+    </nav>
   );
 }
 
@@ -175,6 +237,16 @@ function AtlasMapView(props: {
   onOpenGraph: (graph: WorkbenchGraphDetail) => void;
 }) {
   const relationships = getGraphLevelRelationships(props.snapshot);
+  const [highlightedGraphId, setHighlightedGraphId] = useState<string | undefined>();
+  const highlightedRelationships = highlightedGraphId
+    ? relationships.filter((relationship) => relationship.source?.graphId === highlightedGraphId || relationship.target?.graphId === highlightedGraphId)
+    : relationships;
+  const relatedGraphIds = new Set(
+    highlightedRelationships.flatMap((relationship) => [relationship.source?.graphId, relationship.target?.graphId]).filter((value): value is string => Boolean(value))
+  );
+  const isGraphDimmed = (graphId: string) => Boolean(highlightedGraphId && !relatedGraphIds.has(graphId));
+  const isRelationshipHighlighted = (relationship: RelationshipLike) =>
+    !highlightedGraphId || relationship.source?.graphId === highlightedGraphId || relationship.target?.graphId === highlightedGraphId;
   return (
     <div className="module-content atlas-view">
       <SectionHeader
@@ -192,7 +264,7 @@ function AtlasMapView(props: {
             {relationships.map((relationship, index) => (
               <g key={relationship.relationshipId}>
                 <line
-                  className="map-line"
+                  className={`map-line ${isRelationshipHighlighted(relationship) ? "is-highlighted" : "is-dimmed"}`}
                   x1={index % 2 === 0 ? 14 : 20}
                   y1={24 + index * 14}
                   x2={index % 2 === 0 ? 82 : 72}
@@ -211,9 +283,17 @@ function AtlasMapView(props: {
           {props.snapshot.graphs.map((graph, index) => (
             <button
               key={graph.graphId}
-              className={`graph-map-node node-${index % 6}`}
+              className={`graph-map-node node-${index % 6} ${highlightedGraphId === graph.graphId ? "is-highlighted" : ""} ${
+                isGraphDimmed(graph.graphId) ? "is-dimmed" : ""
+              }`}
               onClick={() => props.onOpenGraph(graph)}
-              onFocus={() => props.onSelect(inspectGraph(graph, props.snapshot))}
+              onBlur={() => setHighlightedGraphId(undefined)}
+              onFocus={() => {
+                setHighlightedGraphId(graph.graphId);
+                props.onSelect(inspectGraph(graph, props.snapshot));
+              }}
+              onMouseEnter={() => setHighlightedGraphId(graph.graphId)}
+              onMouseLeave={() => setHighlightedGraphId(undefined)}
               type="button"
             >
               <span className="node-type">Graph</span>
@@ -252,7 +332,7 @@ function AtlasMapView(props: {
             relationships.map((relationship) => (
               <button
                 key={relationship.relationshipId}
-                className="relationship-route"
+                className={`relationship-route ${isRelationshipHighlighted(relationship) ? "is-highlighted" : "is-dimmed"}`}
                 onClick={() => props.onSelect(inspectRelationship(relationship))}
                 type="button"
               >
@@ -736,6 +816,10 @@ interface InspectorDetail {
 
 function firstGraphId(snapshot: WorkbenchSnapshot) {
   return snapshot.graphs.find((graph) => graph.groups.length > 0 || graph.nodes.length > 0)?.graphId ?? snapshot.graphs[0]?.graphId;
+}
+
+function moduleFromValue(value: string | null | undefined): ModuleId {
+  return moduleLabels.some((module) => module.id === value) ? (value as ModuleId) : "map";
 }
 
 function inspectorFromSnapshot(snapshot: WorkbenchSnapshot): InspectorDetail {

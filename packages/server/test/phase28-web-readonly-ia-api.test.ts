@@ -36,7 +36,7 @@ describe("Phase 28 PRD-21 read-only workbench information architecture API", () 
 
     const graph = createDefaultGraph({
       graphId: "graph-web",
-      name: "Web Workbench Graph",
+      name: "Web Explorer Graph",
       purpose: "read-only information architecture",
       rootNodes: ["node-web"]
     });
@@ -351,7 +351,7 @@ describe("Phase 28 PRD-21 read-only workbench information architecture API", () 
     const graphMap = await (await handler(new Request("http://dna.local/api/workbench/graph-map"))).json();
     expect(graphMap).toMatchObject({
       graphs: expect.arrayContaining([
-        expect.objectContaining({ graphId: "graph-web", name: "Web Workbench Graph" }),
+        expect.objectContaining({ graphId: "graph-web", name: "Web Explorer Graph" }),
         expect.objectContaining({ graphId: "graph-reference", name: "Reference Language Graph" })
       ]),
       relationships: [
@@ -413,7 +413,7 @@ describe("Phase 28 PRD-21 read-only workbench information architecture API", () 
     expect(await missing.json()).toMatchObject({
       error: "graph not found: missing-graph",
       readOnly: true,
-      recoveryHint: "Use the CLI/service boundary to create or inspect graphs; the Web workbench did not modify the DNA store."
+      recoveryHint: "Use the CLI/service boundary to create or inspect graphs; the Web Explorer did not modify the DNA store."
     });
     expect(store.graphs.list()).toEqual([]);
     store.close();

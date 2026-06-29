@@ -120,6 +120,11 @@ describe("Phase 15 local HTTP API baseline", () => {
     expect(html).toContain("Graph Explorer");
     expect(html).toContain("Generation Board");
     expect(html).toContain("Phenotype Library");
+    expect(html).toContain("desktop-side-nav");
+    expect(html).toContain("scope-bar");
+    expect(html).toContain("workspace-grid");
+    expect(html).toContain("status-bar");
+    expect(html).toContain("mobile-bottom-nav");
     expect(html).toContain("Loading read-only explorer snapshot");
     expect(html).toContain("No DNA records found in this local store.");
     expect(html).toContain("Unable to load explorer data.");

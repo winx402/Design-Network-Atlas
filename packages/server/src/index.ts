@@ -701,7 +701,7 @@ function createWorkbenchAnomalies(input: { graphs: Graph[]; generationJobs: Gene
     anomalies.push({
       type: "empty-store",
       severity: "info",
-      message: "No DNA records found in the current read-only workbench scope."
+      message: "No DNA records found in the current read-only Explorer scope."
     });
   }
   const failedJobs = input.generationJobs.filter((job) => job.status === "failed").length;
@@ -1173,7 +1173,7 @@ function missingWorkbenchGraphResponse(graphId: string) {
     {
       error: `graph not found: ${graphId}`,
       readOnly: true,
-      recoveryHint: "Use the CLI/service boundary to create or inspect graphs; the Web workbench did not modify the DNA store."
+      recoveryHint: "Use the CLI/service boundary to create or inspect graphs; the Web Explorer did not modify the DNA store."
     },
     404
   );
@@ -1218,7 +1218,7 @@ function createWorkbenchHtml() {
       :root { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #1b2530; background: #f4f6f3; }
       * { box-sizing: border-box; }
       body { margin: 0; min-width: 320px; background: linear-gradient(180deg, #f7f8f4, #edf2f0); }
-      main { width: min(1320px, calc(100vw - 28px)); margin: 0 auto; padding: 22px 0 38px; }
+      main.explorer-shell { width: min(1440px, calc(100vw - 28px)); margin: 0 auto; display: grid; grid-template-columns: 238px minmax(0, 1fr); gap: 16px; padding: 16px 0 22px; }
       h1, h2, h3, p { margin-top: 0; }
       h1 { margin-bottom: 6px; font-size: 30px; line-height: 1.12; letter-spacing: 0; }
       h2 { margin-bottom: 6px; font-size: 22px; line-height: 1.2; letter-spacing: 0; }
@@ -1226,14 +1226,24 @@ function createWorkbenchHtml() {
       button { font: inherit; cursor: pointer; }
       .product-name { margin: 0 0 5px; color: #5e6f6a; font-size: 12px; font-weight: 760; text-transform: uppercase; }
       .muted { color: #60716f; font-size: 13px; line-height: 1.45; }
-      header { display: grid; grid-template-columns: minmax(320px, 1fr) auto; gap: 16px; align-items: end; padding-bottom: 12px; }
-      nav { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 2px 0 12px; }
-      nav button, .panel, .map-node, .route, .card, .state, .inspector { border: 1px solid #cfd8d5; border-radius: 8px; background: #fff; }
-      nav button { min-height: 42px; color: #33423f; font-weight: 780; }
-      nav button.active { border-color: #1e766c; color: #103f39; background: #dff1ed; }
+      .desktop-side-nav, .scope-bar, .status-bar, .panel, .map-node, .route, .card, .state, .inspector, .desktop-module-nav button, .mobile-bottom-nav button { border: 1px solid #cfd8d5; border-radius: 8px; background: #fff; }
+      .desktop-side-nav { position: sticky; top: 16px; display: grid; align-content: start; gap: 16px; min-width: 0; height: calc(100vh - 32px); padding: 16px; }
+      .workspace-shell { display: grid; gap: 12px; min-width: 0; }
+      .scope-bar { position: sticky; top: 16px; z-index: 12; display: grid; grid-template-columns: minmax(230px, .7fr) minmax(460px, 1fr) minmax(392px, .85fr); gap: 12px; align-items: end; padding: 12px; }
+      .scope-bar .filter-sheet { display: grid; grid-template-columns: minmax(160px, .8fr) minmax(190px, 1fr) minmax(120px, .62fr); gap: 8px; align-items: end; }
+      .scope-bar label { display: grid; gap: 6px; color: #4f625e; font-size: 12px; font-weight: 760; }
+      .scope-bar input, .scope-bar select { width: 100%; min-height: 40px; border: 1px solid #aebfba; border-radius: 7px; padding: 0 10px; background: #fff; }
+      .desktop-module-nav { display: grid; gap: 8px; }
+      .desktop-module-nav button, .mobile-bottom-nav button { min-height: 42px; color: #33423f; font-weight: 780; }
+      .desktop-module-nav button { width: 100%; padding: 0 10px; text-align: left; }
+      .desktop-module-nav button.active, .mobile-bottom-nav button.active { border-color: #1e766c; color: #103f39; background: #dff1ed; }
+      .mobile-bottom-nav { display: none; }
+      .side-note, .status-bar { color: #4f625e; font-size: 12px; line-height: 1.4; }
+      .side-note { display: grid; gap: 8px; align-self: end; }
+      .status-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; min-height: 36px; padding: 8px 10px; }
       .state { display: grid; gap: 4px; margin: 10px 0; padding: 12px 14px; font-size: 14px; line-height: 1.45; }
       .state.error { border-color: #d29292; color: #842c31; background: #fff2f2; }
-      .grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 14px; align-items: start; }
+      .workspace-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 14px; align-items: start; }
       .surface { display: grid; gap: 12px; min-width: 0; }
       .panel, .inspector { display: grid; gap: 11px; min-width: 0; padding: 14px; }
       .map { position: relative; min-height: 390px; overflow: hidden; border: 1px solid #c7d5d0; border-radius: 8px; background: linear-gradient(135deg, rgb(255 255 255 / 92%), rgb(238 245 241 / 88%)); }
@@ -1245,7 +1255,7 @@ function createWorkbenchHtml() {
       .map-node:hover, .card:hover, .route:hover { border-color: #7caea6; background: #f2f8f6; }
       .routes, .columns, .gallery, .support { display: grid; gap: 10px; }
       .support { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .columns { grid-template-columns: repeat(4, minmax(180px, 1fr)); align-items: start; }
+      .columns { grid-template-columns: repeat(4, minmax(160px, 1fr)); align-items: start; }
       .gallery { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
       .preview { display: grid; place-items: center; width: 100%; aspect-ratio: 4 / 3; border: 1px solid #dce4e1; border-radius: 7px; color: #60716f; background: #eef4f1; text-align: center; }
       .chip { display: inline-flex; width: max-content; min-height: 24px; border-radius: 999px; padding: 3px 9px; color: #146145; background: #ddf3e9; font-size: 12px; font-weight: 780; }
@@ -1257,37 +1267,66 @@ function createWorkbenchHtml() {
       pre { max-height: 200px; overflow: auto; margin: 8px 0 0; padding: 12px; border: 1px solid #e1e7e4; border-radius: 7px; background: #f8faf8; white-space: pre-wrap; overflow-wrap: anywhere; }
       strong, span, small, code { min-width: 0; overflow-wrap: anywhere; }
       @media (max-width: 880px) {
-        main { width: min(100vw - 18px, 760px); padding-bottom: 92px; }
-        header, .grid, .support, .columns, .nodes { grid-template-columns: 1fr; }
-        nav { position: fixed; right: 9px; bottom: 9px; left: 9px; z-index: 20; padding: 7px; border: 1px solid #bfcbc7; border-radius: 10px; background: #fff; box-shadow: 0 10px 28px rgb(29 45 58 / 18%); }
-        nav button { min-height: 46px; font-size: 12px; }
+        main.explorer-shell { width: min(100vw - 18px, 760px); grid-template-columns: 1fr; padding-bottom: 430px; }
+        .desktop-side-nav { display: none; }
+        .scope-bar, .workspace-grid, .support, .columns, .nodes, .scope-bar .filter-sheet { grid-template-columns: 1fr; }
+        .scope-bar { position: static; }
+        .mobile-bottom-nav { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); position: fixed; right: 9px; bottom: 9px; left: 9px; z-index: 20; gap: 8px; padding: 7px; border: 1px solid #bfcbc7; border-radius: 10px; background: #fff; box-shadow: 0 10px 28px rgb(29 45 58 / 18%); }
+        .mobile-bottom-nav button { min-height: 46px; font-size: 12px; }
         .nodes { padding: 12px; }
         .gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-        .inspector { position: static; max-height: none; border-radius: 10px 10px 0 0; }
+        .inspector { position: fixed; top: auto; right: 9px; bottom: 74px; left: 9px; z-index: 18; max-height: 24vh; overflow: auto; border-radius: 10px 10px 0 0; box-shadow: 0 -10px 28px rgb(29 45 58 / 16%); }
       }
     </style>
   </head>
   <body>
-    <main>
-      <header>
+    <main class="explorer-shell">
+      <aside class="desktop-side-nav" aria-label="Desktop Explorer navigation">
         <div>
           <p class="product-name">DNA: Design Network Atlas</p>
           <h1>DNA Read-only Explorer</h1>
-          <p class="muted">Map-first local view of design graphs, generation traces, and phenotype results. Web remains read-only.</p>
+          <p class="muted">Map-first local view of design graphs, generation traces, and phenotype results.</p>
         </div>
-        <p class="muted" id="snapshot-status">Loading /api/workbench/snapshot...</p>
-      </header>
-      <nav aria-label="Explorer modules">
+        <nav class="desktop-module-nav" aria-label="Explorer modules">
+          <button class="active" type="button" data-module="map">Atlas Map</button>
+          <button type="button" data-module="graph">Graph Explorer</button>
+          <button type="button" data-module="generation">Generation Board</button>
+          <button type="button" data-module="library">Phenotype Library</button>
+        </nav>
+        <div class="side-note">
+          <span class="chip">read-only</span>
+          <span>No Web write actions. Durable writes stay behind CLI/service boundaries.</span>
+        </div>
+      </aside>
+      <section class="workspace-shell">
+        <header class="scope-bar" aria-label="Explorer scope and filters">
+          <div>
+            <p class="product-name">Current Scope</p>
+            <h2 id="scope-title">Atlas scope</h2>
+            <p class="muted">Snapshot source: local API /api/workbench/snapshot</p>
+          </div>
+          <section class="filter-sheet" aria-label="Read-only filters">
+            <label><span>Graph scope</span><select id="graph-scope"><option value="">No graph scope</option></select></label>
+            <label><span>Search objects</span><input id="object-search" placeholder="graph, group, species, task, result, asset" /></label>
+            <label><span>Status</span><select id="status-filter"><option>All statuses</option><option>active</option><option>candidate</option><option>accepted</option><option>blocked</option><option>missing</option><option>stale</option></select></label>
+          </section>
+          <p class="muted" id="snapshot-status">Loading /api/workbench/snapshot...</p>
+        </header>
+        <section id="state" class="state" aria-live="polite">Loading read-only explorer snapshot from the local DNA API...</section>
+        <section class="workspace-grid">
+          <section id="surface" class="surface" aria-label="Explorer content"></section>
+          <aside id="inspector" class="inspector" aria-label="Inspector"></aside>
+        </section>
+        <footer class="status-bar" aria-label="Explorer status">
+          <span>Read-only</span><span>API-backed snapshot</span><span id="load-status">loading</span><span id="error-status">0 errors</span><span>Credentials and private paths are redacted before display.</span>
+        </footer>
+      </section>
+      <nav class="mobile-bottom-nav" aria-label="Explorer modules">
         <button class="active" type="button" data-module="map">Atlas Map</button>
         <button type="button" data-module="graph">Graph Explorer</button>
         <button type="button" data-module="generation">Generation Board</button>
         <button type="button" data-module="library">Phenotype Library</button>
       </nav>
-      <section id="state" class="state" aria-live="polite">Loading read-only explorer snapshot from the local DNA API...</section>
-      <section class="grid">
-        <section id="surface" class="surface" aria-label="Explorer content"></section>
-        <aside id="inspector" class="inspector" aria-label="Inspector"></aside>
-      </section>
     </main>
     <script>
       const endpoint = "/api/workbench/snapshot";
@@ -1295,6 +1334,10 @@ function createWorkbenchHtml() {
       const surface = document.getElementById("surface");
       const inspector = document.getElementById("inspector");
       const snapshotStatus = document.getElementById("snapshot-status");
+      const graphScope = document.getElementById("graph-scope");
+      const scopeTitle = document.getElementById("scope-title");
+      const loadStatus = document.getElementById("load-status");
+      const errorStatus = document.getElementById("error-status");
       let snapshot = null;
       let selectedGraph = null;
       let activeModule = "map";
@@ -1387,16 +1430,28 @@ function createWorkbenchHtml() {
       for (const button of document.querySelectorAll("nav button")) {
         button.addEventListener("click", () => { activeModule = button.getAttribute("data-module"); render(); });
       }
+      graphScope.addEventListener("change", () => {
+        selectedGraph = (snapshot?.graphs ?? []).find((graph) => graph.graphId === graphScope.value) ?? selectedGraph;
+        scopeTitle.textContent = selectedGraph?.name ?? "Atlas scope";
+        inspect("Graph", selectedGraph?.graphId, selectedGraph?.status, selectedGraph?.purpose, selectedGraph);
+      });
       fetch(endpoint).then((response) => { if (!response.ok) throw new Error("HTTP " + response.status); return response.json(); }).then((body) => {
         snapshot = body;
         selectedGraph = (body.graphs ?? []).find((graph) => (graph.groups ?? []).length || (graph.nodes ?? []).length) ?? (body.graphs ?? [])[0];
+        graphScope.innerHTML = (body.graphs ?? []).length ? (body.graphs ?? []).map((graph) => '<option value="' + escapeHtml(graph.graphId) + '">' + escapeHtml(graph.name) + '</option>').join('') : '<option value="">No graph scope</option>';
+        graphScope.value = selectedGraph?.graphId ?? "";
+        scopeTitle.textContent = selectedGraph?.name ?? "Atlas scope";
         state.textContent = (body.graphs ?? []).length ? "Loaded read-only DNA Explorer snapshot from the local API." : "No DNA records found in this local store.";
         snapshotStatus.textContent = String(body.overview?.counts?.graphs ?? 0) + " graphs, " + String(body.overview?.counts?.phenotypes ?? 0) + " phenotypes, " + String(body.overview?.counts?.generationTasks ?? 0) + " tasks";
+        loadStatus.textContent = "ready";
+        errorStatus.textContent = "0 errors";
         render();
       }).catch((error) => {
         state.className = "state error";
         state.innerHTML = '<strong>Unable to load explorer data.</strong><span>' + escapeHtml(error.message || error) + '</span><span>No durable DNA records were changed by this read-only page.</span>';
         surface.innerHTML = '<section class="panel"><h2>Unable to load explorer data.</h2><p class="muted">No durable DNA records were changed by this read-only page.</p></section>';
+        loadStatus.textContent = "error";
+        errorStatus.textContent = "1 error";
       });
     </script>
   </body>

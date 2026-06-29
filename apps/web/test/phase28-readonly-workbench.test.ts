@@ -46,6 +46,12 @@ describe("Phase 28 PRD-21 DNA read-only workbench", () => {
       expect(html).toContain(label);
     }
     expect(html).toContain("DNA Read-only Explorer");
+    expect(html).toContain("desktop-side-nav");
+    expect(html).toContain("scope-bar");
+    expect(html).toContain("workspace-grid");
+    expect(html).toContain("status-bar");
+    expect(html).toContain("mobile-bottom-nav");
+    expect(html).toContain("detail-drawer");
     expect(html).toContain("Graph relationship map");
     expect(html).toContain("Reference Language Graph");
     expect(html).toContain("translates-to");
@@ -65,10 +71,10 @@ describe("Phase 28 PRD-21 DNA read-only workbench", () => {
     expect(html).not.toContain("Anomaly entry points");
     expect(html).not.toContain("Overview");
     expect(html).toContain("Gallery");
-    expect(html).toContain("mobile-tabbar");
     expect(html).toContain("filter-sheet");
-    expect(html).toContain("detail-drawer");
     expect(html).toContain("gallery-grid");
+    expect(html).not.toContain("topbar");
+    expect(html).not.toContain("mobile-tabbar");
     expect(html).not.toMatch(/\bAccept\b|\bReject\b|\bArchive\b|\bRun task\b|\bApply\b|\bCreate\b|\bEdit\b/);
   });
 
@@ -87,7 +93,8 @@ describe("Phase 28 PRD-21 DNA read-only workbench", () => {
       fetcher: async () => new Response(JSON.stringify({ error: "offline" }), { status: 503 })
     });
     const errorHtml = renderToStaticMarkup(React.createElement(ReadonlyWorkbench, { initialState: result }));
-    expect(errorHtml).toContain("Unable to load workbench snapshot");
+    expect(errorHtml).toContain("Unable to load explorer snapshot");
+    expect(errorHtml).toContain("failed to load workbench snapshot: 503");
     expect(errorHtml).toContain("No durable DNA records were changed");
   });
 

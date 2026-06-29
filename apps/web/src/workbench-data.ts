@@ -288,9 +288,7 @@ export interface WorkbenchLoadOptions {
   fetcher?: (url: string) => Promise<{ ok?: boolean; status?: number; json(): Promise<unknown> }>;
 }
 
-export interface WorkbenchAppLoadOptions extends WorkbenchLoadOptions {
-  demo?: boolean;
-}
+export type WorkbenchAppLoadOptions = WorkbenchLoadOptions;
 
 export type WorkbenchAppLoadState =
   | { status: "loading"; snapshot: WorkbenchSnapshot; phenotypes: []; generationPlans: []; generationTasks: [] }
@@ -325,7 +323,7 @@ export function createEmptyWorkbenchSnapshot(): WorkbenchSnapshot {
         outputReferences: 0,
         missingOrStaleOutputReferences: 0
       },
-      anomalies: [{ type: "empty-store", severity: "info", message: "No DNA records found in the current read-only workbench scope." }]
+      anomalies: [{ type: "empty-store", severity: "info", message: "No DNA records found in the current read-only Explorer scope." }]
     },
     graphs: [],
     generation: { plans: [], tasks: [], jobs: [] },
@@ -531,9 +529,9 @@ export const sampleWorkbenchSnapshot: WorkbenchSnapshot = {
           relationshipType: "translates-to",
           direction: "source-to-target",
           status: "active",
-          summary: "Reference graph translates motif and review language into the demo graph.",
+          summary: "Reference graph translates motif and review language into the Explorer sample graph.",
           source: { type: "graph", graphId: "graph-language" },
-          target: { type: "graph", graphId: "graph-demo" },
+          target: { type: "graph", graphId: "graph-explorer" },
           designContract: {
             transferRule: "Carry bounded visual-language tokens into phenotype briefs.",
             mustPreserve: ["warning semantics", "readable silhouette"],
@@ -551,9 +549,9 @@ export const sampleWorkbenchSnapshot: WorkbenchSnapshot = {
       }
     },
     {
-      graphId: "graph-demo",
-      name: "Demo Design Graph",
-      purpose: "Read-only workbench sample",
+      graphId: "graph-explorer",
+      name: "Explorer Sample Design Graph",
+      purpose: "Read-only Explorer sample",
       status: "active",
       currentVersion: "1.0.0",
       counts: { groups: 1, nodes: 2, relationships: 2, phenotypes: 2, candidateVersions: 1, acceptedVersions: 1 },
@@ -606,9 +604,9 @@ export const sampleWorkbenchSnapshot: WorkbenchSnapshot = {
           relationshipType: "translates-to",
           direction: "source-to-target",
           status: "active",
-          summary: "Reference graph translates motif and review language into the demo graph.",
+          summary: "Reference graph translates motif and review language into the Explorer sample graph.",
           source: { type: "graph", graphId: "graph-language" },
-          target: { type: "graph", graphId: "graph-demo" },
+          target: { type: "graph", graphId: "graph-explorer" },
           designContract: {
             transferRule: "Carry bounded visual-language tokens into phenotype briefs.",
             mustPreserve: ["warning semantics", "readable silhouette"],
@@ -622,8 +620,8 @@ export const sampleWorkbenchSnapshot: WorkbenchSnapshot = {
           direction: "source-to-target",
           status: "active",
           summary: "Group readability constrains the icon output.",
-          source: { type: "species-group", graphId: "graph-demo", groupId: "group-ui" },
-          target: { type: "species-node", graphId: "graph-demo", nodeId: "node-warning" },
+          source: { type: "species-group", graphId: "graph-explorer", groupId: "group-ui" },
+          target: { type: "species-node", graphId: "graph-explorer", nodeId: "node-warning" },
           designContract: {
             transferRule: "Apply shared readability constraints to compact icon phenotypes.",
             mustPreserve: ["high-contrast warning motif"],
@@ -646,25 +644,25 @@ export const sampleWorkbenchSnapshot: WorkbenchSnapshot = {
         versions: phenotype.versions.map((version) => ({
           phenotypeVersionId: version.id,
           status: version.status,
-          speciesCompileArtifactId: "sca-demo",
-          phenotypeCompileArtifactId: "pca-demo"
+          speciesCompileArtifactId: "sca-explorer",
+          phenotypeCompileArtifactId: "pca-explorer"
         }))
       })),
       compileTrace: {
         entityArtifacts: 1,
         speciesArtifacts: 2,
         phenotypeArtifacts: 2,
-        artifacts: [{ artifactId: "pca-demo", targetLevel: "phenotype", dependencyCount: 4, feedbackCount: 0, openQuestionCount: 0 }]
+        artifacts: [{ artifactId: "pca-explorer", targetLevel: "phenotype", dependencyCount: 4, feedbackCount: 0, openQuestionCount: 0 }]
       }
     }
   ],
   generation: {
     plans: [
       {
-        planId: "plan-demo",
-        graphId: "graph-demo",
+        planId: "plan-explorer",
+        graphId: "graph-explorer",
         scopeType: "graph",
-        scopeId: "graph-demo",
+        scopeId: "graph-explorer",
         priority: 1,
         description: "Generate icon review set",
         status: "expanded",
@@ -675,8 +673,8 @@ export const sampleWorkbenchSnapshot: WorkbenchSnapshot = {
     tasks: [
       {
         taskId: "task-warning",
-        planId: "plan-demo",
-        graphId: "graph-demo",
+        planId: "plan-explorer",
+        graphId: "graph-explorer",
         nodeId: "node-warning",
         phenotypeId: "ph-warning-icon",
         phenotypeType: "image-prompt",
@@ -685,7 +683,7 @@ export const sampleWorkbenchSnapshot: WorkbenchSnapshot = {
         status: "blocked",
         blockingReason: "style review pending",
         links: {
-          planId: "plan-demo",
+          planId: "plan-explorer",
           speciesCompileArtifactId: "sca-warning",
           phenotypeCompileArtifactId: "pca-warning",
           generationJobIds: ["job-warning"],
@@ -694,21 +692,21 @@ export const sampleWorkbenchSnapshot: WorkbenchSnapshot = {
       },
       {
         taskId: "task-emblem",
-        planId: "plan-demo",
-        graphId: "graph-demo",
+        planId: "plan-explorer",
+        graphId: "graph-explorer",
         nodeId: "node-emblem",
         phenotypeId: "ph-faction-emblem",
         phenotypeType: "art-brief",
         taskBrief: "accepted emblem brief",
         priority: 2,
         status: "completed",
-        links: { planId: "plan-demo", generationJobIds: [], phenotypeVersionIds: ["pv-emblem-2"] }
+        links: { planId: "plan-explorer", generationJobIds: [], phenotypeVersionIds: ["pv-emblem-2"] }
       }
     ],
     jobs: [
       {
         generationJobId: "job-warning",
-        graphId: "graph-demo",
+        graphId: "graph-explorer",
         nodeId: "node-warning",
         phenotypeId: "ph-warning-icon",
         phenotypeVersionId: "pv-warning-2",
@@ -720,12 +718,12 @@ export const sampleWorkbenchSnapshot: WorkbenchSnapshot = {
   },
   libraries: [
     {
-      libraryId: "library-demo",
-      name: "Demo Result Library",
+      libraryId: "library-explorer",
+      name: "Explorer Sample Result Library",
       purpose: "Read-only generated result preview",
       profile: "media-asset",
       status: "active",
-      graphIds: ["graph-demo"],
+      graphIds: ["graph-explorer"],
       boundGraphCount: 1,
       mountCount: 2,
       routingPolicyCount: 1,
@@ -759,7 +757,7 @@ export const sampleWorkbenchSnapshot: WorkbenchSnapshot = {
           phenotypeName: "Faction Emblem Brief",
           versionId: "pv-emblem-2",
           versionStatus: "accepted",
-          graphId: "graph-demo",
+          graphId: "graph-explorer",
           nodeId: "node-emblem",
           nodeName: "Moon Faction Emblem",
           phenotypeType: "art-brief",
@@ -774,7 +772,7 @@ export const sampleWorkbenchSnapshot: WorkbenchSnapshot = {
           phenotypeName: "Warning Toolbar Icon",
           versionId: "pv-warning-2",
           versionStatus: "candidate",
-          graphId: "graph-demo",
+          graphId: "graph-explorer",
           nodeId: "node-warning",
           nodeName: "Warning Icon",
           phenotypeType: "image-prompt",
@@ -789,11 +787,11 @@ export const sampleWorkbenchSnapshot: WorkbenchSnapshot = {
         {
           objectType: "output-reference",
           objectId: "oref-warning-preview",
-          graphId: "graph-demo",
+          graphId: "graph-explorer",
           phenotypeId: "ph-warning-icon",
           phenotypeName: "Warning Toolbar Icon",
           phenotypeVersionId: "pv-warning-2",
-          libraryId: "library-demo",
+          libraryId: "library-explorer",
           storageMountId: "mount-preview",
           label: "preview url",
           status: "active",
@@ -803,7 +801,7 @@ export const sampleWorkbenchSnapshot: WorkbenchSnapshot = {
         {
           objectType: "asset",
           objectId: "asset-warning-source",
-          graphId: "graph-demo",
+          graphId: "graph-explorer",
           phenotypeId: "ph-warning-icon",
           phenotypeName: "Warning Toolbar Icon",
           phenotypeVersionId: "pv-warning-2",
@@ -821,11 +819,11 @@ export const sampleWorkbenchSnapshot: WorkbenchSnapshot = {
     {
       objectType: "output-reference",
       objectId: "oref-warning-preview",
-      graphId: "graph-demo",
+      graphId: "graph-explorer",
       phenotypeId: "ph-warning-icon",
       phenotypeName: "Warning Toolbar Icon",
       phenotypeVersionId: "pv-warning-2",
-      libraryId: "library-demo",
+      libraryId: "library-explorer",
       storageMountId: "mount-preview",
       label: "preview url",
       status: "active",
@@ -835,7 +833,7 @@ export const sampleWorkbenchSnapshot: WorkbenchSnapshot = {
     {
       objectType: "asset",
       objectId: "asset-warning-source",
-      graphId: "graph-demo",
+      graphId: "graph-explorer",
       phenotypeId: "ph-warning-icon",
       phenotypeName: "Warning Toolbar Icon",
       phenotypeVersionId: "pv-warning-2",
@@ -933,15 +931,6 @@ function normalizeWorkbenchSnapshot(body: Partial<WorkbenchSnapshot>): Workbench
 }
 
 export async function loadWorkbenchForApp(options: WorkbenchAppLoadOptions): Promise<WorkbenchAppLoadState> {
-  if (options.demo === true) {
-    return {
-      status: "ready",
-      snapshot: sampleWorkbenchSnapshot,
-      phenotypes: sampleWorkbenchSnapshot.phenotypes,
-      generationPlans: sampleWorkbenchSnapshot.generationPlans,
-      generationTasks: sampleWorkbenchSnapshot.generationTasks
-    };
-  }
   try {
     const snapshot = await loadWorkbenchSnapshot(options);
     return {
