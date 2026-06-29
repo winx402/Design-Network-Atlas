@@ -80,7 +80,7 @@ DNA concept classes:
 
 ### `GenerationJob` vs `PhenotypeVersion.generationRecipe/promptSnapshot`
 
-`GenerationJob` is an execution attempt and may fail. Phenotype jobs can produce `PhenotypeVersion` records, while reference jobs stay scoped to graph or species-group targets and may only link safe `AssetIndex` pointers. `PhenotypeVersion` is an immutable generated output snapshot; `generationRecipe` and `promptSnapshot` are provenance captured on that version.
+`GenerationJob` is an execution attempt and may fail. Phenotype jobs can produce `PhenotypeVersion` records, while reference jobs stay scoped to graph or species-group targets and may only link safe `AssetIndex` pointers. External reference completion can move a reference job from `created` to `generated` only when safe linked asset evidence exists; it does not create phenotype lifecycle records. `PhenotypeVersion` is an immutable generated output snapshot; `generationRecipe` and `promptSnapshot` are provenance captured on that version.
 
 ### `ReviewRecord` vs `ContextReviewRubric`
 

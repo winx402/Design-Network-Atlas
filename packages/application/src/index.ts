@@ -132,8 +132,8 @@ export interface GenerationPlanningRepositories extends PhenotypeGenerationRepos
 export interface ReferenceGenerationRepositories extends LayeredCompileRepositories {
   transaction<T>(fn: () => T): T;
   entityCompileArtifacts: Pick<EntityCompileArtifactRepository, "get" | "create" | "listByGraph" | "listByTarget">;
-  generationJobs: Pick<GenerationJobRepository, "get" | "create">;
-  assets: Pick<AssetRepository, "get" | "create">;
+  generationJobs: Pick<GenerationJobRepository, "get" | "create" | "update">;
+  assets: Pick<AssetRepository, "get" | "create" | "search">;
 }
 
 export type PlanningJsonPatch = {
@@ -888,6 +888,114 @@ export function persistReferenceGeneration(store: ReferenceGenerationRepositorie
   });
 }
 
+type ReferenceCompletionInput = {
+  note?: string;
+  externalTool?: string;
+  metadata?: Record<string, unknown>;
+};
+
+function assertReferenceGenerationJob(job: GenerationJob | undefined, generationJobId: string) {
+  if (!job) throw new Error(`generation job not found: ${generationJobId}`);
+  if (job.generationKind !== "reference") throw new Error(`generation job ${generationJobId} is not a reference generation job`);
+  return job;
+}
+
+function referenceCompletionSummary(
+  input: ReferenceCompletionInput,
+  linkedAssetIds: string[]
+): Record<string, unknown> {
+  const note = sanitizePlanningText(input.note);
+  const externalTool = sanitizePlanningText(input.externalTool);
+  const metadata = sanitizePlanningJson(input.metadata);
+  const summary: Record<string, unknown> = {
+    completedAt: nowIso(),
+    linkedAssetIds
+  };
+  if (note !== undefined) summary.note = note;
+  if (externalTool !== undefined) summary.externalTool = externalTool;
+  if (Object.keys(metadata).length) summary.metadata = metadata;
+  return summary;
+}
+
+function collectReferenceCompletionEvidence(
+  store: Pick<ReferenceGenerationRepositories, "assets">,
+  generationJobId: string,
+  requestedAssetIds: string[] | undefined,
+  pendingAssets: AssetIndex[] = []
+) {
+  const assetsById = new Map<string, AssetIndex>();
+  for (const asset of store.assets.search({ linkedObjectId: generationJobId })) {
+    if (asset.linkedObjectType === "generation-job" && asset.linkedObjectId === generationJobId) assetsById.set(asset.assetId, asset);
+  }
+  for (const asset of pendingAssets) {
+    if (asset.linkedObjectType === "generation-job" && asset.linkedObjectId === generationJobId) assetsById.set(asset.assetId, asset);
+  }
+
+  if (requestedAssetIds?.length) {
+    const selected: AssetIndex[] = [];
+    for (const assetId of requestedAssetIds) {
+      const asset = assetsById.get(assetId) ?? store.assets.get(assetId);
+      if (!asset || asset.linkedObjectType !== "generation-job" || asset.linkedObjectId !== generationJobId) {
+        throw new Error(`reference generation completion requires output evidence linked to job ${generationJobId}; asset ${assetId} is not linked to that job`);
+      }
+      selected.push(asset);
+    }
+    return selected;
+  }
+
+  const assets = [...assetsById.values()];
+  if (!assets.length) {
+    throw new Error(`reference generation completion requires output evidence linked to job ${generationJobId}`);
+  }
+  return assets;
+}
+
+function prepareReferenceGenerationCompletion(
+  store: Pick<ReferenceGenerationRepositories, "generationJobs" | "assets">,
+  input: ReferenceCompletionInput & { generationJobId: string; assetIds?: string[] },
+  pendingAssets: AssetIndex[] = []
+) {
+  const before = assertReferenceGenerationJob(store.generationJobs.get(input.generationJobId), input.generationJobId);
+  if (before.status !== "created") {
+    throw new Error(`reference generation job ${input.generationJobId} must be created before completion; current status is ${before.status}`);
+  }
+  const evidence = collectReferenceCompletionEvidence(store, input.generationJobId, input.assetIds, pendingAssets);
+  const linkedAssetIds = unique(evidence.map((asset) => asset.assetId));
+  const after: GenerationJob = {
+    ...before,
+    status: "generated",
+    outputSnapshot: {
+      ...before.outputSnapshot,
+      referenceCompletion: referenceCompletionSummary(input, linkedAssetIds)
+    },
+    updatedAt: nowIso()
+  };
+  return { before, after, linkedAssetIds };
+}
+
+export function completeReferenceGeneration(
+  store: Pick<ReferenceGenerationRepositories, "transaction" | "generationJobs" | "assets">,
+  input: ReferenceCompletionInput & {
+    generationJobId: string;
+    assetIds?: string[];
+  },
+  options: { apply?: boolean } = {}
+) {
+  const prepared = prepareReferenceGenerationCompletion(store, input);
+  if (!options.apply) {
+    return { ...prepared, persisted: false };
+  }
+  return store.transaction(() => {
+    store.generationJobs.update(prepared.after);
+    return {
+      before: prepared.before,
+      after: store.generationJobs.get(input.generationJobId) ?? prepared.after,
+      linkedAssetIds: prepared.linkedAssetIds,
+      persisted: true
+    };
+  });
+}
+
 export function linkReferenceAsset(
   store: Pick<ReferenceGenerationRepositories, "transaction" | "generationJobs" | "assets">,
   input: {
@@ -899,11 +1007,9 @@ export function linkReferenceAsset(
     tags?: string[];
     description?: string;
   },
-  options: { apply?: boolean } = {}
+  options: { apply?: boolean; markGenerated?: boolean; completion?: ReferenceCompletionInput } = {}
 ) {
-  const job = store.generationJobs.get(input.generationJobId);
-  if (!job) throw new Error(`generation job not found: ${input.generationJobId}`);
-  if (job.generationKind !== "reference") throw new Error(`generation job ${input.generationJobId} is not a reference generation job`);
+  const job = assertReferenceGenerationJob(store.generationJobs.get(input.generationJobId), input.generationJobId);
   if (store.assets.get(input.assetId)) throw new Error(`asset already exists: ${input.assetId}`);
   assertSafeReferenceAssetUri(input.uri);
   const asset = createDefaultAsset({
@@ -917,9 +1023,39 @@ export function linkReferenceAsset(
     tags: input.tags ?? [],
     description: sanitizePlanningText(input.description) ?? ""
   });
-  if (!options.apply) return { job, asset, persisted: false };
-  store.transaction(() => store.assets.create(asset));
-  return { job, asset: store.assets.get(asset.assetId) ?? asset, persisted: true };
+  if (!options.markGenerated) {
+    if (!options.apply) return { job, asset, persisted: false, markedGenerated: false };
+    store.transaction(() => store.assets.create(asset));
+    return { job, asset: store.assets.get(asset.assetId) ?? asset, persisted: true, markedGenerated: false };
+  }
+
+  const completion = prepareReferenceGenerationCompletion(
+    store,
+    { generationJobId: input.generationJobId, ...(options.completion ?? {}) },
+    [asset]
+  );
+  if (!options.apply) {
+    return {
+      job,
+      asset,
+      completedJob: completion.after,
+      linkedAssetIds: completion.linkedAssetIds,
+      persisted: false,
+      markedGenerated: true
+    };
+  }
+  return store.transaction(() => {
+    store.assets.create(asset);
+    store.generationJobs.update(completion.after);
+    return {
+      job,
+      asset: store.assets.get(asset.assetId) ?? asset,
+      completedJob: store.generationJobs.get(input.generationJobId) ?? completion.after,
+      linkedAssetIds: completion.linkedAssetIds,
+      persisted: true,
+      markedGenerated: true
+    };
+  });
 }
 
 export function expandGenerationPlan(

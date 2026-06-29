@@ -13,6 +13,7 @@ import {
   checkGraphModelingQuality,
   checkModelingBatchQuality,
   checkProposalModelingQuality,
+  completeReferenceGeneration,
   deletePhenotypeVersion,
   deprecatePhenotypeVersion,
   prepareEntityCompileArtifact,
@@ -353,6 +354,17 @@ function printJsonOrText(format: "text" | "json" | undefined, jsonValue: unknown
   else console.log(textValue);
 }
 
+function formatGraphListText(graphs: Array<{ graphId: string; name: string; status: string; purpose?: string }>) {
+  if (!graphs.length) return "No graphs found.";
+  return graphs
+    .map((graphValue) => {
+      const parts = [graphValue.graphId, graphValue.name, `status=${graphValue.status}`];
+      if (graphValue.purpose) parts.push(`purpose=${graphValue.purpose}`);
+      return parts.join(" | ");
+    })
+    .join("\n");
+}
+
 function formatGenerationPlan(plan: PhenotypeGenerationPlan, taskCount?: number) {
   const lines = [
     `Generation plan: ${plan.planId}`,
@@ -464,7 +476,30 @@ function formatReferenceAssetLink(result: { persisted: boolean; asset: { assetId
     `Generation job: ${result.asset.linkedObjectId}`,
     `URI: ${result.asset.uri}`
   ];
+  if ("markedGenerated" in result && result.markedGenerated) {
+    const completedJob = result as { job?: { status: string }; completedJob?: { status: string } };
+    lines.push(`Status: ${completedJob.job?.status ?? "created"} -> ${completedJob.completedJob?.status ?? "generated"}`);
+  }
   if (!result.persisted) lines.push("Re-run with --apply or --yes to persist the reference asset pointer.");
+  return `${lines.join("\n")}\n`;
+}
+
+function formatReferenceCompletion(result: {
+  persisted: boolean;
+  before: { generationJobId: string; status: string };
+  after: { status: string; outputSnapshot?: Record<string, unknown> };
+  linkedAssetIds: string[];
+}) {
+  const lines = [
+    result.persisted ? "Completed reference generation" : "Preview reference generation completion",
+    `Job: ${result.before.generationJobId}`,
+    `Status: ${result.before.status} -> ${result.after.status}`,
+    `Linked assets: ${result.linkedAssetIds.length ? result.linkedAssetIds.join(", ") : "none"}`
+  ];
+  const completion = result.after.outputSnapshot?.referenceCompletion as { externalTool?: string; note?: string } | undefined;
+  if (completion?.externalTool) lines.push(`External tool: ${completion.externalTool}`);
+  if (completion?.note) lines.push(`Note: ${completion.note}`);
+  if (!result.persisted) lines.push("Re-run with --apply or --yes to persist the reference generation completion.");
   return `${lines.join("\n")}\n`;
 }
 
@@ -645,11 +680,17 @@ graph
     }
     store.close();
   });
-graph.command("list").action((_options, command) => {
-  const store = openStore(command);
-  console.log(JSON.stringify(store.graphs.list(), null, 2));
-  store.close();
-});
+graph
+  .command("list")
+  .option("--format <format>", "output format: json or text")
+  .action((options, command) => {
+    const store = openStore(command);
+    const graphs = store.graphs.list();
+    const format = parseOutputFormat(options.format);
+    if (format === "text") console.log(formatGraphListText(graphs));
+    else console.log(JSON.stringify(graphs, null, 2));
+    store.close();
+  });
 graph.command("show").requiredOption("--id <graphId>", "graph id").action((options, command) => {
   const store = openStore(command);
   const value = getGraphOrThrow(store, options.id);
@@ -2218,6 +2259,31 @@ addReferenceGenerationOptions(referenceGeneration.command("run-mock"))
     store.close();
   });
 referenceGeneration
+  .command("complete")
+  .requiredOption("--job <generationJobId>", "reference generation job id")
+  .option("--asset <assetId>", "linked asset id to use as output evidence", collect, [])
+  .option("--note <text>", "safe completion note")
+  .option("--external-tool <text>", "external tool name")
+  .option("--metadata <key=value>", "safe completion metadata", collect, [])
+  .option("--apply", "persist completion status")
+  .option("--format <format>", "output format: text|json")
+  .action((options, command) => {
+    const store = openStore(command);
+    const result = completeReferenceGeneration(
+      store,
+      {
+        generationJobId: options.job,
+        assetIds: options.asset,
+        note: options.note,
+        externalTool: options.externalTool,
+        metadata: parseKeyValue(options.metadata)
+      },
+      { apply: Boolean(options.apply || shouldApply(command)) }
+    );
+    printJsonOrText(parseOutputFormat(options.format), result, formatReferenceCompletion(result));
+    store.close();
+  });
+referenceGeneration
   .command("link-asset")
   .requiredOption("--job <generationJobId>", "reference generation job id")
   .requiredOption("--asset-id <assetId>", "asset id")
@@ -2226,6 +2292,10 @@ referenceGeneration
   .option("--role <role>", "asset role", "reference")
   .option("--description <text>", "asset description")
   .option("--tag <tag>", "asset tag", collect, [])
+  .option("--mark-generated", "atomically mark the reference generation job generated")
+  .option("--note <text>", "safe completion note when using --mark-generated")
+  .option("--external-tool <text>", "external tool name when using --mark-generated")
+  .option("--metadata <key=value>", "safe completion metadata when using --mark-generated", collect, [])
   .option("--apply", "persist asset pointer")
   .option("--format <format>", "output format: text|json")
   .action((options, command) => {
@@ -2241,7 +2311,15 @@ referenceGeneration
         description: options.description,
         tags: options.tag
       },
-      { apply: Boolean(options.apply || shouldApply(command)) }
+      {
+        apply: Boolean(options.apply || shouldApply(command)),
+        markGenerated: Boolean(options.markGenerated),
+        completion: {
+          note: options.note,
+          externalTool: options.externalTool,
+          metadata: parseKeyValue(options.metadata)
+        }
+      }
     );
     printJsonOrText(parseOutputFormat(options.format), result, formatReferenceAssetLink(result));
     store.close();

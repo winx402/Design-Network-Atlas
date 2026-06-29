@@ -247,10 +247,12 @@ describe("Phase 29 issues #14/#15 generation update and reference generation CLI
     expect(prepared.job).toMatchObject({
       generationKind: "reference",
       generationJobId: "job-reference-graph-cli",
+      status: "created",
       target: { type: "graph", id: "graph-ref" }
     });
     expect(prepared.job.nodeId).toBeUndefined();
     expect(prepared.job.phenotypeId).toBeUndefined();
+    expect(runDnaFail(["--db", db, "reference-generation", "complete", "--job", "job-reference-graph-cli", "--apply"])).toContain("output evidence");
 
     const groupRun = JSON.parse(
       runDna([
@@ -306,5 +308,136 @@ describe("Phase 29 issues #14/#15 generation update and reference generation CLI
       linkedObjectId: "job-reference-group-cli"
     });
     expect(runDna(["--db", db, "generation-task", "show", "--id", "task-ref", "--format", "json"])).not.toContain("local://references/group-sheet.png");
+
+    runDna([
+      "--db",
+      db,
+      "reference-generation",
+      "link-asset",
+      "--job",
+      "job-reference-graph-cli",
+      "--asset-id",
+      "asset-reference-graph-cli",
+      "--uri",
+      "local://references/graph-board.png",
+      "--asset-type",
+      "image",
+      "--role",
+      "reference",
+      "--apply"
+    ]);
+    const completePreview = runDna([
+      "--db",
+      db,
+      "reference-generation",
+      "complete",
+      "--job",
+      "job-reference-graph-cli",
+      "--note",
+      "external board complete with Bearer sk-secret-token",
+      "--external-tool",
+      "board tool"
+    ]);
+    expect(completePreview).toContain("Preview reference generation completion");
+    expect(completePreview).toContain("Status: created -> generated");
+    expect(completePreview).not.toMatch(/sk-secret|Bearer/);
+    expect(JSON.parse(runDna(["--db", db, "provider", "job", "show", "--id", "job-reference-graph-cli"])).status).toBe("created");
+
+    const completed = JSON.parse(
+      runDna([
+        "--db",
+        db,
+        "reference-generation",
+        "complete",
+        "--job",
+        "job-reference-graph-cli",
+        "--note",
+        "external board complete with Bearer sk-secret-token",
+        "--external-tool",
+        "board tool",
+        "--metadata",
+        "reviewer=lead",
+        "--metadata",
+        "signedUrl=https://cdn.example.invalid/ref.png?X-Amz-Signature=secret",
+        "--apply",
+        "--format",
+        "json"
+      ])
+    );
+    expect(completed.after).toMatchObject({
+      generationJobId: "job-reference-graph-cli",
+      status: "generated",
+      outputSnapshot: {
+        referenceCompletion: {
+          linkedAssetIds: ["asset-reference-graph-cli"],
+          note: "external board complete with [redacted]",
+          externalTool: "board tool",
+          metadata: { reviewer: "lead" }
+        }
+      }
+    });
+    expect(JSON.stringify(completed.after)).not.toMatch(/sk-secret|Bearer|X-Amz-Signature|signedUrl/);
+
+    const atomicPrepared = JSON.parse(
+      runDna([
+        "--db",
+        db,
+        "reference-generation",
+        "prepare",
+        "--scope",
+        "graph",
+        "--graph",
+        "graph-ref",
+        "--brief",
+        "Create graph-wide atomic reference",
+        "--reference-type",
+        "moodboard",
+        "--entity-artifact",
+        "eca-reference-atomic-cli",
+        "--job",
+        "job-reference-atomic-cli",
+        "--apply",
+        "--format",
+        "json"
+      ])
+    );
+    expect(atomicPrepared.job.status).toBe("created");
+    const atomic = JSON.parse(
+      runDna([
+        "--db",
+        db,
+        "reference-generation",
+        "link-asset",
+        "--job",
+        "job-reference-atomic-cli",
+        "--asset-id",
+        "asset-reference-atomic-cli",
+        "--uri",
+        "local://references/atomic-board.png",
+        "--asset-type",
+        "image",
+        "--mark-generated",
+        "--note",
+        "done",
+        "--external-tool",
+        "board tool",
+        "--apply",
+        "--format",
+        "json"
+      ])
+    );
+    expect(atomic.markedGenerated).toBe(true);
+    expect(atomic.completedJob).toMatchObject({ generationJobId: "job-reference-atomic-cli", status: "generated" });
+    expect(JSON.parse(runDna(["--db", db, "provider", "job", "show", "--id", "job-reference-atomic-cli"]))).toMatchObject({
+      generationKind: "reference",
+      status: "generated",
+      outputSnapshot: {
+        referenceCompletion: {
+          linkedAssetIds: ["asset-reference-atomic-cli"],
+          note: "done",
+          externalTool: "board tool"
+        }
+      }
+    });
   }, CLI_TIMEOUT);
 });

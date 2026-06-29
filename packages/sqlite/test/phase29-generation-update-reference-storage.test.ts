@@ -11,6 +11,7 @@ import {
   createDefaultSpeciesNode
 } from "@dna/core";
 import {
+  completeReferenceGeneration,
   linkReferenceAsset,
   persistReferenceGeneration,
   prepareReferenceGeneration,
@@ -135,6 +136,19 @@ describe("Phase 29 issues #14/#15 generation update and reference storage", () =
       },
       { apply: true }
     );
+    completeReferenceGeneration(
+      source,
+      {
+        generationJobId: "job-storage-reference",
+        note: "Completed by external tool without OPENAI_API_KEY=secret",
+        externalTool: "reference board",
+        metadata: {
+          reviewer: "lead",
+          signedUrl: "https://cdn.example.invalid/ref.png?X-Amz-Signature=secret"
+        }
+      },
+      { apply: true }
+    );
 
     exportProject(source, out);
     expect(existsSync(join(out, "graphs", graph.graphId, "generation-plans", `${plan.planId}.json`))).toBe(true);
@@ -142,7 +156,7 @@ describe("Phase 29 issues #14/#15 generation update and reference storage", () =
     expect(existsSync(join(out, "graphs", graph.graphId, "generation-jobs", "job-storage-reference.json"))).toBe(true);
     expect(existsSync(join(out, "graphs", graph.graphId, "assets", "asset-storage-reference.json"))).toBe(true);
     const exported = readAllFiles(out);
-    expect(exported).not.toMatch(/sk-storage-secret|private\.example|privateLink/);
+    expect(exported).not.toMatch(/sk-storage-secret|private\.example|privateLink|OPENAI_API_KEY|X-Amz-Signature|signedUrl/);
 
     importProject(target, out);
     expect(target.generationPlans.get(plan.planId)).toMatchObject({ description: "Updated storage plan", tags: ["review"] });
@@ -152,7 +166,16 @@ describe("Phase 29 issues #14/#15 generation update and reference storage", () =
     });
     expect(target.generationJobs.get("job-storage-reference")).toMatchObject({
       generationKind: "reference",
-      target: { type: "species-group", id: group.groupId, graphId: graph.graphId }
+      status: "generated",
+      target: { type: "species-group", id: group.groupId, graphId: graph.graphId },
+      outputSnapshot: {
+        referenceCompletion: {
+          linkedAssetIds: ["asset-storage-reference"],
+          note: "Completed by external tool without [redacted]",
+          externalTool: "reference board",
+          metadata: { reviewer: "lead" }
+        }
+      }
     });
     expect(target.assets.get("asset-storage-reference")).toMatchObject({
       linkedObjectType: "generation-job",

@@ -10,6 +10,7 @@ import {
   createGenerationJob
 } from "@dna/core";
 import {
+  completeReferenceGeneration,
   linkReferenceAsset,
   persistReferenceGeneration,
   prepareReferenceGeneration,
@@ -343,5 +344,166 @@ describe("Phase 29 issues #14/#15 generation orchestration services", () => {
         { apply: false }
       )
     ).toThrow(/private or credential-bearing asset uri/);
+  });
+
+  test("completes reference generation only with safe output evidence and preserves job provenance", () => {
+    const { store, graph } = seedStore();
+    const prepared = prepareReferenceGeneration(store, {
+      scope: "graph",
+      graphId: graph.graphId,
+      brief: "Create a completion-ready reference image.",
+      referenceType: "reference-image",
+      ids: { entityArtifactId: "eca-reference-complete", generationJobId: "job-reference-complete" }
+    });
+    persistReferenceGeneration(store, prepared);
+    const before = store.generationJobs.get("job-reference-complete");
+
+    expect(before).toMatchObject({ status: "created", generationKind: "reference" });
+    expect(() =>
+      completeReferenceGeneration(
+        store,
+        { generationJobId: "job-reference-complete", note: "done", externalTool: "external board" },
+        { apply: true }
+      )
+    ).toThrow(/output evidence/);
+
+    linkReferenceAsset(
+      store,
+      {
+        generationJobId: "job-reference-complete",
+        assetId: "asset-reference-complete",
+        uri: "local://references/completion.png",
+        assetType: "image",
+        role: "reference"
+      },
+      { apply: true }
+    );
+
+    const preview = completeReferenceGeneration(
+      store,
+      {
+        generationJobId: "job-reference-complete",
+        note: "Completed without leaking Bearer sk-secret-token",
+        externalTool: "concept board",
+        metadata: {
+          reviewer: "lead",
+          signedUrl: "https://cdn.example.invalid/ref.png?X-Amz-Signature=secret",
+          nested: { token: "secret-token", safe: "ok" }
+        }
+      },
+      { apply: false }
+    );
+    expect(preview.persisted).toBe(false);
+    expect(preview.after).toMatchObject({
+      generationJobId: "job-reference-complete",
+      generationKind: "reference",
+      status: "generated",
+      outputSnapshot: {
+        prompt: prepared.job.outputSnapshot.prompt,
+        artBrief: prepared.job.outputSnapshot.artBrief,
+        reviewChecklist: prepared.job.outputSnapshot.reviewChecklist,
+        referenceCompletion: {
+          linkedAssetIds: ["asset-reference-complete"],
+          note: "Completed without leaking [redacted]",
+          externalTool: "concept board",
+          metadata: { reviewer: "lead", nested: { safe: "ok" } }
+        }
+      }
+    });
+    expect(store.generationJobs.get("job-reference-complete")?.status).toBe("created");
+    expect(JSON.stringify(preview.after)).not.toMatch(/sk-secret|Bearer|X-Amz-Signature|secret-token|signedUrl/);
+
+    const applied = completeReferenceGeneration(
+      store,
+      {
+        generationJobId: "job-reference-complete",
+        assetIds: ["asset-reference-complete"],
+        note: "Completed without leaking Bearer sk-secret-token",
+        externalTool: "concept board",
+        metadata: { reviewer: "lead" }
+      },
+      { apply: true }
+    );
+    const stored = store.generationJobs.get("job-reference-complete");
+    expect(applied.persisted).toBe(true);
+    expect(stored).toMatchObject({
+      generationJobId: "job-reference-complete",
+      generationKind: "reference",
+      status: "generated",
+      inputSnapshot: before?.inputSnapshot,
+      target: before?.target
+    });
+    expect(stored?.createdAt).toBe(before?.createdAt);
+    expect(stored?.updatedAt).not.toBe(before?.updatedAt);
+    expect(stored?.outputSnapshot).toMatchObject({
+      prompt: before?.outputSnapshot.prompt,
+      artBrief: before?.outputSnapshot.artBrief,
+      reviewChecklist: before?.outputSnapshot.reviewChecklist,
+      referenceCompletion: {
+        linkedAssetIds: ["asset-reference-complete"],
+        note: "Completed without leaking [redacted]",
+        externalTool: "concept board",
+        metadata: { reviewer: "lead" }
+      }
+    });
+    expect(JSON.stringify(stored)).not.toMatch(/sk-secret|Bearer/);
+
+    expect(() =>
+      completeReferenceGeneration(store, { generationJobId: "job-existing", assetIds: ["asset-reference-complete"] }, { apply: true })
+    ).toThrow(/not a reference generation job/);
+  });
+
+  test("linking a reference asset can atomically mark the reference job generated", () => {
+    const { store, graph } = seedStore();
+    const prepared = prepareReferenceGeneration(store, {
+      scope: "graph",
+      graphId: graph.graphId,
+      brief: "Create an atomic reference image.",
+      referenceType: "reference-image",
+      ids: { entityArtifactId: "eca-reference-atomic", generationJobId: "job-reference-atomic" }
+    });
+    persistReferenceGeneration(store, prepared);
+
+    const preview = linkReferenceAsset(
+      store,
+      {
+        generationJobId: "job-reference-atomic",
+        assetId: "asset-reference-atomic",
+        uri: "local://references/atomic.png",
+        assetType: "image",
+        role: "reference"
+      },
+      { apply: false, markGenerated: true, completion: { note: "external complete", externalTool: "paint app" } }
+    );
+    expect(preview.persisted).toBe(false);
+    expect(preview.markedGenerated).toBe(true);
+    expect(preview.completedJob).toMatchObject({ status: "generated" });
+    expect(store.assets.get("asset-reference-atomic")).toBeUndefined();
+    expect(store.generationJobs.get("job-reference-atomic")?.status).toBe("created");
+
+    const applied = linkReferenceAsset(
+      store,
+      {
+        generationJobId: "job-reference-atomic",
+        assetId: "asset-reference-atomic",
+        uri: "local://references/atomic.png",
+        assetType: "image",
+        role: "reference"
+      },
+      { apply: true, markGenerated: true, completion: { note: "external complete", externalTool: "paint app" } }
+    );
+    expect(applied.persisted).toBe(true);
+    expect(applied.markedGenerated).toBe(true);
+    expect(store.assets.get("asset-reference-atomic")).toMatchObject({ linkedObjectId: "job-reference-atomic" });
+    expect(store.generationJobs.get("job-reference-atomic")).toMatchObject({
+      status: "generated",
+      outputSnapshot: {
+        referenceCompletion: {
+          linkedAssetIds: ["asset-reference-atomic"],
+          note: "external complete",
+          externalTool: "paint app"
+        }
+      }
+    });
   });
 });

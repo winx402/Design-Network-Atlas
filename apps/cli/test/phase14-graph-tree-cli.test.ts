@@ -32,6 +32,33 @@ function runDnaFailure(args: string[]) {
 }
 
 describe("Phase 14 graph tree CLI", () => {
+  test("keeps graph list default JSON and supports explicit text/json formats", () => {
+    const db = join(tempDir("phase14-graph-list-format"), "dna.sqlite");
+
+    const emptyDefault = runDna(["--db", db, "graph", "list"]);
+    expect(JSON.parse(emptyDefault)).toEqual([]);
+    expect(JSON.parse(runDna(["--db", db, "graph", "list", "--format", "json"]))).toEqual([]);
+    expect(runDna(["--db", db, "graph", "list", "--format", "text"])).toBe("No graphs found.\n");
+
+    runDna(["--db", db, "graph", "create", "--id", "graph-list-a", "--name", "List Graph A", "--purpose", "format contract", "--status", "active", "--yes"]);
+    runDna(["--db", db, "graph", "create", "--id", "graph-list-b", "--name", "List Graph B", "--purpose", "format contract", "--yes"]);
+
+    const defaultRows = JSON.parse(runDna(["--db", db, "graph", "list"]));
+    expect(defaultRows.map((graph: { graphId: string }) => graph.graphId)).toEqual(["graph-list-a", "graph-list-b"]);
+    const jsonRows = JSON.parse(runDna(["--db", db, "graph", "list", "--format", "json"]));
+    expect(jsonRows).toEqual(defaultRows);
+
+    const text = runDna(["--db", db, "graph", "list", "--format", "text"]);
+    expect(text).toContain("graph-list-a");
+    expect(text).toContain("List Graph A");
+    expect(text).toContain("active");
+    expect(text).toContain("format contract");
+    expect(text).toContain("graph-list-b");
+
+    const failure = runDnaFailure(["--db", db, "graph", "list", "--format", "yaml"]);
+    expect(failure).toContain("unknown output format: yaml");
+  }, 60_000);
+
   test("prints a species tree and a JSON graph tree view", () => {
     const db = join(tempDir("phase14-graph-tree"), "dna.sqlite");
 
