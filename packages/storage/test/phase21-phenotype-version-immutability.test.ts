@@ -19,23 +19,30 @@ function immutableVersion() {
     speciesCompileArtifactId: "species-artifact-immutable",
     phenotypeCompileArtifactId: "phenotype-artifact-immutable",
     compileArtifactSnapshot: { prompt: "Generate a red warning icon" },
-    status: "pending-confirmation"
+    status: "candidate"
   });
 }
 
 describe("Phase 21 PRD-10 memory phenotype version immutability", () => {
-  test("repository exposes status-only update and preserves content fields", () => {
+  test("repository exposes lifecycle metadata update and preserves content fields", () => {
     const store = new InMemoryDnaStore();
     const version = immutableVersion();
     store.phenotypeVersions.create(version);
 
     expect((store.phenotypeVersions as unknown as { update?: unknown }).update).toBeUndefined();
 
-    store.phenotypeVersions.updateStatus(version.phenotypeVersionId, "accepted");
+    store.phenotypeVersions.updateLifecycleMetadata(version.phenotypeVersionId, {
+      status: "accepted",
+      feedback: {
+        summary: "Accepted metadata.",
+        items: []
+      }
+    });
     const updated = store.phenotypeVersions.get(version.phenotypeVersionId);
 
     expect(updated).toMatchObject({
       status: "accepted",
+      feedback: { summary: "Accepted metadata.", items: [] },
       promptSnapshot: version.promptSnapshot,
       generationRecipe: version.generationRecipe,
       resolvedGeneSnapshot: version.resolvedGeneSnapshot,
@@ -45,17 +52,17 @@ describe("Phase 21 PRD-10 memory phenotype version immutability", () => {
     });
   });
 
-  test("status-only update validates phenotype version transitions", () => {
+  test("lifecycle metadata update validates phenotype version transitions", () => {
     const store = new InMemoryDnaStore();
     const version = immutableVersion();
     store.phenotypeVersions.create({ ...version, status: "accepted" });
 
-    expect(() => store.phenotypeVersions.updateStatus(version.phenotypeVersionId, "pending-confirmation")).toThrow(
-      /Invalid phenotype-version status transition: accepted -> pending-confirmation/
+    expect(() => store.phenotypeVersions.updateLifecycleMetadata(version.phenotypeVersionId, { status: "candidate" })).toThrow(
+      /Invalid phenotype-version status transition: accepted -> candidate/
     );
   });
 
-  test("public docs describe content immutability and status-only lifecycle changes", () => {
+  test("public docs describe content immutability and lifecycle metadata changes", () => {
     const docs = [
       readFileSync(resolve(root, "docs/design/system-architecture.md"), "utf8"),
       readFileSync(resolve(root, "docs/design/concept-registry.md"), "utf8")
@@ -63,7 +70,7 @@ describe("Phase 21 PRD-10 memory phenotype version immutability", () => {
 
     expect(docs).toContain("PhenotypeVersion");
     expect(docs).toContain("content immutable");
-    expect(docs).toContain("status-only");
+    expect(docs).toContain("status + feedback");
     expect(docs).toContain("assertCanTransitionStatus");
   });
 });

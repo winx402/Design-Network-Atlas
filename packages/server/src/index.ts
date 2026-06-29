@@ -221,6 +221,7 @@ function createWorkbenchPhenotypes(store: SqliteDnaStore, graphId: string | unde
           speciesVersion: version.nodeVersionId,
           createdAt: version.createdAt,
           status: version.status,
+          feedback: version.feedback,
           promptSnapshot: version.promptSnapshot,
           assets: version.assetIds
             .map((assetId) => store.assets.get(assetId))
@@ -380,7 +381,7 @@ function createWorkbenchHtml() {
         </div>
         <dl class="metrics" aria-label="Workbench metrics">
           <div><dt>Phenotypes</dt><dd id="metric-phenotypes">0</dd></div>
-          <div><dt>Pending</dt><dd id="metric-pending">0</dd></div>
+          <div><dt>Candidates</dt><dd id="metric-pending">0</dd></div>
           <div><dt>Outdated</dt><dd id="metric-outdated">0</dd></div>
         </dl>
       </header>
@@ -439,7 +440,7 @@ function createWorkbenchHtml() {
 
       function render(phenotypes) {
         metricPhenotypes.textContent = String(phenotypes.length);
-        metricPending.textContent = String(phenotypes.filter((phenotype) => selectedVersion(phenotype)?.status === "pending-confirmation").length);
+        metricPending.textContent = String(phenotypes.filter((phenotype) => selectedVersion(phenotype)?.status === "candidate").length);
         metricOutdated.textContent = String(phenotypes.filter((phenotype) => phenotype.outdated).length);
         if (phenotypes.length === 0) {
           state.className = "state";

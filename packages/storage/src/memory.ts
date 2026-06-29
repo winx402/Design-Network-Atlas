@@ -361,17 +361,31 @@ export class InMemoryDnaStore implements DnaServiceStore {
     this.phenotypes = {
       create: (phenotype) => this.state.phenotypes.set(phenotype.phenotypeId, phenotype),
       update: (phenotype) => this.state.phenotypes.set(phenotype.phenotypeId, phenotype),
+      updateCurrentAcceptedVersion: (phenotypeId, phenotypeVersionId) => {
+        const current = this.state.phenotypes.get(phenotypeId);
+        if (!current) throw new Error(`phenotype not found: ${phenotypeId}`);
+        this.state.phenotypes.set(phenotypeId, {
+          ...current,
+          currentAcceptedVersion: phenotypeVersionId,
+          updatedAt: new Date().toISOString()
+        });
+      },
       get: (phenotypeId) => this.state.phenotypes.get(phenotypeId),
       listByGraph: (graphId) => [...this.state.phenotypes.values()].filter((phenotype) => phenotype.graphId === graphId)
     };
     this.phenotypeVersions = {
       create: (version) => this.state.phenotypeVersions.set(version.phenotypeVersionId, version),
-      updateStatus: (phenotypeVersionId, status) => {
+      updateLifecycleMetadata: (phenotypeVersionId, metadata) => {
         const current = this.state.phenotypeVersions.get(phenotypeVersionId);
         if (!current) throw new Error(`phenotype version not found: ${phenotypeVersionId}`);
-        assertCanTransitionStatus("phenotype-version", current.status, status);
-        this.state.phenotypeVersions.set(phenotypeVersionId, { ...current, status });
+        if (metadata.status) assertCanTransitionStatus("phenotype-version", current.status, metadata.status);
+        this.state.phenotypeVersions.set(phenotypeVersionId, {
+          ...current,
+          status: metadata.status ?? current.status,
+          feedback: metadata.feedback ?? current.feedback
+        });
       },
+      updateStatus: (phenotypeVersionId, status) => this.phenotypeVersions.updateLifecycleMetadata(phenotypeVersionId, { status }),
       get: (phenotypeVersionId) => this.state.phenotypeVersions.get(phenotypeVersionId),
       listByPhenotype: (phenotypeId) => [...this.state.phenotypeVersions.values()].filter((version) => version.phenotypeId === phenotypeId),
       listByNode: (nodeId) => [...this.state.phenotypeVersions.values()].filter((version) => version.nodeId === nodeId)

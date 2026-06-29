@@ -19,13 +19,18 @@ export const ParentRoleSchema = z.enum([
 export const PhenotypeTypeSourceSchema = z.enum(["built-in", "template", "custom"]);
 export const PhenotypeStatusSchema = z.enum(["planned", "active", "archived", "deleted"]);
 export const PhenotypeVersionStatusSchema = z.enum([
-  "pending-confirmation",
+  "draft",
+  "candidate",
   "accepted",
   "rejected",
-  "deleted",
-  "superseded",
-  "archived"
+  "replaced",
+  "rolled-back",
+  "deprecated",
+  "archived",
+  "deleted"
 ]);
+export const PhenotypeVersionFeedbackSeveritySchema = z.enum(["info", "warning", "blocking"]);
+export const PhenotypeVersionFeedbackSourceSchema = z.enum(["human", "agent", "system"]);
 export const PhenotypeGenerationPlanStatusSchema = z.enum([
   "draft",
   "ready",
@@ -685,6 +690,20 @@ export const PhenotypeSchema = z.object({
   updatedAt: IsoDateSchema
 });
 
+export const PhenotypeVersionFeedbackItemSchema = z.object({
+  feedbackId: z.string().min(1),
+  severity: PhenotypeVersionFeedbackSeveritySchema,
+  source: PhenotypeVersionFeedbackSourceSchema,
+  message: z.string().min(1),
+  suggestedAction: z.string().optional(),
+  createdAt: IsoDateSchema
+});
+
+export const PhenotypeVersionFeedbackSchema = z.object({
+  summary: z.string().optional(),
+  items: z.array(PhenotypeVersionFeedbackItemSchema).default([])
+});
+
 export const PhenotypeVersionSchema = z.object({
   phenotypeVersionId: z.string().min(1),
   phenotypeId: z.string().min(1),
@@ -703,6 +722,7 @@ export const PhenotypeVersionSchema = z.object({
   phenotypeCompileArtifactId: z.string().optional(),
   compileArtifactSnapshot: JsonRecordSchema,
   status: PhenotypeVersionStatusSchema,
+  feedback: PhenotypeVersionFeedbackSchema.default({ items: [] }),
   reviewRecords: z.array(z.string()).default([]),
   facets: FacetsSchema,
   createdAt: IsoDateSchema
@@ -1260,6 +1280,8 @@ export type NodeVersion = z.infer<typeof NodeVersionSchema>;
 export type AssetType = z.infer<typeof AssetTypeSchema>;
 export type PhenotypeOutputPlan = z.infer<typeof PhenotypeOutputPlanSchema>;
 export type Phenotype = z.infer<typeof PhenotypeSchema>;
+export type PhenotypeVersionFeedback = z.infer<typeof PhenotypeVersionFeedbackSchema>;
+export type PhenotypeVersionFeedbackItem = z.infer<typeof PhenotypeVersionFeedbackItemSchema>;
 export type PhenotypeVersion = z.infer<typeof PhenotypeVersionSchema>;
 export type GenerationVersionBinding = z.infer<typeof GenerationVersionBindingSchema>;
 export type PhenotypeGenerationPlan = z.infer<typeof PhenotypeGenerationPlanSchema>;

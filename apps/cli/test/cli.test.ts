@@ -80,6 +80,6 @@ describe("dna CLI", () => {
     ], cwd);
 
     expect(generated).toContain("broken-ring");
-    expect(generated).toContain("pending-confirmation");
+    expect(generated).toContain("candidate");
   }, CLI_TIMEOUT);
 });

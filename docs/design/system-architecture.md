@@ -161,7 +161,7 @@ Generated trace/output/audit records 和 external pointers 可以通过 applicat
 - 修改物种时，创建新版本，不覆盖旧版本；关系本身是受审查的 durable design fact。
 - 表型版本保存当次生成所用物种版本、关系 trace、基因快照、prompt / brief、工具参数摘要。
 - 删除和归档优先使用状态字段，历史版本仍可查询。
-- `PhenotypeVersion` is content immutable after creation. Lifecycle changes use the repository status-only path and must validate transitions with `assertCanTransitionStatus("phenotype-version", from, to)`.
+- `PhenotypeVersion` is content immutable after creation. Lifecycle changes use the repository `status + feedback` metadata path and must validate transitions with `assertCanTransitionStatus("phenotype-version", from, to)`; accepting, replacing, rolling back, archiving, or deleting a version may also update `Phenotype.currentAcceptedVersion`.
 
 ### 5.3 影响分析
 
@@ -209,7 +209,7 @@ Layered compile 按 atlas -> graph -> species-group -> species-node -> phenotype
 
 Preview 模式返回 artifacts、Phenotype、PhenotypeVersion、GenerationJob 和 prompt，不持久化 artifacts、versions、jobs、assets 或 references。`--apply` 通过 application service 和 repository transaction 写入新的 layered artifacts、phenotype/version 和 generation job。`PhenotypeVersion` 必须记录 `speciesCompileArtifactId`、`phenotypeCompileArtifactId` 和有界 `compileArtifactSnapshot`，包含 frame/conflict/decision/feedback counts 与 artifact validity；`GenerationJob.inputSnapshot` 必须记录 graph、node、task brief、phenotype type、compile mode/current-or-historical 状态以及 artifact IDs。
 
-`dna.modeling-batch.v1` 可以声明 `phenotypePlans`，但它们只是输入概念；proposal apply 或显式 `draft-write` 后会创建 `status: "planned"` 的 `Phenotype` 容器，不创建 `PhenotypeVersion`、`GenerationJob`、`AssetIndex` 或 `OutputReference`。后续正式 `phenotype generate --phenotype-id <id>` 会复用这个 planned phenotype 容器，生成版本默认仍是 `pending-confirmation`。
+`dna.modeling-batch.v1` 可以声明 `phenotypePlans`，但它们只是输入概念；proposal apply 或显式 `draft-write` 后会创建 `status: "planned"` 的 `Phenotype` 容器，不创建 `PhenotypeVersion`、`GenerationJob`、`AssetIndex` 或 `OutputReference`。后续正式 `phenotype generate --phenotype-id <id>` 会复用这个 planned phenotype 容器，生成版本默认是 `candidate`；`phenotype-version accept|replace|rollback|deprecate|archive|delete` 只更新生命周期 metadata 和 `currentAcceptedVersion` 指针。
 
 `PhenotypeGenerationPlan` 和 `PhenotypeGenerationTask` 是 production orchestration records，不是 graph facts。Plan 可绑定 graph、species-group、species-node 或 phenotype scope，并确定性展开 planned phenotypes 为 tasks；task 也可独立创建。`versionBinding` 默认是 `latest-at-execution`，也可 pinned 到 `NodeVersion`、`SpeciesCompileArtifact` 或 `PhenotypeCompileArtifact`。task-based `phenotype generate --task` 必须通过 application service 复用 formal artifact-backed generation path，并在 apply 后把 compile artifact ids、GenerationJob ids 和 PhenotypeVersion ids 回写到 task。Plan/task 的 model/provider/tool preference、`llmInstructions`、`operatorNotes`、metadata 和 extensions 是非敏感编排上下文，不得保存 provider credentials、raw provider payloads 或完整私密链接。
 

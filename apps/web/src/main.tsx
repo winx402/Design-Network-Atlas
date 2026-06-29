@@ -16,11 +16,14 @@ import "./style.css";
 
 const statusOptions: Array<WorkbenchVersionStatus | "all"> = [
   "all",
-  "pending-confirmation",
+  "candidate",
   "accepted",
   "rejected",
-  "superseded",
-  "archived"
+  "replaced",
+  "rolled-back",
+  "deprecated",
+  "archived",
+  "deleted"
 ];
 
 function AssetWorkbench() {
@@ -45,7 +48,7 @@ function AssetWorkbench() {
   const selectedPhenotype =
     filtered.find((phenotype) => phenotype.id === selectedPhenotypeId) ?? filtered[0] ?? phenotypes[0];
   const selectedVersion = selectedPhenotype ? getSelectedVersion(selectedPhenotype, selectedVersionId) : undefined;
-  const pendingCount = phenotypes.filter((phenotype) => getSelectedVersion(phenotype)?.status === "pending-confirmation").length;
+  const candidateCount = phenotypes.filter((phenotype) => getSelectedVersion(phenotype)?.status === "candidate").length;
   const outdatedCount = phenotypes.filter((phenotype) => phenotype.outdated).length;
   const openTaskCount = loadState.generationTasks.filter((task) => task.status !== "completed" && task.status !== "cancelled").length;
 
@@ -78,7 +81,7 @@ function AssetWorkbench() {
         </div>
         <dl className="metrics" aria-label="Workbench metrics">
           <Metric label="Phenotypes" value={phenotypes.length} />
-          <Metric label="Pending" value={pendingCount} />
+          <Metric label="Candidates" value={candidateCount} />
           <Metric label="Outdated" value={outdatedCount} />
           <Metric label="Tasks" value={openTaskCount} />
         </dl>
@@ -308,6 +311,17 @@ function PhenotypeDetail(props: {
           <p className="review-summary">{review?.summary ?? "No review record yet."}</p>
           <KeyValueList title="Missing" values={review?.missingDimensions ?? []} />
           <KeyValueList title="Violations" values={review?.constraintViolations ?? []} />
+        </div>
+        <div>
+          <div className="panel-title">
+            <h3>Lifecycle Feedback</h3>
+            <span>{selectedVersion.feedback?.items.length ?? 0} items</span>
+          </div>
+          <p className="review-summary">{selectedVersion.feedback?.summary ?? "No lifecycle feedback yet."}</p>
+          <KeyValueList
+            title="Feedback"
+            values={(selectedVersion.feedback?.items ?? []).map((item) => `${item.severity}/${item.source}: ${item.message}`)}
+          />
         </div>
         <div>
           <h3>Prompt Snapshot</h3>

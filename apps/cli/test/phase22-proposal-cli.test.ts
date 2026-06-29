@@ -106,7 +106,7 @@ describe("Phase 22 proposal CLI", () => {
     expect(show).toContain('"reviewStage": "draft"');
     const reviewed = runDna(["--db", db, "proposal", "review", "proposal-cli"]);
     expect(reviewed).toContain('"status": "ready"');
-    expect(reviewed).toContain('"reviewStage": "pending-confirmation"');
+    expect(reviewed).toContain('"reviewStage": "pending-review"');
 
     expect(runDna(["--db", db, "--yes", "proposal", "apply", "proposal-cli"])).toContain('"reviewStage": "confirmed-applied"');
 

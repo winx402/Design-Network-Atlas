@@ -24,12 +24,15 @@ const statusTransitions: Record<StatusObjectType, Record<string, string[]>> = {
     deleted: []
   },
   "phenotype-version": {
-    "pending-confirmation": ["accepted", "rejected", "deleted", "superseded", "archived"],
-    accepted: ["superseded", "archived", "deleted"],
+    draft: ["candidate", "rejected", "archived", "deleted"],
+    candidate: ["accepted", "rejected", "archived", "deleted"],
+    accepted: ["replaced", "deprecated", "rolled-back", "archived", "deleted"],
+    replaced: ["accepted", "archived", "deleted"],
+    deprecated: ["accepted", "archived", "deleted"],
+    "rolled-back": ["accepted", "archived", "deleted"],
     rejected: ["archived", "deleted"],
-    deleted: [],
-    superseded: ["archived", "deleted"],
-    archived: []
+    archived: ["deleted"],
+    deleted: []
   },
   asset: {
     pending: ["active", "rejected", "deleted", "archived"],

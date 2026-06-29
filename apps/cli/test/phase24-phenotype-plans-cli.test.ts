@@ -145,7 +145,7 @@ describe("Phase 24 phenotype plans in modeling batch", () => {
     );
     expect(generated.phenotype.phenotypeId).toBe("phenotype-warden-portrait");
     expect(generated.phenotype.status).toBe("planned");
-    expect(generated.phenotypeVersion.status).toBe("pending-confirmation");
+    expect(generated.phenotypeVersion.status).toBe("candidate");
 
     runDna(["--db", db, "export", "--out", exportAfterGenerateDir, "--profile", "review-current"]);
     const phenotypeFiles = readdirSync(join(exportAfterGenerateDir, "graphs", "graph-character", "phenotypes")).filter((name) =>

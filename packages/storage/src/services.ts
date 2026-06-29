@@ -324,7 +324,7 @@ export interface ImportModelingBatchResult {
   warning?: string;
 }
 
-export type ProposalReviewStage = "draft" | "pending-confirmation" | "confirmed-applied" | "discarded";
+export type ProposalReviewStage = "draft" | "pending-review" | "confirmed-applied" | "discarded";
 
 export function createDnaServices(store: DnaServiceStore) {
   return {
@@ -1471,7 +1471,7 @@ function reviewProposal(
 }
 
 function proposalReviewStage(proposal: Proposal): ProposalReviewStage {
-  if (proposal.status === "ready") return "pending-confirmation";
+  if (proposal.status === "ready") return "pending-review";
   if (proposal.status === "applied") return "confirmed-applied";
   if (proposal.status === "discarded") return "discarded";
   return "draft";

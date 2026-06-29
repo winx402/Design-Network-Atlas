@@ -447,7 +447,8 @@ pre {
   white-space: nowrap;
 }
 
-.status-pending-confirmation,
+.status-candidate,
+.status-draft,
 .status-needs-review {
   color: #745014;
   background: #fff1cf;
@@ -465,10 +466,17 @@ pre {
   background: #f8dddd;
 }
 
-.status-superseded,
+.status-replaced,
+.status-rolled-back,
+.status-deprecated,
 .status-archived {
   color: #4f6475;
   background: #e7edf1;
+}
+
+.status-deleted {
+  color: #842c31;
+  background: #f4cfd2;
 }
 
 @media (max-width: 900px) {

@@ -25,6 +25,7 @@ import {
   Phenotype,
   PhenotypeGenerationPlan,
   PhenotypeGenerationTask,
+  PhenotypeVersionFeedback,
   PhenotypeLibrary,
   PhenotypeLibraryGraphBinding,
   PhenotypeVersion,
@@ -89,6 +90,17 @@ function sanitizePlanningValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map((entry) => sanitizePlanningValue(entry)).filter((entry) => entry !== undefined);
   if (value && typeof value === "object") return sanitizePlanningRecord(value as Record<string, unknown>);
   return value;
+}
+
+export function sanitizePhenotypeVersionFeedback(feedback: PhenotypeVersionFeedback | undefined): PhenotypeVersionFeedback {
+  return {
+    summary: sanitizePlanningText(feedback?.summary),
+    items: (feedback?.items ?? []).map((item) => ({
+      ...item,
+      message: sanitizePlanningText(item.message) ?? "",
+      suggestedAction: sanitizePlanningText(item.suggestedAction)
+    }))
+  };
 }
 
 export function createDefaultProposal(
@@ -548,7 +560,8 @@ export function createDefaultPhenotypeVersion(
     speciesCompileArtifactId: input.speciesCompileArtifactId,
     phenotypeCompileArtifactId: input.phenotypeCompileArtifactId,
     compileArtifactSnapshot: input.compileArtifactSnapshot ?? {},
-    status: input.status ?? "pending-confirmation",
+    status: input.status ?? "candidate",
+    feedback: sanitizePhenotypeVersionFeedback(input.feedback),
     reviewRecords: input.reviewRecords ?? [],
     facets: input.facets ?? {},
     createdAt: input.createdAt ?? nowIso()

@@ -2,7 +2,15 @@ import { mkdtempSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { GenerationProvider, MockGenerationProvider, runGenerationProvider } from "@dna/core";
+import {
+  createDefaultGraph,
+  createDefaultPhenotype,
+  createDefaultPhenotypeVersion,
+  createDefaultSpeciesNode,
+  GenerationProvider,
+  MockGenerationProvider,
+  runGenerationProvider
+} from "@dna/core";
 import { exportProject, SqliteDnaStore } from "@dna/sqlite";
 
 const compilePolicy = { type: "system-rule-first", conflictResolution: "system" } as const;
@@ -110,6 +118,56 @@ describe("Phase 8 provider security persistence", () => {
     for (const forbidden of ["sk-failed-secret", "OPENAI_API_KEY", "Bearer bearer-secret", "private.example.test/file.png"]) {
       expect(exported).not.toContain(forbidden);
     }
+    store.close();
+  });
+
+  test("phenotype version feedback is sanitized before persistence and export", () => {
+    const dir = mkdtempSync(join(tmpdir(), "dna-feedback-security-"));
+    const db = join(dir, "dna.sqlite");
+    const out = join(dir, "export");
+    const store = new SqliteDnaStore(db);
+    store.migrate();
+    const graph = createDefaultGraph({ graphId: "graph-feedback-security", name: "Feedback Security", purpose: "feedback security" });
+    const node = createDefaultSpeciesNode({ graphId: graph.graphId, nodeId: "node-feedback-security", name: "Feedback Node" });
+    const phenotype = createDefaultPhenotype({
+      graphId: graph.graphId,
+      nodeId: node.nodeId,
+      phenotypeId: "ph-feedback-security",
+      name: "Feedback Phenotype",
+      phenotypeType: "image-prompt"
+    });
+    const version = createDefaultPhenotypeVersion({
+      graphId: graph.graphId,
+      nodeId: node.nodeId,
+      phenotypeId: phenotype.phenotypeId,
+      phenotypeVersionId: "pv-feedback-security",
+      feedback: {
+        summary: "OPENAI_API_KEY=sk-feedback-summary",
+        items: [
+          {
+            feedbackId: "fb-feedback-security",
+            severity: "blocking",
+            source: "agent",
+            message: "Bearer feedback-token password=feedback-password",
+            suggestedAction: "Open https://private.example.test/file.png?token=signed",
+            createdAt: "2026-06-29T00:00:00.000Z"
+          }
+        ]
+      }
+    });
+    store.graphs.create(graph);
+    store.nodes.create(node);
+    store.phenotypes.create(phenotype);
+    store.phenotypeVersions.create(version);
+
+    const persisted = JSON.stringify(store.phenotypeVersions.get(version.phenotypeVersionId));
+    exportProject(store, out);
+    const exported = readAllFiles(out);
+    for (const forbidden of ["sk-feedback-summary", "OPENAI_API_KEY", "feedback-token", "feedback-password", "private.example.test/file.png"]) {
+      expect(persisted).not.toContain(forbidden);
+      expect(exported).not.toContain(forbidden);
+    }
+    expect(persisted).toContain("[redacted]");
     store.close();
   });
 });

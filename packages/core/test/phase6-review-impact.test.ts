@@ -61,7 +61,7 @@ function phenotypeVersion() {
     tool: "manual",
     toolParameters: {},
     assetIds: ["asset-front", "asset-angle"],
-    status: "pending-confirmation",
+    status: "candidate",
     reviewRecords: [],
     facets: {},
     createdAt: now

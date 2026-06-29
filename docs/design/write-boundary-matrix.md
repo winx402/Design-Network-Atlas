@@ -52,6 +52,6 @@ Use these terms consistently:
 - `draft-write` for explicitly draft objects or generated trace/output records.
 - `direct audit write` for generated trace/output/audit records and external pointers written through CLI/application service boundaries.
 - `changeset-apply` for applying an existing preview change-set.
-- `review stage` for derived proposal/import/export visibility: `draft`, `pending-confirmation`, `confirmed-applied`, or `reviewed` for clean current exports.
+- `review stage` for derived proposal/import/export visibility: `draft`, `pending-review`, `confirmed-applied`, or `reviewed` for clean current exports.
 
 Avoid bare `direct` because it hides whether the write is an audit/output record or an unreviewed formal fact.

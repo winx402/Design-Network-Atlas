@@ -1,9 +1,13 @@
 export type WorkbenchVersionStatus =
-  | "pending-confirmation"
+  | "draft"
+  | "candidate"
   | "accepted"
   | "rejected"
-  | "superseded"
-  | "archived";
+  | "replaced"
+  | "rolled-back"
+  | "deprecated"
+  | "archived"
+  | "deleted";
 
 export interface WorkbenchAsset {
   id: string;
@@ -28,6 +32,17 @@ export interface WorkbenchVersion {
   speciesVersion: string;
   createdAt: string;
   status: WorkbenchVersionStatus;
+  feedback?: {
+    summary?: string;
+    items: Array<{
+      feedbackId: string;
+      severity: "info" | "warning" | "blocking";
+      source: "human" | "agent" | "system";
+      message: string;
+      suggestedAction?: string;
+      createdAt: string;
+    }>;
+  };
   promptSnapshot: string;
   assets: WorkbenchAsset[];
   reviews: WorkbenchReview[];
@@ -148,7 +163,11 @@ export const samplePhenotypes: WorkbenchPhenotype[] = [
         id: "pv-warning-2",
         speciesVersion: "node-warning@1.0.0",
         createdAt: "2026-06-25T11:30:00.000Z",
-        status: "pending-confirmation",
+        status: "candidate",
+        feedback: {
+          summary: "Candidate waiting for style review.",
+          items: []
+        },
         promptSnapshot: "Sharp amber broken-ring warning icon for compact toolbar use.",
         assets: [
           {
@@ -196,7 +215,11 @@ export const samplePhenotypes: WorkbenchPhenotype[] = [
         id: "pv-emblem-1",
         speciesVersion: "node-emblem@1.9.0",
         createdAt: "2026-06-21T14:00:00.000Z",
-        status: "superseded",
+        status: "replaced",
+        feedback: {
+          summary: "Replaced by a cleaner accepted brief.",
+          items: []
+        },
         promptSnapshot: "Early faction emblem art brief.",
         assets: [
           {

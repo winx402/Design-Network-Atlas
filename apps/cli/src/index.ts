@@ -3,6 +3,9 @@ import { readFileSync } from "node:fs";
 import { Command } from "commander";
 import {
   buildSpeciesCompileInput,
+  acceptPhenotypeVersion,
+  addPhenotypeVersionFeedback,
+  archivePhenotypeVersion,
   collectContextImpact,
   collectDesignRelationshipImpact,
   collectGroupImpact,
@@ -10,6 +13,8 @@ import {
   checkGraphModelingQuality,
   checkModelingBatchQuality,
   checkProposalModelingQuality,
+  deletePhenotypeVersion,
+  deprecatePhenotypeVersion,
   prepareEntityCompileArtifact,
   preparePhenotypeCompileArtifact,
   preparePhenotypeGeneration,
@@ -19,6 +24,11 @@ import {
   createGenerationTask,
   expandGenerationPlan,
   persistPhenotypeGeneration,
+  rejectPhenotypeVersion,
+  replacePhenotypeVersion,
+  rollbackPhenotypeVersion,
+  submitPhenotypeVersionCandidate,
+  updatePhenotypeVersionFeedbackSummary,
   type ApplicationImpactSummary
 } from "@dna/application";
 import {
@@ -47,6 +57,8 @@ import {
   type GenerationVersionBinding,
   type PhenotypeGenerationPlan,
   type PhenotypeGenerationTask,
+  type PhenotypeVersion,
+  type PhenotypeVersionFeedbackItem,
   type ModelingQualityReport,
   resolveLibraryRoutingPolicy,
   runGenerationProvider,
@@ -197,7 +209,7 @@ function parseExportProfile(value: string): "full" | "review-current" | "proposa
 
 type ImportBatchCliResult = {
   mode: "preview-confirm" | "draft-write";
-  reviewStage: "draft" | "pending-confirmation" | "confirmed-applied" | "discarded";
+  reviewStage: "draft" | "pending-review" | "confirmed-applied" | "discarded";
   proposal: null | { proposalId: string; title: string; status: string; changeSetIds?: string[] };
   changeSetIds: string[];
   counts: {
@@ -1927,6 +1939,152 @@ phenotype
     store.close();
   });
 
+const phenotypeVersion = program.command("phenotype-version").description("Review and update phenotype version lifecycle metadata");
+phenotypeVersion
+  .command("show")
+  .requiredOption("--id <phenotypeVersionId>", "phenotype version id")
+  .option("--format <format>", "output format: text|json")
+  .action((options, command) => {
+    const store = openStore(command);
+    const version = store.phenotypeVersions.get(options.id);
+    if (!version) {
+      store.close();
+      throw new Error(`phenotype version not found: ${options.id}`);
+    }
+    const projection = phenotypeVersionProjection(store, version);
+    printJsonOrText(parseOutputFormat(options.format), projection, formatPhenotypeVersionShow(projection));
+    store.close();
+  });
+
+function addLifecycleApplyAndFormat(command: Command) {
+  return command.option("--feedback <text>", "feedback item message").option("--apply", "persist lifecycle metadata").option("--format <format>", "output format: text|json");
+}
+
+addLifecycleApplyAndFormat(phenotypeVersion.command("submit-candidate").requiredOption("--id <phenotypeVersionId>", "phenotype version id"))
+  .action((options, command) => {
+    const store = openStore(command);
+    const apply = Boolean(options.apply || shouldApply(command));
+    const result = submitPhenotypeVersionCandidate(store, { phenotypeVersionId: options.id, feedback: options.feedback, apply });
+    printJsonOrText(parseOutputFormat(options.format), result, formatLifecycleResult(result));
+    store.close();
+  });
+addLifecycleApplyAndFormat(phenotypeVersion.command("accept").requiredOption("--id <phenotypeVersionId>", "phenotype version id"))
+  .action((options, command) => {
+    const store = openStore(command);
+    const apply = Boolean(options.apply || shouldApply(command));
+    const result = acceptPhenotypeVersion(store, { phenotypeVersionId: options.id, feedback: options.feedback, apply });
+    printJsonOrText(parseOutputFormat(options.format), result, formatLifecycleResult(result));
+    store.close();
+  });
+addLifecycleApplyAndFormat(phenotypeVersion.command("reject").requiredOption("--id <phenotypeVersionId>", "phenotype version id"))
+  .action((options, command) => {
+    const store = openStore(command);
+    const apply = Boolean(options.apply || shouldApply(command));
+    const result = rejectPhenotypeVersion(store, { phenotypeVersionId: options.id, feedback: options.feedback, apply });
+    printJsonOrText(parseOutputFormat(options.format), result, formatLifecycleResult(result));
+    store.close();
+  });
+addLifecycleApplyAndFormat(
+  phenotypeVersion
+    .command("replace")
+    .requiredOption("--old <phenotypeVersionId>", "current accepted version id")
+    .requiredOption("--new <phenotypeVersionId>", "candidate replacement version id")
+).action((options, command) => {
+  const store = openStore(command);
+  const apply = Boolean(options.apply || shouldApply(command));
+  const result = replacePhenotypeVersion(store, {
+    oldPhenotypeVersionId: options.old,
+    newPhenotypeVersionId: options.new,
+    feedback: options.feedback,
+    apply
+  });
+  printJsonOrText(parseOutputFormat(options.format), result, formatLifecycleResult(result));
+  store.close();
+});
+addLifecycleApplyAndFormat(phenotypeVersion.command("deprecate").requiredOption("--id <phenotypeVersionId>", "phenotype version id"))
+  .action((options, command) => {
+    const store = openStore(command);
+    const apply = Boolean(options.apply || shouldApply(command));
+    const result = deprecatePhenotypeVersion(store, { phenotypeVersionId: options.id, feedback: options.feedback, apply });
+    printJsonOrText(parseOutputFormat(options.format), result, formatLifecycleResult(result));
+    store.close();
+  });
+addLifecycleApplyAndFormat(
+  phenotypeVersion
+    .command("rollback")
+    .requiredOption("--phenotype <phenotypeId>", "phenotype id")
+    .requiredOption("--to <phenotypeVersionId>", "historical version id to restore")
+).action((options, command) => {
+  const store = openStore(command);
+  const apply = Boolean(options.apply || shouldApply(command));
+  const result = rollbackPhenotypeVersion(store, {
+    phenotypeId: options.phenotype,
+    toPhenotypeVersionId: options.to,
+    feedback: options.feedback,
+    apply
+  });
+  printJsonOrText(parseOutputFormat(options.format), result, formatLifecycleResult(result));
+  store.close();
+});
+addLifecycleApplyAndFormat(phenotypeVersion.command("archive").requiredOption("--id <phenotypeVersionId>", "phenotype version id"))
+  .action((options, command) => {
+    const store = openStore(command);
+    const apply = Boolean(options.apply || shouldApply(command));
+    const result = archivePhenotypeVersion(store, { phenotypeVersionId: options.id, feedback: options.feedback, apply });
+    printJsonOrText(parseOutputFormat(options.format), result, formatLifecycleResult(result));
+    store.close();
+  });
+addLifecycleApplyAndFormat(phenotypeVersion.command("delete").requiredOption("--id <phenotypeVersionId>", "phenotype version id"))
+  .action((options, command) => {
+    const store = openStore(command);
+    const apply = Boolean(options.apply || shouldApply(command));
+    const result = deletePhenotypeVersion(store, { phenotypeVersionId: options.id, feedback: options.feedback, apply });
+    printJsonOrText(parseOutputFormat(options.format), result, formatLifecycleResult(result));
+    store.close();
+  });
+
+const phenotypeVersionFeedback = phenotypeVersion.command("feedback").description("Manage phenotype version feedback metadata");
+phenotypeVersionFeedback
+  .command("add")
+  .requiredOption("--id <phenotypeVersionId>", "phenotype version id")
+  .requiredOption("--message <text>", "feedback message")
+  .option("--severity <severity>", "info|warning|blocking", "info")
+  .option("--source <source>", "human|agent|system", "human")
+  .option("--suggested-action <text>", "suggested follow-up action")
+  .option("--apply", "persist feedback metadata")
+  .option("--format <format>", "output format: text|json")
+  .action((options, command) => {
+    const store = openStore(command);
+    const apply = Boolean(options.apply || shouldApply(command));
+    const result = addPhenotypeVersionFeedback(store, {
+      phenotypeVersionId: options.id,
+      message: options.message,
+      severity: parseFeedbackSeverity(options.severity),
+      source: parseFeedbackSource(options.source),
+      suggestedAction: options.suggestedAction,
+      apply
+    });
+    printJsonOrText(parseOutputFormat(options.format), result, formatLifecycleResult(result));
+    store.close();
+  });
+phenotypeVersionFeedback
+  .command("summary")
+  .requiredOption("--id <phenotypeVersionId>", "phenotype version id")
+  .requiredOption("--summary <text>", "feedback summary")
+  .option("--apply", "persist feedback summary")
+  .option("--format <format>", "output format: text|json")
+  .action((options, command) => {
+    const store = openStore(command);
+    const apply = Boolean(options.apply || shouldApply(command));
+    const result = updatePhenotypeVersionFeedbackSummary(store, {
+      phenotypeVersionId: options.id,
+      summary: options.summary,
+      apply
+    });
+    printJsonOrText(parseOutputFormat(options.format), result, formatLifecycleResult(result));
+    store.close();
+  });
+
 const asset = program.command("asset").description("Manage asset pointers");
 asset
   .command("add")
@@ -2891,6 +3049,107 @@ function formatAtlasMapText(input: {
       }
     }
   }
+  return `${lines.join("\n")}\n`;
+}
+
+function parseFeedbackSeverity(value: string | undefined): PhenotypeVersionFeedbackItem["severity"] {
+  if (value === undefined) return "info";
+  if (value === "info" || value === "warning" || value === "blocking") return value;
+  throw new Error(`unknown feedback severity: ${value}`);
+}
+
+function parseFeedbackSource(value: string | undefined): PhenotypeVersionFeedbackItem["source"] {
+  if (value === undefined) return "human";
+  if (value === "human" || value === "agent" || value === "system") return value;
+  throw new Error(`unknown feedback source: ${value}`);
+}
+
+function uniqueCli(values: string[]) {
+  return [...new Set(values)];
+}
+
+function phenotypeVersionProjection(store: SqliteDnaStore, version: PhenotypeVersion) {
+  const jobs = store.generationJobs
+    .listByGraph(version.graphId)
+    .filter((job) => job.phenotypeVersionId === version.phenotypeVersionId);
+  const tasks = store.generationTasks
+    .listByGraph(version.graphId)
+    .filter((task) => task.phenotypeVersionIds.includes(version.phenotypeVersionId));
+  const jobTaskIds = jobs
+    .map((job) => job.inputSnapshot.generationTaskId)
+    .filter((value): value is string => typeof value === "string");
+  const jobPlanIds = jobs
+    .map((job) => job.inputSnapshot.generationPlanId)
+    .filter((value): value is string => typeof value === "string");
+  return {
+    ...version,
+    provenance: {
+      generationJobIds: uniqueCli(jobs.map((job) => job.generationJobId)),
+      generationTaskIds: uniqueCli([...tasks.map((task) => task.taskId), ...jobTaskIds]),
+      generationPlanIds: uniqueCli([
+        ...tasks.map((task) => task.planId).filter((value): value is string => Boolean(value)),
+        ...jobPlanIds
+      ])
+    }
+  };
+}
+
+function formatPhenotypeVersionShow(value: ReturnType<typeof phenotypeVersionProjection>) {
+  const lines = [
+    `Phenotype version: ${value.phenotypeVersionId}`,
+    `Status: ${value.status}`,
+    `Phenotype: ${value.phenotypeId}`,
+    `Graph: ${value.graphId}`,
+    `Node: ${value.nodeId}`,
+    `Node version: ${value.nodeVersionId}`,
+    `Generation jobs: ${value.provenance.generationJobIds.length ? value.provenance.generationJobIds.join(", ") : "none"}`,
+    `Generation tasks: ${value.provenance.generationTaskIds.length ? value.provenance.generationTaskIds.join(", ") : "none"}`,
+    `Generation plans: ${value.provenance.generationPlanIds.length ? value.provenance.generationPlanIds.join(", ") : "none"}`,
+    `Feedback summary: ${value.feedback.summary ?? "none"}`,
+    "Feedback:"
+  ];
+  if (!value.feedback.items.length) lines.push("- none");
+  for (const item of value.feedback.items) {
+    const suggested = item.suggestedAction ? ` Suggested: ${item.suggestedAction}` : "";
+    lines.push(`- [${item.severity}/${item.source}] ${item.message}${suggested}`);
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+function formatLifecycleResult(result: {
+  action: string;
+  persisted: boolean;
+  statusChanges: Array<{ phenotypeVersionId: string; from: string; to: string }>;
+  currentAcceptedVersion: { before: string | null; after: string | null };
+  feedbackChanges: Array<{ phenotypeVersionId: string; addedFeedbackItemIds: string[]; summaryBefore?: string; summaryAfter?: string }>;
+  provenance: { generationJobIds: string[]; generationTaskIds: string[]; generationPlanIds: string[] };
+  warnings: string[];
+}) {
+  const lines = [
+    `${result.persisted ? "Applied" : "Preview"} phenotype version lifecycle`,
+    `Action: ${result.action}`,
+    "Status changes:"
+  ];
+  if (!result.statusChanges.length) lines.push("- none");
+  for (const change of result.statusChanges) {
+    lines.push(`- ${change.phenotypeVersionId}: ${change.from} -> ${change.to}`);
+  }
+  lines.push(`Current accepted: ${result.currentAcceptedVersion.before ?? "none"} -> ${result.currentAcceptedVersion.after ?? "none"}`);
+  lines.push("Feedback changes:");
+  if (!result.feedbackChanges.length) lines.push("- none");
+  for (const change of result.feedbackChanges) {
+    const summary =
+      change.summaryBefore !== change.summaryAfter
+        ? ` summary: ${change.summaryBefore ?? "none"} -> ${change.summaryAfter ?? "none"}`
+        : "";
+    const items = change.addedFeedbackItemIds.length ? ` items: ${change.addedFeedbackItemIds.join(", ")}` : "";
+    lines.push(`- ${change.phenotypeVersionId}:${summary}${items}`.trimEnd());
+  }
+  lines.push(`Generation jobs: ${result.provenance.generationJobIds.length ? result.provenance.generationJobIds.join(", ") : "none"}`);
+  lines.push(`Generation tasks: ${result.provenance.generationTaskIds.length ? result.provenance.generationTaskIds.join(", ") : "none"}`);
+  lines.push(`Generation plans: ${result.provenance.generationPlanIds.length ? result.provenance.generationPlanIds.join(", ") : "none"}`);
+  if (result.warnings.length) lines.push(`Warnings: ${result.warnings.join("; ")}`);
+  if (!result.persisted) lines.push("Re-run with --apply or --yes to persist lifecycle metadata.");
   return `${lines.join("\n")}\n`;
 }
 

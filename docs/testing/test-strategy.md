@@ -50,6 +50,7 @@
 | Phase 16 | change-set/proposal review CLI E2E | preview change-set 可 list/show/review/apply/discard；proposal 可批量导入建模草案；export profile 可区分 full、review-current 和 proposal-review |
 | Phase 24 | modeling intake quality + facet closure + planned phenotype CLI E2E | `context create --version` 不被 root version 截获；facet definition/schema/assignment 有 service/change-set 写入路径；`dna.modeling-batch.v1` 支持 facets 与 `phenotypePlans`；import report 紧凑且显式 review stage；`modeling check` 对 batch/graph/proposal 输出稳定 findings |
 | Phase 26 | generation planning orchestration | `PhenotypeGenerationPlan`/`PhenotypeGenerationTask` schema、service expansion、CLI preview/apply、task-linked generation、export/import、read-only API/workbench 和 secret redaction |
+| Phase 27 | phenotype version lifecycle | `PhenotypeVersion` candidate/accepted/replaced/rolled-back lifecycle、feedback metadata、single accepted invariant、task/job provenance projection、export/import 和 secret redaction |
 
 ## 4. 关键测试数据
 
@@ -85,7 +86,7 @@
 - `DesignRelationshipSchema` 保存 relationship type、direction、designContract、auxiliaryRefs、review/provenance metadata。
 - `PhenotypeSchema` 支持 built-in、template、custom 三种表型类型来源。
 - `PhenotypeSchema` 支持 `planned` 状态和 bounded `outputPlan`，用于 batch/planned phenotype coverage。
-- `PhenotypeVersionSchema` 默认状态为 `pending-confirmation`，并支持多个 asset ids。
+- `PhenotypeVersionSchema` 默认状态为 `candidate`，并支持多个 asset ids 和轻量 `feedback` lifecycle metadata。
 - `AssetIndexSchema` 支持多种 storage type、asset type、role、variant role。
 - `GenerationJobSchema` 保存输入快照、输出快照和非敏感工具参数。
 - `ReviewRecordSchema` 保存缺失维度、约束违反、风格距离摘要、人工确认状态。
@@ -143,7 +144,7 @@
 - 父 node 变化影响所有下游 node 和 phenotype versions。
 - DesignRelationship 变化影响目标 node 及其下游。
 - impact check 不自动创建新 phenotype version。
-- rejected / superseded phenotype version 保留 review reason。
+- rejected / replaced phenotype version 保留 lifecycle feedback reason。
 
 ### 5.7 Phase 7 Skill Cases
 

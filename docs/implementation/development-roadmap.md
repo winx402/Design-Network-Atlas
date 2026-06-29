@@ -308,7 +308,7 @@ Phase 0-16 已完成并由测试覆盖。本文件保留为历史执行计划、
 验收：
 
 - 系统不自动覆盖下游版本。
-- rejected / superseded 表型版本保留审查原因。
+- rejected / replaced 表型版本保留 lifecycle feedback 原因。
 
 ## Phase 7：Codex Skill
 

@@ -1557,6 +1557,14 @@ class SqlitePhenotypeRepository implements PhenotypeRepository {
       .prepare("UPDATE phenotypes SET status = ?, payload = ?, updated_at = ? WHERE phenotype_id = ?")
       .run(phenotype.status, JSON.stringify(phenotype), phenotype.updatedAt, phenotype.phenotypeId);
   }
+  updateCurrentAcceptedVersion(phenotypeId: string, phenotypeVersionId: string | null) {
+    const current = this.get(phenotypeId);
+    if (!current) throw new Error(`phenotype not found: ${phenotypeId}`);
+    const next = { ...current, currentAcceptedVersion: phenotypeVersionId, updatedAt: new Date().toISOString() };
+    this.store.db
+      .prepare("UPDATE phenotypes SET status = ?, payload = ?, updated_at = ? WHERE phenotype_id = ?")
+      .run(next.status, JSON.stringify(next), next.updatedAt, phenotypeId);
+  }
   get(phenotypeId: string) {
     return parsePayload<Phenotype>(this.store.db.prepare("SELECT payload FROM phenotypes WHERE phenotype_id = ?").get(phenotypeId) as Row | undefined);
   }
@@ -1578,13 +1586,20 @@ class SqlitePhenotypeVersionRepository implements PhenotypeVersionRepository {
     }
   }
   updateStatus(phenotypeVersionId: string, status: PhenotypeVersion["status"]) {
+    this.updateLifecycleMetadata(phenotypeVersionId, { status });
+  }
+  updateLifecycleMetadata(phenotypeVersionId: string, metadata: Pick<Partial<PhenotypeVersion>, "status" | "feedback">) {
     const current = this.get(phenotypeVersionId);
     if (!current) throw new Error(`phenotype version not found: ${phenotypeVersionId}`);
-    assertCanTransitionStatus("phenotype-version", current.status, status);
-    const next = { ...current, status };
+    if (metadata.status) assertCanTransitionStatus("phenotype-version", current.status, metadata.status);
+    const next = {
+      ...current,
+      status: metadata.status ?? current.status,
+      feedback: metadata.feedback ?? current.feedback
+    };
     this.store.db
       .prepare("UPDATE phenotype_versions SET status = ?, payload = ? WHERE phenotype_version_id = ?")
-      .run(status, JSON.stringify(next), phenotypeVersionId);
+      .run(next.status, JSON.stringify(next), phenotypeVersionId);
   }
   get(phenotypeVersionId: string) {
     return parsePayload<PhenotypeVersion>(this.store.db.prepare("SELECT payload FROM phenotype_versions WHERE phenotype_version_id = ?").get(phenotypeVersionId) as Row | undefined);

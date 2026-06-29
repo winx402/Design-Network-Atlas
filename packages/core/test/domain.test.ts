@@ -79,7 +79,7 @@ describe("DNA core domain schemas", () => {
       tool: "manual",
       toolParameters: {},
       assetIds: ["asset-1", "asset-2"],
-      status: "pending-confirmation",
+      status: "candidate",
       reviewRecords: [],
       facets: {},
       createdAt: now

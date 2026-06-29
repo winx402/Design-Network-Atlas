@@ -22,7 +22,7 @@ Use `docs/design/write-boundary-matrix.md` for write strategy vocabulary: compil
 - ContextReference and ContextReviewRubric provide examples, badcases, review questions, and acceptance criteria.
 - PhenotypeCompileArtifact provides inherited species frames plus a phenotype frame, bounded prompt, negative prompt, art brief, generation constraints, dependency vector, feedback, and review checklist.
 - GenerationJob records the selected model/tool workflow without storing credentials or complete private links.
-- PhenotypeVersion records the accepted or pending generated result snapshot.
+- PhenotypeVersion records the generated result snapshot. New formal generation produces a `candidate`; later lifecycle actions can make it accepted, rejected, replaced, rolled-back, deprecated, archived, or deleted without changing generated content.
 - OutputReference, AssetIndex, PhenotypeLibrary, StorageMount, and LibraryRoutingPolicy record where result files or external objects live.
 
 ## Decision Gates
@@ -38,7 +38,7 @@ Use `docs/design/write-boundary-matrix.md` for write strategy vocabulary: compil
 6. context gate: include ContextReference and ContextReviewRubric only as traceable guidance; do not invent references.
 7. prompt gate: produce prompt, negative prompt, art brief, and review checklist from existing graph facts and compile artifacts.
 8. tool gate: select manual, mock, or external tool execution. Do not default to calling an external tool when conflicts are blocking.
-9. registration gate: decide whether the result becomes draft, pending-confirmation, accepted, rejected, or archived.
+9. lifecycle gate: decide whether the result should stay candidate, be accepted, rejected, replaced, rolled back, deprecated, archived, or deleted. Feedback belongs on `PhenotypeVersion.feedback`, not in ReviewRecord unless a separate review workflow is explicitly needed.
 10. storage gate: route output references through PhenotypeLibrary and StorageMount when available, or record direct OutputReference when the user does not use a DNA result library.
 
 ## Workflow
@@ -73,6 +73,8 @@ Use `docs/design/write-boundary-matrix.md` for write strategy vocabulary: compil
 
 6. Register output.
    - Register the Phenotype identity and a new PhenotypeVersion.
+   - Treat the new version as `candidate` by default. Acceptance, replacement, rollback, deprecation, archive, and deletion are lifecycle metadata changes on the version plus the Phenotype.currentAcceptedVersion pointer.
+   - Keep lightweight review comments, acceptance reasons, rollback notes, or revision suggestions in PhenotypeVersion.feedback; do not put provider credentials, raw provider payloads, complete private links, or large binary/text payloads there.
    - One PhenotypeVersion may own multiple OutputReference or AssetIndex records for size variants, angle variants, crop variants, layered files, source files, previews, mirrors, or runtime exports.
    - If no PhenotypeLibrary is used, record direct OutputReference/AssetIndex pointers without forcing the user into a library.
    - If a library is used, route by LibraryRoutingPolicy and preserve adapter-specific metadata mapping.
@@ -92,7 +94,8 @@ Return a generationPlan with these fields:
 - promptPackage: prompt, negative prompt, art brief, generation constraints, and review checklist.
 - toolPlan: manual, mock, or external tool, plus what will and will not be recorded in GenerationJob.
 - reviewPlan: checklist, expected failure cases, and acceptance decision path.
-- registrationPlan: Phenotype identity, PhenotypeVersion status, compileArtifactSnapshot, OutputReference or AssetIndex records, and library/mount routing.
+- registrationPlan: Phenotype identity, candidate PhenotypeVersion, compileArtifactSnapshot, OutputReference or AssetIndex records, and library/mount routing.
+- lifecyclePlan: candidate/accepted/rejected/replaced/rolled-back/deprecated/archive decision, currentAcceptedVersion effect, and non-sensitive feedback summary/items when applicable.
 - writeStrategy: preview-confirm, change-set review, draft-write, direct audit write, or no-write diagnosis.
 - assumptions: assumptions used.
 - confidence: high, medium, or low with one concrete reason.
@@ -101,7 +104,7 @@ Return a generationPlan with these fields:
 
 - do not invent SpeciesNode, DesignRelationship, facet, context, reference, or rubric facts to make generation easier.
 - Do not call an external tool when a blocking question, conflict, missing target, or missing storage decision would make the result misleading.
-- Do not treat generated output as accepted by default; use pending-confirmation unless the user has explicitly approved acceptance.
+- Do not treat generated output as accepted by default; use candidate unless the user has explicitly approved acceptance through the version lifecycle path.
 - Do not bypass DNA compile artifacts when prompt or brief generation depends on graph constraints.
 - Do not recommend registering a generated PhenotypeVersion without a PhenotypeCompileArtifact-backed provenance path.
 - Do not store provider credentials, complete private links, raw Agent host responses, or sensitive provider parameters.

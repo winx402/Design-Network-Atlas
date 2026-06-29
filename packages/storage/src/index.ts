@@ -199,12 +199,14 @@ export interface NodeVersionRepository {
 export interface PhenotypeRepository {
   create(phenotype: Phenotype): void;
   update(phenotype: Phenotype): void;
+  updateCurrentAcceptedVersion(phenotypeId: string, phenotypeVersionId: string | null): void;
   get(phenotypeId: string): Phenotype | undefined;
   listByGraph(graphId: string): Phenotype[];
 }
 
 export interface PhenotypeVersionRepository {
   create(version: PhenotypeVersion): void;
+  updateLifecycleMetadata(phenotypeVersionId: string, metadata: Pick<Partial<PhenotypeVersion>, "status" | "feedback">): void;
   updateStatus(phenotypeVersionId: string, status: PhenotypeVersion["status"]): void;
   get(phenotypeVersionId: string): PhenotypeVersion | undefined;
   listByPhenotype(phenotypeId: string): PhenotypeVersion[];

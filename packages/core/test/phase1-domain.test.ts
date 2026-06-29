@@ -155,7 +155,7 @@ describe("Phase 1 domain object coverage", () => {
     });
 
     expect(phenotype.phenotypeTypeSource).toBe("custom");
-    expect(version.status).toBe("pending-confirmation");
+    expect(version.status).toBe("candidate");
   });
 
   test("generation job and change set schemas preserve snapshots without requiring sensitive values", () => {

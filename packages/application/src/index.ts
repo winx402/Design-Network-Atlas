@@ -11,6 +11,7 @@ import {
   createGenerationJob,
   makeId,
   nowIso,
+  sanitizePhenotypeVersionFeedback,
   type EntityCompileArtifact,
   type ContextAttachment,
   type DesignRelationship,
@@ -22,6 +23,8 @@ import {
   type PhenotypeGenerationPlan,
   type PhenotypeGenerationTask,
   type PhenotypeCompileArtifact,
+  type PhenotypeVersionFeedback,
+  type PhenotypeVersionFeedbackItem,
   type SpeciesNode,
   type PhenotypeVersion,
   type SpeciesCompileArtifact,
@@ -121,12 +124,48 @@ export interface GenerationPlanningRepositories extends PhenotypeGenerationRepos
 export interface ImpactRepositories {
   nodes: Pick<LineageRepository, "get" | "listByGraph">;
   designRelationships: Pick<DesignRelationshipRepository, "get" | "listByGraph">;
-  phenotypeVersions: Pick<PhenotypeVersionRepository, "get" | "listByNode" | "updateStatus">;
+  phenotypeVersions: Pick<PhenotypeVersionRepository, "get" | "listByNode" | "updateLifecycleMetadata" | "updateStatus">;
   speciesGroups: Pick<SpeciesGroupRepository, "get">;
   speciesGroupMemberships: Pick<SpeciesGroupMembershipRepository, "listByGroup">;
   designContexts: Pick<DesignContextRepository, "get">;
   contextAttachments: Pick<ContextAttachmentRepository, "listByContext">;
 }
+
+export interface PhenotypeVersionLifecycleRepositories {
+  transaction<T>(fn: () => T): T;
+  phenotypes: Pick<PhenotypeRepository, "get" | "updateCurrentAcceptedVersion">;
+  phenotypeVersions: Pick<PhenotypeVersionRepository, "get" | "listByPhenotype" | "updateLifecycleMetadata">;
+  generationJobs: Pick<GenerationJobRepository, "listByGraph">;
+  generationTasks: Pick<PhenotypeGenerationTaskRepository, "listByGraph">;
+}
+
+export type PhenotypeVersionLifecycleStatusChange = {
+  phenotypeVersionId: string;
+  from: PhenotypeVersion["status"];
+  to: PhenotypeVersion["status"];
+};
+
+export type PhenotypeVersionLifecycleFeedbackChange = {
+  phenotypeVersionId: string;
+  summaryBefore?: string;
+  summaryAfter?: string;
+  addedFeedbackItemIds: string[];
+};
+
+export type PhenotypeVersionLifecycleResult = {
+  action: string;
+  persisted: boolean;
+  phenotypeId: string;
+  statusChanges: PhenotypeVersionLifecycleStatusChange[];
+  currentAcceptedVersion: { before: string | null; after: string | null };
+  feedbackChanges: PhenotypeVersionLifecycleFeedbackChange[];
+  provenance: {
+    generationJobIds: string[];
+    generationTaskIds: string[];
+    generationPlanIds: string[];
+  };
+  warnings: string[];
+};
 
 export interface BuildSpeciesCompileInputOptions {
   graphId: string;
@@ -669,6 +708,387 @@ export function persistPhenotypeGeneration(
   });
 }
 
+export function submitPhenotypeVersionCandidate(
+  store: PhenotypeVersionLifecycleRepositories,
+  options: { phenotypeVersionId: string; feedback?: string; apply?: boolean }
+) {
+  const version = requirePhenotypeVersion(store, options.phenotypeVersionId);
+  return buildAndMaybeApplyLifecycleResult(store, {
+    action: "submit-candidate",
+    phenotypeId: version.phenotypeId,
+    targetVersionId: version.phenotypeVersionId,
+    statusChanges: [{ phenotypeVersionId: version.phenotypeVersionId, from: version.status, to: "candidate" }],
+    currentAcceptedAfter: currentAcceptedBefore(store, version.phenotypeId),
+    feedbackInput: options.feedback ? { message: options.feedback, source: "human" } : undefined,
+    apply: options.apply
+  });
+}
+
+export function acceptPhenotypeVersion(
+  store: PhenotypeVersionLifecycleRepositories,
+  options: { phenotypeVersionId: string; feedback?: string; apply?: boolean }
+) {
+  const version = requirePhenotypeVersion(store, options.phenotypeVersionId);
+  const phenotype = requirePhenotype(store, version.phenotypeId);
+  const currentAccepted = currentAcceptedBefore(store, phenotype.phenotypeId);
+  const accepted = acceptedVersions(store, phenotype.phenotypeId);
+  if (accepted.length > 1) throw new Error(`phenotype ${phenotype.phenotypeId} has multiple accepted versions`);
+  if (currentAccepted && currentAccepted !== version.phenotypeVersionId) {
+    throw new Error(`phenotype ${phenotype.phenotypeId} already has accepted version ${currentAccepted}; use replace or rollback`);
+  }
+  if (!["candidate", "replaced", "deprecated", "rolled-back", "accepted"].includes(version.status)) {
+    throw new Error(`cannot accept phenotype version ${version.phenotypeVersionId} from status ${version.status}`);
+  }
+  const statusChanges =
+    version.status === "accepted"
+      ? []
+      : [{ phenotypeVersionId: version.phenotypeVersionId, from: version.status, to: "accepted" as const }];
+  return buildAndMaybeApplyLifecycleResult(store, {
+    action: "accept",
+    phenotypeId: phenotype.phenotypeId,
+    targetVersionId: version.phenotypeVersionId,
+    statusChanges,
+    currentAcceptedAfter: version.phenotypeVersionId,
+    feedbackInput: options.feedback ? { message: options.feedback, source: "human" } : undefined,
+    apply: options.apply
+  });
+}
+
+export function rejectPhenotypeVersion(
+  store: PhenotypeVersionLifecycleRepositories,
+  options: { phenotypeVersionId: string; feedback?: string; apply?: boolean }
+) {
+  const version = requirePhenotypeVersion(store, options.phenotypeVersionId);
+  const currentAccepted = currentAcceptedBefore(store, version.phenotypeId);
+  if (currentAccepted === version.phenotypeVersionId) {
+    throw new Error(`cannot reject current accepted phenotype version ${version.phenotypeVersionId}; use deprecate, replace, or rollback`);
+  }
+  if (!["draft", "candidate", "rejected"].includes(version.status)) {
+    throw new Error(`cannot reject phenotype version ${version.phenotypeVersionId} from status ${version.status}`);
+  }
+  return buildAndMaybeApplyLifecycleResult(store, {
+    action: "reject",
+    phenotypeId: version.phenotypeId,
+    targetVersionId: version.phenotypeVersionId,
+    statusChanges:
+      version.status === "rejected"
+        ? []
+        : [{ phenotypeVersionId: version.phenotypeVersionId, from: version.status, to: "rejected" }],
+    currentAcceptedAfter: currentAccepted,
+    feedbackInput: options.feedback ? { message: options.feedback, source: "human" } : undefined,
+    apply: options.apply
+  });
+}
+
+export function replacePhenotypeVersion(
+  store: PhenotypeVersionLifecycleRepositories,
+  options: { oldPhenotypeVersionId: string; newPhenotypeVersionId: string; feedback?: string; apply?: boolean }
+) {
+  const oldVersion = requirePhenotypeVersion(store, options.oldPhenotypeVersionId);
+  const newVersion = requirePhenotypeVersion(store, options.newPhenotypeVersionId);
+  if (oldVersion.phenotypeId !== newVersion.phenotypeId) throw new Error("replace versions must belong to the same phenotype");
+  const currentAccepted = currentAcceptedBefore(store, oldVersion.phenotypeId);
+  if (currentAccepted !== oldVersion.phenotypeVersionId || oldVersion.status !== "accepted") {
+    throw new Error(`replace old version must be the current accepted version: ${oldVersion.phenotypeVersionId}`);
+  }
+  if (newVersion.status !== "candidate") {
+    throw new Error(`replace new version must be candidate: ${newVersion.phenotypeVersionId}`);
+  }
+  return buildAndMaybeApplyLifecycleResult(store, {
+    action: "replace",
+    phenotypeId: oldVersion.phenotypeId,
+    targetVersionId: newVersion.phenotypeVersionId,
+    statusChanges: [
+      { phenotypeVersionId: oldVersion.phenotypeVersionId, from: oldVersion.status, to: "replaced" },
+      { phenotypeVersionId: newVersion.phenotypeVersionId, from: newVersion.status, to: "accepted" }
+    ],
+    currentAcceptedAfter: newVersion.phenotypeVersionId,
+    feedbackInput: options.feedback ? { message: options.feedback, source: "human" } : undefined,
+    apply: options.apply
+  });
+}
+
+export function deprecatePhenotypeVersion(
+  store: PhenotypeVersionLifecycleRepositories,
+  options: { phenotypeVersionId: string; feedback?: string; apply?: boolean }
+) {
+  return singleTargetLifecycleAction(store, {
+    action: "deprecate",
+    phenotypeVersionId: options.phenotypeVersionId,
+    to: "deprecated",
+    feedback: options.feedback,
+    apply: options.apply
+  });
+}
+
+export function archivePhenotypeVersion(
+  store: PhenotypeVersionLifecycleRepositories,
+  options: { phenotypeVersionId: string; feedback?: string; apply?: boolean }
+) {
+  return singleTargetLifecycleAction(store, {
+    action: "archive",
+    phenotypeVersionId: options.phenotypeVersionId,
+    to: "archived",
+    feedback: options.feedback,
+    apply: options.apply
+  });
+}
+
+export function deletePhenotypeVersion(
+  store: PhenotypeVersionLifecycleRepositories,
+  options: { phenotypeVersionId: string; feedback?: string; apply?: boolean }
+) {
+  return singleTargetLifecycleAction(store, {
+    action: "delete",
+    phenotypeVersionId: options.phenotypeVersionId,
+    to: "deleted",
+    feedback: options.feedback,
+    apply: options.apply
+  });
+}
+
+export function rollbackPhenotypeVersion(
+  store: PhenotypeVersionLifecycleRepositories,
+  options: { phenotypeId: string; toPhenotypeVersionId: string; feedback?: string; apply?: boolean }
+) {
+  const phenotype = requirePhenotype(store, options.phenotypeId);
+  const currentAccepted = currentAcceptedBefore(store, phenotype.phenotypeId);
+  if (!currentAccepted) throw new Error(`phenotype ${phenotype.phenotypeId} has no current accepted version to roll back`);
+  if (currentAccepted === options.toPhenotypeVersionId) throw new Error("rollback target is already current accepted version");
+  const currentVersion = requirePhenotypeVersion(store, currentAccepted);
+  const target = requirePhenotypeVersion(store, options.toPhenotypeVersionId);
+  if (target.phenotypeId !== phenotype.phenotypeId) throw new Error(`rollback target ${target.phenotypeVersionId} belongs to a different phenotype`);
+  if (!["replaced", "deprecated", "rolled-back"].includes(target.status)) {
+    throw new Error(`rollback target ${target.phenotypeVersionId} must be replaced, deprecated, or rolled-back`);
+  }
+  return buildAndMaybeApplyLifecycleResult(store, {
+    action: "rollback",
+    phenotypeId: phenotype.phenotypeId,
+    targetVersionId: target.phenotypeVersionId,
+    statusChanges: [
+      { phenotypeVersionId: currentVersion.phenotypeVersionId, from: currentVersion.status, to: "rolled-back" },
+      { phenotypeVersionId: target.phenotypeVersionId, from: target.status, to: "accepted" }
+    ],
+    currentAcceptedAfter: target.phenotypeVersionId,
+    feedbackInput: options.feedback ? { message: options.feedback, source: "human" } : undefined,
+    apply: options.apply
+  });
+}
+
+export function addPhenotypeVersionFeedback(
+  store: PhenotypeVersionLifecycleRepositories,
+  options: {
+    phenotypeVersionId: string;
+    message: string;
+    severity?: PhenotypeVersionFeedbackItem["severity"];
+    source?: PhenotypeVersionFeedbackItem["source"];
+    suggestedAction?: string;
+    apply?: boolean;
+  }
+) {
+  const version = requirePhenotypeVersion(store, options.phenotypeVersionId);
+  if (version.status === "deleted") throw new Error(`cannot add feedback to deleted phenotype version ${version.phenotypeVersionId}`);
+  return buildAndMaybeApplyLifecycleResult(store, {
+    action: "feedback-add",
+    phenotypeId: version.phenotypeId,
+    targetVersionId: version.phenotypeVersionId,
+    statusChanges: [],
+    currentAcceptedAfter: currentAcceptedBefore(store, version.phenotypeId),
+    feedbackInput: {
+      message: options.message,
+      source: options.source ?? "human",
+      severity: options.severity ?? "info",
+      suggestedAction: options.suggestedAction
+    },
+    apply: options.apply
+  });
+}
+
+export function updatePhenotypeVersionFeedbackSummary(
+  store: PhenotypeVersionLifecycleRepositories,
+  options: { phenotypeVersionId: string; summary: string; apply?: boolean }
+) {
+  const version = requirePhenotypeVersion(store, options.phenotypeVersionId);
+  if (version.status === "deleted") throw new Error(`cannot update feedback summary for deleted phenotype version ${version.phenotypeVersionId}`);
+  return buildAndMaybeApplyLifecycleResult(store, {
+    action: "feedback-summary",
+    phenotypeId: version.phenotypeId,
+    targetVersionId: version.phenotypeVersionId,
+    statusChanges: [],
+    currentAcceptedAfter: currentAcceptedBefore(store, version.phenotypeId),
+    summaryInput: options.summary,
+    apply: options.apply
+  });
+}
+
+function singleTargetLifecycleAction(
+  store: PhenotypeVersionLifecycleRepositories,
+  options: {
+    action: string;
+    phenotypeVersionId: string;
+    to: PhenotypeVersion["status"];
+    feedback?: string;
+    apply?: boolean;
+  }
+) {
+  const version = requirePhenotypeVersion(store, options.phenotypeVersionId);
+  const currentAccepted = currentAcceptedBefore(store, version.phenotypeId);
+  return buildAndMaybeApplyLifecycleResult(store, {
+    action: options.action,
+    phenotypeId: version.phenotypeId,
+    targetVersionId: version.phenotypeVersionId,
+    statusChanges:
+      version.status === options.to
+        ? []
+        : [{ phenotypeVersionId: version.phenotypeVersionId, from: version.status, to: options.to }],
+    currentAcceptedAfter: currentAccepted === version.phenotypeVersionId ? null : currentAccepted,
+    feedbackInput: options.feedback ? { message: options.feedback, source: "human" } : undefined,
+    apply: options.apply
+  });
+}
+
+function buildAndMaybeApplyLifecycleResult(
+  store: PhenotypeVersionLifecycleRepositories,
+  input: {
+    action: string;
+    phenotypeId: string;
+    targetVersionId: string;
+    statusChanges: PhenotypeVersionLifecycleStatusChange[];
+    currentAcceptedAfter: string | null;
+    feedbackInput?: {
+      message: string;
+      severity?: PhenotypeVersionFeedbackItem["severity"];
+      source: PhenotypeVersionFeedbackItem["source"];
+      suggestedAction?: string;
+    };
+    summaryInput?: string;
+    apply?: boolean;
+  }
+): PhenotypeVersionLifecycleResult {
+  const target = requirePhenotypeVersion(store, input.targetVersionId);
+  const currentFeedback = normalizeFeedback(target.feedback);
+  let nextFeedback = currentFeedback;
+  const addedFeedbackItemIds: string[] = [];
+  if (input.feedbackInput) {
+    const feedbackId = makeId("feedback");
+    addedFeedbackItemIds.push(feedbackId);
+    nextFeedback = sanitizePhenotypeVersionFeedback({
+      summary: nextFeedback.summary,
+      items: [
+        ...nextFeedback.items,
+        {
+          feedbackId,
+          severity: input.feedbackInput.severity ?? "info",
+          source: input.feedbackInput.source,
+          message: input.feedbackInput.message,
+          suggestedAction: input.feedbackInput.suggestedAction,
+          createdAt: nowIso()
+        }
+      ]
+    });
+  }
+  if (input.summaryInput !== undefined) {
+    nextFeedback = sanitizePhenotypeVersionFeedback({ summary: input.summaryInput, items: nextFeedback.items });
+  }
+  const feedbackChanged =
+    input.feedbackInput !== undefined ||
+    input.summaryInput !== undefined;
+  const feedbackChanges = feedbackChanged
+    ? [
+        {
+          phenotypeVersionId: target.phenotypeVersionId,
+          summaryBefore: currentFeedback.summary,
+          summaryAfter: nextFeedback.summary,
+          addedFeedbackItemIds
+        }
+      ]
+    : [];
+  const currentAccepted = currentAcceptedBefore(store, input.phenotypeId);
+  const versionIds = unique([...input.statusChanges.map((change) => change.phenotypeVersionId), input.targetVersionId]);
+  const result: PhenotypeVersionLifecycleResult = {
+    action: input.action,
+    persisted: Boolean(input.apply),
+    phenotypeId: input.phenotypeId,
+    statusChanges: input.statusChanges,
+    currentAcceptedVersion: { before: currentAccepted, after: input.currentAcceptedAfter },
+    feedbackChanges,
+    provenance: inferLifecycleProvenance(store, target.graphId, input.phenotypeId, versionIds),
+    warnings: []
+  };
+
+  if (!input.apply) return { ...result, persisted: false };
+  store.transaction(() => {
+    for (const change of input.statusChanges) {
+      store.phenotypeVersions.updateLifecycleMetadata(change.phenotypeVersionId, { status: change.to });
+    }
+    if (feedbackChanged) {
+      store.phenotypeVersions.updateLifecycleMetadata(target.phenotypeVersionId, { feedback: nextFeedback });
+    }
+    if (currentAccepted !== input.currentAcceptedAfter) {
+      store.phenotypes.updateCurrentAcceptedVersion(input.phenotypeId, input.currentAcceptedAfter);
+    }
+  });
+  return result;
+}
+
+function normalizeFeedback(feedback: PhenotypeVersionFeedback | undefined): PhenotypeVersionFeedback {
+  return { summary: feedback?.summary, items: feedback?.items ?? [] };
+}
+
+function requirePhenotypeVersion(store: Pick<PhenotypeVersionLifecycleRepositories, "phenotypeVersions">, phenotypeVersionId: string) {
+  const version = store.phenotypeVersions.get(phenotypeVersionId);
+  if (!version) throw new Error(`phenotype version not found: ${phenotypeVersionId}`);
+  return version;
+}
+
+function requirePhenotype(store: Pick<PhenotypeVersionLifecycleRepositories, "phenotypes">, phenotypeId: string) {
+  const phenotype = store.phenotypes.get(phenotypeId);
+  if (!phenotype) throw new Error(`phenotype not found: ${phenotypeId}`);
+  return phenotype;
+}
+
+function acceptedVersions(store: Pick<PhenotypeVersionLifecycleRepositories, "phenotypeVersions">, phenotypeId: string) {
+  return store.phenotypeVersions.listByPhenotype(phenotypeId).filter((version) => version.status === "accepted");
+}
+
+function currentAcceptedBefore(store: Pick<PhenotypeVersionLifecycleRepositories, "phenotypes" | "phenotypeVersions">, phenotypeId: string) {
+  const phenotype = requirePhenotype(store, phenotypeId);
+  if (phenotype.currentAcceptedVersion) return phenotype.currentAcceptedVersion;
+  const accepted = acceptedVersions(store, phenotypeId);
+  return accepted[0]?.phenotypeVersionId ?? null;
+}
+
+function inferLifecycleProvenance(
+  store: Pick<PhenotypeVersionLifecycleRepositories, "generationJobs" | "generationTasks">,
+  graphId: string,
+  phenotypeId: string,
+  phenotypeVersionIds: string[]
+) {
+  const versionIds = new Set(phenotypeVersionIds);
+  const jobs = store.generationJobs
+    .listByGraph(graphId)
+    .filter((job) => job.phenotypeId === phenotypeId && job.phenotypeVersionId && versionIds.has(job.phenotypeVersionId));
+  const tasks = store.generationTasks
+    .listByGraph(graphId)
+    .filter((task) => task.phenotypeId === phenotypeId || task.phenotypeVersionIds.some((versionId) => versionIds.has(versionId)));
+  return {
+    generationJobIds: unique(jobs.map((job) => job.generationJobId)),
+    generationTaskIds: unique([
+      ...tasks.map((task) => task.taskId),
+      ...jobs.map((job) => stringFromRecord(job.inputSnapshot, "generationTaskId")).filter((value): value is string => Boolean(value))
+    ]),
+    generationPlanIds: unique([
+      ...tasks.map((task) => task.planId).filter((value): value is string => Boolean(value)),
+      ...jobs.map((job) => stringFromRecord(job.inputSnapshot, "generationPlanId")).filter((value): value is string => Boolean(value))
+    ])
+  };
+}
+
+function stringFromRecord(value: Record<string, unknown>, key: string) {
+  const entry = value[key];
+  return typeof entry === "string" ? entry : undefined;
+}
+
 function resolvePlanGraphId(
   store: GenerationPlanningRepositories,
   input: Pick<PhenotypeGenerationPlan, "scopeType" | "scopeId"> & Partial<PhenotypeGenerationPlan>
@@ -930,7 +1350,7 @@ export function updatePhenotypeVersionStatus(
   store: Pick<ImpactRepositories, "phenotypeVersions">,
   options: { phenotypeVersionId: string; status: PhenotypeVersion["status"] }
 ) {
-  store.phenotypeVersions.updateStatus(options.phenotypeVersionId, options.status);
+  store.phenotypeVersions.updateLifecycleMetadata(options.phenotypeVersionId, { status: options.status });
 }
 
 function validateSpeciesArtifact(artifact: SpeciesCompileArtifact, options: Pick<PreparePhenotypeGenerationOptions, "graphId" | "nodeId">) {

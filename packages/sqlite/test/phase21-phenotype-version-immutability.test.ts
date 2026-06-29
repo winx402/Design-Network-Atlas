@@ -24,12 +24,12 @@ function immutableVersion() {
     speciesCompileArtifactId: "species-artifact-sqlite",
     phenotypeCompileArtifactId: "phenotype-artifact-sqlite",
     compileArtifactSnapshot: { prompt: "Generate a sharp silhouette icon" },
-    status: "pending-confirmation"
+    status: "candidate"
   });
 }
 
 describe("Phase 21 PRD-10 SQLite phenotype version immutability", () => {
-  test("updateStatus changes only row status and payload status", () => {
+  test("updateLifecycleMetadata changes only row lifecycle metadata", () => {
     const store = new SqliteDnaStore(tempDb("phenotype-version-immutability"));
     store.migrate();
     const version = immutableVersion();
@@ -37,7 +37,13 @@ describe("Phase 21 PRD-10 SQLite phenotype version immutability", () => {
 
     expect((store.phenotypeVersions as unknown as { update?: unknown }).update).toBeUndefined();
 
-    store.phenotypeVersions.updateStatus(version.phenotypeVersionId, "accepted");
+    store.phenotypeVersions.updateLifecycleMetadata(version.phenotypeVersionId, {
+      status: "accepted",
+      feedback: {
+        summary: "Accepted metadata.",
+        items: []
+      }
+    });
     const row = store.db
       .prepare("SELECT status, payload FROM phenotype_versions WHERE phenotype_version_id = ?")
       .get(version.phenotypeVersionId) as { status: string; payload: string };
@@ -45,6 +51,7 @@ describe("Phase 21 PRD-10 SQLite phenotype version immutability", () => {
 
     expect(row.status).toBe("accepted");
     expect(payload.status).toBe("accepted");
+    expect(payload.feedback).toEqual({ summary: "Accepted metadata.", items: [] });
     expect(payload.promptSnapshot).toBe(version.promptSnapshot);
     expect(payload.generationRecipe).toEqual(version.generationRecipe);
     expect(payload.resolvedGeneSnapshot).toEqual(version.resolvedGeneSnapshot);

@@ -137,7 +137,7 @@ describe("Phase 20 PRD-04 skill contracts", () => {
       "manual",
       "mock",
       "external tool",
-      "pending-confirmation",
+      "candidate",
       "do not invent",
       "provider credentials"
     ]) {

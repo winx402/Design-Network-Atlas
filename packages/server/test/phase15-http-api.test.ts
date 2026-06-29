@@ -48,7 +48,19 @@ describe("Phase 15 local HTTP API baseline", () => {
         phenotypeVersionId: "pv-api",
         nodeVersionId: "node-api@1.0.0",
         promptSnapshot: "API prompt",
-        assetIds: ["asset-api"]
+        assetIds: ["asset-api"],
+        feedback: {
+          summary: "Candidate visible in API.",
+          items: [
+            {
+              feedbackId: "fb-api",
+              severity: "info",
+              source: "human",
+              message: "Ready for lifecycle review.",
+              createdAt: "2026-06-29T00:00:00.000Z"
+            }
+          ]
+        }
       })
     );
     store.assets.create(
@@ -89,6 +101,10 @@ describe("Phase 15 local HTTP API baseline", () => {
     });
     expect(workbench.phenotypes[0].versions[0].assets[0]).toMatchObject({ id: "asset-api", uri: "local://api.png" });
     expect(workbench.phenotypes[0].versions[0].reviews[0]).toMatchObject({ id: "review-api", status: "needs-review" });
+    expect(workbench.phenotypes[0].versions[0].feedback).toMatchObject({
+      summary: "Candidate visible in API.",
+      items: [{ feedbackId: "fb-api", severity: "info", source: "human" }]
+    });
 
     const webDisabled = await handler(new Request("http://dna.local/"));
     expect(webDisabled.status).toBe(404);
