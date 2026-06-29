@@ -26,6 +26,7 @@ import {
   FacetSchema,
   EntityCompileArtifact,
   PhenotypeCompileArtifact,
+  PhenotypeUsageGuideCompileSnapshot,
   SpeciesGroup,
   SpeciesCompileArtifact,
   TraceEntry,
@@ -126,6 +127,8 @@ export interface CompilePhenotypeGenerationInput {
   resolvedGeneSnapshot?: Record<string, unknown>;
   contextReferences?: ContextReference[];
   contextReviewRubrics?: ContextReviewRubric[];
+  usageGuideSnapshot?: PhenotypeUsageGuideCompileSnapshot;
+  usageGuideWarning?: string;
   generationConstraints?: Record<string, unknown>;
   decisionPatches?: CompileDecisionPatch[];
 }
@@ -1301,12 +1304,23 @@ export function compilePhenotypeGeneration(input: CompilePhenotypeGenerationInpu
     .map(([key, value]) => `${key}=${summarizeValue(value)}`)
     .join("; ");
   const typeGuidance = phenotypeTypeGuidance(input.phenotypeType);
+  const usageGuidePromptParts = input.usageGuideSnapshot
+    ? [
+        `Usage guide: ${input.usageGuideSnapshot.summary}.`,
+        input.usageGuideSnapshot.primaryUsageScenario ? `Primary usage scenario: ${input.usageGuideSnapshot.primaryUsageScenario}.` : "",
+        input.usageGuideSnapshot.mustPreserve.length ? `Usage must preserve: ${input.usageGuideSnapshot.mustPreserve.join(", ")}.` : "",
+        input.usageGuideSnapshot.mustAvoid.length ? `Usage must avoid: ${input.usageGuideSnapshot.mustAvoid.join(", ")}.` : ""
+      ].filter(Boolean)
+    : input.usageGuideWarning
+      ? [`Usage guide warning: ${input.usageGuideWarning}.`]
+      : [];
   const prompt = [
     "Design Network Atlas phenotype generation.",
     `Phenotype type: ${input.phenotypeType}.`,
     `Species: ${input.node.name}.`,
     `Task: ${input.taskBrief}.`,
     typeGuidance,
+    ...usageGuidePromptParts,
     geneSummary ? `Resolved genes: ${geneSummary}.` : "Resolved genes: none.",
     contextTrace.length ? `Context trace: ${contextTrace.map((entry) => `${entry.objectType}:${entry.objectId}`).join(", ")}.` : ""
   ]
@@ -1329,6 +1343,19 @@ export function compilePhenotypeGeneration(input: CompilePhenotypeGenerationInpu
     label: input.phenotypeType
   };
   const decisionRequests = phenotypeDecisionRequests(input, resolvedGeneSnapshot);
+  const usageGuideFeedback: CompileFeedback[] = input.usageGuideWarning
+    ? [
+        {
+          feedbackId: `${input.artifactId}:usage-guide-warning`,
+          severity: "warning",
+          targetLevel: "phenotype",
+          target: phenotypeTarget,
+          reason: input.usageGuideWarning,
+          suggestedAction: "create or attach a phenotype usage guide before production generation",
+          sourceObjectIds: []
+        }
+      ]
+    : [];
   const phenotypeFeedback: CompileFeedback[] = decisionRequests.map((request, index) => ({
     feedbackId: `${input.artifactId}:decision-feedback:${index}`,
     severity: "warning",
@@ -1362,7 +1389,7 @@ export function compilePhenotypeGeneration(input: CompilePhenotypeGenerationInpu
     traces: [...sourceTrace, ...contextTrace, ...referenceTrace, ...rubricTrace],
     conflictReport: input.speciesArtifact?.conflictReport ?? [],
     openQuestions: [...(input.speciesArtifact?.openQuestions ?? []), ...decisionRequests.map((request) => request.reason)],
-    feedback: [...(input.speciesArtifact?.feedback ?? []), ...phenotypeFeedback]
+    feedback: [...(input.speciesArtifact?.feedback ?? []), ...usageGuideFeedback, ...phenotypeFeedback]
   });
 
   return {
@@ -1397,7 +1424,8 @@ export function compilePhenotypeGeneration(input: CompilePhenotypeGenerationInpu
     decisionTrace,
     decisionRequests,
     decisionPatches: input.decisionPatches ?? [],
-    feedback: [...(input.speciesArtifact?.feedback ?? []), ...phenotypeFeedback],
+    feedback: [...(input.speciesArtifact?.feedback ?? []), ...usageGuideFeedback, ...phenotypeFeedback],
+    usageGuideSnapshot: input.usageGuideSnapshot,
     prompt,
     negativePrompt: [...new Set(negativeParts)].join(", "),
     artBrief: `Produce ${input.phenotypeType} for ${input.node.name}. ${typeGuidance} ${input.taskBrief}`.trim(),

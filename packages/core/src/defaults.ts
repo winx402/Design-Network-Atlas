@@ -25,6 +25,8 @@ import {
   Phenotype,
   PhenotypeGenerationPlan,
   PhenotypeGenerationTask,
+  PhenotypeUsageGuide,
+  PhenotypeUsageGuideCompileSnapshot,
   PhenotypeVersionFeedback,
   PhenotypeLibrary,
   PhenotypeLibraryGraphBinding,
@@ -101,6 +103,217 @@ export function sanitizePhenotypeVersionFeedback(feedback: PhenotypeVersionFeedb
       suggestedAction: sanitizePlanningText(item.suggestedAction)
     }))
   };
+}
+
+function sanitizeStringArray(values: string[] | undefined): string[] {
+  return (values ?? []).map((value) => sanitizePlanningText(value) ?? "").filter(Boolean);
+}
+
+type PhenotypeUsageGuideInput = Partial<Omit<PhenotypeUsageGuide, "usageInstructions" | "designSemantics" | "productionHints">> &
+  Pick<PhenotypeUsageGuide, "usageGuideId" | "phenotypeId" | "graphId" | "nodeId" | "phenotypeType" | "title" | "summary"> & {
+    usageInstructions?: Partial<PhenotypeUsageGuide["usageInstructions"]>;
+    designSemantics?: Partial<PhenotypeUsageGuide["designSemantics"]>;
+    productionHints?: Partial<PhenotypeUsageGuide["productionHints"]>;
+  };
+
+export function createDefaultPhenotypeUsageGuide(input: PhenotypeUsageGuideInput): PhenotypeUsageGuide {
+  const timestamp = nowIso();
+  return {
+    usageGuideId: input.usageGuideId,
+    phenotypeId: input.phenotypeId,
+    graphId: input.graphId,
+    nodeId: input.nodeId,
+    phenotypeType: sanitizePlanningText(input.phenotypeType) ?? input.phenotypeType,
+    status: input.status ?? "active",
+    revision: input.revision ?? 1,
+    title: sanitizePlanningText(input.title) ?? input.title,
+    summary: sanitizePlanningText(input.summary) ?? input.summary,
+    usageScenarios: (input.usageScenarios ?? []).map((scenario) => ({
+      ...scenario,
+      name: sanitizePlanningText(scenario.name) ?? scenario.name,
+      surface: sanitizePlanningText(scenario.surface),
+      userMoment: sanitizePlanningText(scenario.userMoment),
+      designIntent: sanitizePlanningText(scenario.designIntent) ?? scenario.designIntent,
+      implementationRole: sanitizePlanningText(scenario.implementationRole)
+    })),
+    usageInstructions: {
+      primaryUse: sanitizePlanningText(input.usageInstructions?.primaryUse) ?? input.usageInstructions?.primaryUse ?? "",
+      placement: sanitizePlanningText(input.usageInstructions?.placement),
+      composition: sanitizePlanningText(input.usageInstructions?.composition),
+      stateBehavior: sanitizePlanningText(input.usageInstructions?.stateBehavior),
+      doNotUseFor: sanitizeStringArray(input.usageInstructions?.doNotUseFor)
+    },
+    designSemantics: {
+      sourceContextIds: input.designSemantics?.sourceContextIds ?? [],
+      sourceFactIds: input.designSemantics?.sourceFactIds ?? [],
+      sourcePrincipleIds: input.designSemantics?.sourcePrincipleIds ?? [],
+      sourceMotifIds: input.designSemantics?.sourceMotifIds ?? [],
+      sourceFacetIds: input.designSemantics?.sourceFacetIds ?? [],
+      sourceRelationshipIds: input.designSemantics?.sourceRelationshipIds ?? [],
+      mustPreserve: sanitizeStringArray(input.designSemantics?.mustPreserve),
+      mustAvoid: sanitizeStringArray(input.designSemantics?.mustAvoid)
+    },
+    variantPlan: (input.variantPlan ?? []).map((variant) => ({
+      ...variant,
+      name: sanitizePlanningText(variant.name) ?? variant.name,
+      purpose: sanitizePlanningText(variant.purpose) ?? variant.purpose,
+      notes: sanitizePlanningText(variant.notes)
+    })),
+    productionHints: {
+      suggestedAssetTypes: input.productionHints?.suggestedAssetTypes ?? [],
+      suggestedAspectRatio: sanitizePlanningText(input.productionHints?.suggestedAspectRatio),
+      suggestedTransparency: input.productionHints?.suggestedTransparency,
+      suggestedSize: sanitizePlanningText(input.productionHints?.suggestedSize),
+      namingHint: sanitizePlanningText(input.productionHints?.namingHint),
+      deliveryNotes: sanitizePlanningText(input.productionHints?.deliveryNotes)
+    },
+    reviewChecklist: (input.reviewChecklist ?? []).map((item) => ({
+      ...item,
+      question: sanitizePlanningText(item.question) ?? item.question
+    })),
+    llmPromptTemplate: sanitizePlanningText(input.llmPromptTemplate),
+    sourceSummary: sanitizePlanningText(input.sourceSummary) ?? "",
+    metadata: sanitizePlanningJson(input.metadata),
+    extensions: sanitizePlanningJson(input.extensions),
+    createdAt: input.createdAt ?? timestamp,
+    updatedAt: input.updatedAt ?? timestamp
+  };
+}
+
+export function summarizePhenotypeUsageGuideForCompile(guide: PhenotypeUsageGuide): PhenotypeUsageGuideCompileSnapshot {
+  return {
+    usageGuideId: guide.usageGuideId,
+    usageGuideRevision: guide.revision,
+    phenotypeId: guide.phenotypeId,
+    title: guide.title,
+    summary: guide.summary,
+    primaryUsageScenario: guide.usageScenarios.find((scenario) => scenario.priority === "primary")?.name ?? guide.usageScenarios[0]?.name,
+    selectedScenarios: guide.usageScenarios.map((scenario) => scenario.name),
+    mustPreserve: guide.designSemantics.mustPreserve,
+    mustAvoid: guide.designSemantics.mustAvoid,
+    variantPlan: guide.variantPlan.map((variant) => ({
+      variantId: variant.variantId,
+      name: variant.name,
+      purpose: variant.purpose,
+      required: variant.required
+    })),
+    reviewChecklist: guide.reviewChecklist.map((item) => ({
+      checklistId: item.checklistId,
+      question: item.question,
+      severity: item.severity
+    })),
+    productionHints: guide.productionHints
+  };
+}
+
+export function renderPhenotypeUsageGuideMarkdown(guide: PhenotypeUsageGuide): string {
+  const scenarios = guide.usageScenarios.length
+    ? guide.usageScenarios
+        .map(
+          (scenario) =>
+            `| ${scenario.name} | ${scenario.surface ?? "Not specified"} | ${scenario.userMoment ?? "Not specified"} | ${scenario.designIntent} | ${scenario.priority ?? "optional"} |`
+        )
+        .join("\n")
+    : "| None | Not specified | Not specified | Not specified | optional |";
+  const variants = guide.variantPlan.length
+    ? guide.variantPlan
+        .map((variant) => `| ${variant.name} | ${variant.purpose} | ${variant.required ? "yes" : "no"} | ${variant.notes ?? ""} |`)
+        .join("\n")
+    : "| default | Not specified | no | None |";
+  const checklist = guide.reviewChecklist.length
+    ? guide.reviewChecklist.map((item) => `- [ ] ${item.severity}: ${item.question}`).join("\n")
+    : "- [ ] info: No review checklist recorded.";
+  const sourceIds = [
+    ...guide.designSemantics.sourceContextIds,
+    ...guide.designSemantics.sourceFactIds,
+    ...guide.designSemantics.sourcePrincipleIds,
+    ...guide.designSemantics.sourceMotifIds,
+    ...guide.designSemantics.sourceFacetIds
+  ];
+  return [
+    `# ${guide.title} 使用说明`,
+    "",
+    "## 1. 关联对象",
+    "",
+    `- Graph: ${guide.graphId}`,
+    `- Species: ${guide.nodeId}`,
+    `- Phenotype: ${guide.phenotypeId}`,
+    `- Phenotype type: ${guide.phenotypeType}`,
+    `- Usage guide revision: ${guide.revision}`,
+    `- Summary: ${guide.summary}`,
+    "",
+    "## 2. 使用场景",
+    "",
+    "| 场景 | 出现位置/消费面 | 用户感知 | 设计目的 | 优先级 |",
+    "| --- | --- | --- | --- | --- |",
+    scenarios,
+    "",
+    "## 3. 使用方式",
+    "",
+    `- 主要用途：${guide.usageInstructions.primaryUse}`,
+    `- 推荐放置/组合方式：${guide.usageInstructions.placement ?? guide.usageInstructions.composition ?? "Not specified"}`,
+    `- 状态或表现行为：${guide.usageInstructions.stateBehavior ?? "Not specified"}`,
+    `- 不建议使用在：${guide.usageInstructions.doNotUseFor.length ? guide.usageInstructions.doNotUseFor.join(", ") : "None"}`,
+    "",
+    "## 4. 设计语言来源",
+    "",
+    `- 来源 context / facts / principles / motifs / facets：${sourceIds.length ? sourceIds.join(", ") : "None"}`,
+    `- 相关 design relationships：${guide.designSemantics.sourceRelationshipIds.length ? guide.designSemantics.sourceRelationshipIds.join(", ") : "None"}`,
+    `- 必须保留：${guide.designSemantics.mustPreserve.length ? guide.designSemantics.mustPreserve.join(", ") : "None"}`,
+    `- 必须避免：${guide.designSemantics.mustAvoid.length ? guide.designSemantics.mustAvoid.join(", ") : "None"}`,
+    "",
+    "## 5. 表现变体",
+    "",
+    "| 变体 | 用途 | 是否必需 | 说明 |",
+    "| --- | --- | --- | --- |",
+    variants,
+    "",
+    "## 6. 制作与交付建议",
+    "",
+    `- 建议 asset type：${guide.productionHints.suggestedAssetTypes.join(", ") || "Not specified"}`,
+    `- 建议尺寸/比例：${guide.productionHints.suggestedSize ?? guide.productionHints.suggestedAspectRatio ?? "Not specified"}`,
+    `- 透明通道建议：${guide.productionHints.suggestedTransparency ?? "Not specified"}`,
+    `- 命名建议：${guide.productionHints.namingHint ?? "semantic naming only; do not prescribe a project directory"}`,
+    `- 其他交付注意：${guide.productionHints.deliveryNotes ?? "None"}`,
+    "",
+    "## 7. 审阅清单",
+    "",
+    checklist,
+    "",
+    "## 8. 不确定项",
+    "",
+    "- 不确定内容必须标注为需要项目侧确认，不要编造不存在对象。"
+  ].join("\n");
+}
+
+export function createPhenotypeUsageGuidePromptTemplate(input: {
+  graph: { graphId: string; name?: string };
+  species: { nodeId: string; name?: string };
+  phenotype: { phenotypeId: string; name?: string; phenotypeType: string };
+  contexts?: Array<{ contextId: string; summary?: string }>;
+  relationships?: Array<{ relationshipId: string; summary?: string }>;
+  userNotes?: string;
+}): string {
+  return [
+    "CLI usage guide template for a DNA PhenotypeUsageGuide.",
+    "",
+    "Create structured JSON or Markdown with these sections: 关联对象, 使用场景, 使用方式, 设计语言来源, 表现变体, 制作与交付建议, 审阅清单, 不确定项.",
+    "",
+    `Graph: ${input.graph.name ?? input.graph.graphId} (${input.graph.graphId})`,
+    `Species: ${input.species.name ?? input.species.nodeId} (${input.species.nodeId})`,
+    `Phenotype: ${input.phenotype.name ?? input.phenotype.phenotypeId} (${input.phenotype.phenotypeId})`,
+    `Phenotype type: ${input.phenotype.phenotypeType}`,
+    input.contexts?.length ? `Context summaries: ${input.contexts.map((context) => `${context.contextId}: ${context.summary ?? ""}`).join("; ")}` : "Context summaries: none.",
+    input.relationships?.length
+      ? `Design relationships: ${input.relationships.map((relationship) => `${relationship.relationshipId}: ${relationship.summary ?? ""}`).join("; ")}`
+      : "Design relationships: none.",
+    input.userNotes ? `User notes: ${sanitizePlanningText(input.userNotes)}` : "User notes: none.",
+    "",
+    "Do not invent missing graph, species, relationship, asset, or context facts.",
+    "Do not output API keys, provider credentials, signed URLs, complete private links, or raw provider payloads.",
+    "Do not prescribe project file directories, Eagle fields, Cocos paths, wiki locations, or private project policies.",
+    "Mark uncertainty explicitly as needs project-side confirmation."
+  ].join("\n");
 }
 
 export function createDefaultProposal(
@@ -559,6 +772,8 @@ export function createDefaultPhenotypeVersion(
     assetIds: input.assetIds ?? [],
     speciesCompileArtifactId: input.speciesCompileArtifactId,
     phenotypeCompileArtifactId: input.phenotypeCompileArtifactId,
+    usageGuideId: input.usageGuideId,
+    usageGuideRevision: input.usageGuideRevision,
     compileArtifactSnapshot: input.compileArtifactSnapshot ?? {},
     status: input.status ?? "candidate",
     feedback: sanitizePhenotypeVersionFeedback(input.feedback),
@@ -666,6 +881,8 @@ export function createDefaultOutputReference(
     graphId: input.graphId,
     phenotypeId: input.phenotypeId,
     phenotypeVersionId: input.phenotypeVersionId,
+    usageGuideId: input.usageGuideId,
+    usageGuideRevision: input.usageGuideRevision,
     libraryId: input.libraryId,
     storageMountId: input.storageMountId,
     externalId: input.externalId,

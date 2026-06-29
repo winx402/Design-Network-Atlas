@@ -44,6 +44,7 @@ import {
   createDefaultLibraryRoutingPolicy,
   createDefaultOutputReference,
   createDefaultExternalLibraryMapping,
+  createPhenotypeUsageGuidePromptTemplate,
   createDefaultPhenotypeLibrary,
   createDefaultPhenotypeLibraryGraphBinding,
   createDefaultStorageMount,
@@ -62,9 +63,11 @@ import {
   OutputReferenceRoleSchema,
   OutputReferenceTypeSchema,
   PROJECT_VERSION,
+  renderPhenotypeUsageGuideMarkdown,
   type GenerationVersionBinding,
   type PhenotypeGenerationPlan,
   type PhenotypeGenerationTask,
+  type PhenotypeUsageGuide,
   type PhenotypeVersion,
   type PhenotypeVersionFeedbackItem,
   type ModelingQualityReport,
@@ -75,7 +78,7 @@ import {
 } from "@dna/core";
 import { exportProject, importProject, SqliteDnaStore } from "@dna/sqlite";
 import { startDnaHttpServer } from "@dna/server";
-import { createDnaServices } from "@dna/storage";
+import { createDnaServices, type CreatePhenotypeUsageGuideInput } from "@dna/storage";
 import { installBuiltInTemplatePacks } from "@dna/template-packs";
 
 type CommandOptions = {
@@ -131,6 +134,12 @@ function getGraphOrThrow(store: SqliteDnaStore, graphId: string) {
 function requiredOption<T>(value: T | undefined, optionName: string): T {
   if (value !== undefined) return value;
   throw new Error(`missing required option: ${optionName}`);
+}
+
+function requirePhenotypeForCli(store: SqliteDnaStore, phenotypeId: string) {
+  const value = store.phenotypes.get(phenotypeId);
+  if (!value) throw new Error(`phenotype not found: ${phenotypeId}`);
+  return value;
 }
 
 function preview(command: Command, summary: string, payload: unknown) {
@@ -330,6 +339,53 @@ function parseOutputFormat(value: string | undefined): "text" | "json" | undefin
   if (value === undefined) return undefined;
   if (value === "text" || value === "json") return value;
   throw new Error(`unknown output format: ${value}`);
+}
+
+function parseGuideFormat(value: string | undefined): "text" | "json" | "markdown" {
+  if (value === undefined) return "text";
+  if (value === "text" || value === "json" || value === "markdown") return value;
+  throw new Error(`unknown phenotype guide format: ${value}`);
+}
+
+function readGuideInput(path: string): Record<string, unknown> {
+  const value = JSON.parse(readFileSync(path, "utf8")) as unknown;
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("phenotype usage guide input must be a JSON object");
+  return value as Record<string, unknown>;
+}
+
+function buildCreatePhenotypeUsageGuideInput(input: Record<string, unknown>, phenotypeId: string): CreatePhenotypeUsageGuideInput {
+  if (typeof input.title !== "string" || !input.title.trim()) throw new Error("usage guide input must include title");
+  if (typeof input.summary !== "string" || !input.summary.trim()) throw new Error("usage guide input must include summary");
+  return {
+    ...input,
+    usageGuideId: typeof input.usageGuideId === "string" && input.usageGuideId.trim() ? input.usageGuideId : makeId("guide"),
+    phenotypeId,
+    title: input.title,
+    summary: input.summary
+  };
+}
+
+function formatPhenotypeUsageGuideText(guide: PhenotypeUsageGuide) {
+  return [
+    `Phenotype usage guide: ${guide.usageGuideId}`,
+    `Phenotype: ${guide.phenotypeId}`,
+    `Status: ${guide.status}`,
+    `Revision: ${guide.revision}`,
+    `Summary: ${guide.summary}`,
+    `Usage scenarios: ${guide.usageScenarios.map((scenario) => scenario.name).join(", ") || "none"}`,
+    `Must preserve: ${guide.designSemantics.mustPreserve.join(", ") || "none"}`,
+    `Must avoid: ${guide.designSemantics.mustAvoid.join(", ") || "none"}`
+  ].join("\n");
+}
+
+function formatPhenotypeUsageGuideList(guides: PhenotypeUsageGuide[]) {
+  if (!guides.length) return "No phenotype usage guides found.\n";
+  return `${guides
+    .map(
+      (guide) =>
+        `${guide.usageGuideId} | phenotype=${guide.phenotypeId} | status=${guide.status} | revision=${guide.revision} | summary=${guide.summary}`
+    )
+    .join("\n")}\n`;
 }
 
 function parseVersionBinding(options: {
@@ -2563,6 +2619,124 @@ phenotype.command("show").requiredOption("--id <phenotypeId>", "phenotype id").a
   console.log(JSON.stringify(value, null, 2));
   store.close();
 });
+
+const phenotypeGuide = phenotype.command("guide").description("Prepare and manage stable phenotype usage guides");
+phenotypeGuide
+  .command("prepare")
+  .requiredOption("--phenotype <phenotypeId>", "phenotype id")
+  .option("--format <format>", "output format: text|json")
+  .action((options, command) => {
+    const store = openStore(command);
+    const phenotypeValue = requirePhenotypeForCli(store, options.phenotype);
+    const graph = store.graphs.get(phenotypeValue.graphId);
+    const node = store.nodes.get(phenotypeValue.nodeId);
+    if (!graph) throw new Error(`graph not found: ${phenotypeValue.graphId}`);
+    if (!node) throw new Error(`node not found: ${phenotypeValue.nodeId}`);
+    const relationships = store.designRelationships
+      .listByGraph(phenotypeValue.graphId)
+      .filter((relationship) => JSON.stringify(relationship).includes(phenotypeValue.nodeId))
+      .map((relationship) => ({ relationshipId: relationship.relationshipId, summary: relationship.description }));
+    const template = createPhenotypeUsageGuidePromptTemplate({
+      graph: { graphId: graph.graphId, name: graph.name },
+      species: { nodeId: node.nodeId, name: node.name },
+      phenotype: { phenotypeId: phenotypeValue.phenotypeId, name: phenotypeValue.name, phenotypeType: phenotypeValue.phenotypeType },
+      contexts: [],
+      relationships
+    });
+    const cliTemplate = template.replace("Cocos paths", "engine-specific paths");
+    const value = { phenotype: phenotypeValue, graph: { graphId: graph.graphId, name: graph.name }, species: { nodeId: node.nodeId, name: node.name }, template: cliTemplate };
+    printJsonOrText(parseOutputFormat(options.format), value, `${cliTemplate}\n`);
+    store.close();
+  });
+phenotypeGuide
+  .command("create")
+  .requiredOption("--phenotype <phenotypeId>", "phenotype id")
+  .requiredOption("--input <json>", "structured guide JSON input")
+  .option("--apply", "persist usage guide")
+  .action((options, command) => {
+    const store = openStore(command);
+    const services = createDnaServices(store);
+    const input = readGuideInput(options.input);
+    const result = services.phenotypeGuide.create(
+      buildCreatePhenotypeUsageGuideInput(input, options.phenotype),
+      { ...writeOptions(command), apply: Boolean(options.apply || shouldApply(command)) }
+    );
+    if (result.changeSet.status === "preview") printChangeSet(result.changeSet);
+    else console.log(`created phenotype usage guide ${result.value.usageGuideId}`);
+    store.close();
+  });
+phenotypeGuide
+  .command("update")
+  .requiredOption("--guide <usageGuideId>", "usage guide id")
+  .requiredOption("--input <json>", "structured guide JSON input")
+  .option("--apply", "persist usage guide update")
+  .action((options, command) => {
+    const store = openStore(command);
+    const services = createDnaServices(store);
+    const input = readGuideInput(options.input);
+    const result = services.phenotypeGuide.update(
+      {
+        ...input,
+        usageGuideId: options.guide
+      },
+      { ...writeOptions(command), apply: Boolean(options.apply || shouldApply(command)) }
+    );
+    if (result.changeSet.status === "preview") printChangeSet(result.changeSet);
+    else console.log(`updated phenotype usage guide ${result.value.usageGuideId} revision ${result.value.revision}`);
+    store.close();
+  });
+phenotypeGuide
+  .command("show")
+  .requiredOption("--phenotype <phenotypeId>", "phenotype id")
+  .option("--format <format>", "output format: text|json|markdown")
+  .action((options, command) => {
+    const store = openStore(command);
+    const guide = store.phenotypeUsageGuides.getActiveByPhenotype(options.phenotype);
+    if (!guide) throw new Error(`usage guide not found for phenotype: ${options.phenotype}`);
+    const format = parseGuideFormat(options.format);
+    if (format === "json") console.log(JSON.stringify(guide, null, 2));
+    else if (format === "markdown") console.log(renderPhenotypeUsageGuideMarkdown(guide));
+    else console.log(formatPhenotypeUsageGuideText(guide));
+    store.close();
+  });
+phenotypeGuide
+  .command("render")
+  .requiredOption("--phenotype <phenotypeId>", "phenotype id")
+  .option("--format <format>", "output format: markdown", "markdown")
+  .action((options, command) => {
+    if (options.format !== "markdown") throw new Error(`unknown phenotype guide render format: ${options.format}`);
+    const store = openStore(command);
+    const guide = store.phenotypeUsageGuides.getActiveByPhenotype(options.phenotype);
+    if (!guide) throw new Error(`usage guide not found for phenotype: ${options.phenotype}`);
+    console.log(renderPhenotypeUsageGuideMarkdown(guide));
+    store.close();
+  });
+phenotypeGuide
+  .command("list")
+  .requiredOption("--node <nodeId>", "species node id")
+  .option("--format <format>", "output format: text|json")
+  .action((options, command) => {
+    const store = openStore(command);
+    const guides = store.phenotypeUsageGuides.listByNode(options.node);
+    printJsonOrText(parseOutputFormat(options.format), guides, formatPhenotypeUsageGuideList(guides));
+    store.close();
+  });
+phenotypeGuide
+  .command("archive")
+  .requiredOption("--guide <usageGuideId>", "usage guide id")
+  .option("--apply", "archive usage guide")
+  .action((options, command) => {
+    const store = openStore(command);
+    const services = createDnaServices(store);
+    const result = services.phenotypeGuide.archive(options.guide, {
+      ...writeOptions(command),
+      apply: Boolean(options.apply || shouldApply(command))
+    });
+    if (result.changeSet.status === "preview") printChangeSet(result.changeSet);
+    else console.log(`archived phenotype usage guide ${result.value.usageGuideId}`);
+    store.close();
+  });
+
 phenotype
   .command("generate")
   .option("--task <taskId>", "generation task id")

@@ -31,10 +31,12 @@ import {
   Phenotype,
   PhenotypeGenerationPlan,
   PhenotypeGenerationTask,
+  PhenotypeUsageGuide,
   PhenotypeCompileArtifact,
   PhenotypeLibrary,
   PhenotypeLibraryGraphBinding,
   PROJECT_VERSION,
+  renderPhenotypeUsageGuideMarkdown,
   PhenotypeVersion,
   Proposal,
   ReviewRecord,
@@ -73,6 +75,7 @@ import {
   OutputReferenceRepository,
   PhenotypeGenerationPlanRepository,
   PhenotypeGenerationTaskRepository,
+  PhenotypeUsageGuideRepository,
   PhenotypeRepository,
   PhenotypeCompileArtifactRepository,
   PhenotypeLibraryGraphBindingRepository,
@@ -119,6 +122,7 @@ export const RUNTIME_SQLITE_TABLES = [
   "node_relations",
   "phenotype_types",
   "phenotypes",
+  "phenotype_usage_guides",
   "phenotype_versions",
   "phenotype_version_assets",
   "entity_compile_artifacts",
@@ -155,6 +159,7 @@ const EXCHANGE_CAPABILITIES = [
   "compile-artifacts",
   "generation-jobs",
   "generation-planning",
+  "usage-guides",
   "output-references",
   "reviews",
   "impacts"
@@ -176,6 +181,11 @@ interface ExchangeManifest {
   review?: {
     stage: "reviewed";
     cleanCurrentState: boolean;
+    usageGuideCoverage?: {
+      phenotypeCount: number;
+      activeGuideCount: number;
+      missingGuidePhenotypeIds: string[];
+    };
   };
 }
 
@@ -307,6 +317,7 @@ export class SqliteDnaStore implements StorageEngine {
   readonly nodes: LineageRepository;
   readonly nodeVersions: NodeVersionRepository;
   readonly phenotypes: PhenotypeRepository;
+  readonly phenotypeUsageGuides: PhenotypeUsageGuideRepository;
   readonly phenotypeVersions: PhenotypeVersionRepository;
   readonly entityCompileArtifacts: EntityCompileArtifactRepository;
   readonly speciesCompileArtifacts: SpeciesCompileArtifactRepository;
@@ -351,6 +362,7 @@ export class SqliteDnaStore implements StorageEngine {
     this.nodes = new SqliteNodeRepository(this);
     this.nodeVersions = new SqliteNodeVersionRepository(this);
     this.phenotypes = new SqlitePhenotypeRepository(this);
+    this.phenotypeUsageGuides = new SqlitePhenotypeUsageGuideRepository(this);
     this.phenotypeVersions = new SqlitePhenotypeVersionRepository(this);
     this.entityCompileArtifacts = new SqliteEntityCompileArtifactRepository(this);
     this.speciesCompileArtifacts = new SqliteSpeciesCompileArtifactRepository(this);
@@ -575,6 +587,17 @@ export class SqliteDnaStore implements StorageEngine {
         node_id TEXT NOT NULL,
         phenotype_type TEXT NOT NULL,
         status TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS phenotype_usage_guides (
+        usage_guide_id TEXT PRIMARY KEY,
+        phenotype_id TEXT NOT NULL,
+        graph_id TEXT NOT NULL,
+        node_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        revision INTEGER NOT NULL,
         payload TEXT NOT NULL,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
@@ -826,6 +849,7 @@ function summarizeSqliteGraphReset(store: SqliteDnaStore, graphId: string): Grap
       speciesCompileArtifacts: ids.speciesArtifactIds.size,
       phenotypeCompileArtifacts: ids.phenotypeArtifactIds.size,
       phenotypes: ids.phenotypeIds.size,
+      phenotypeUsageGuides: ids.usageGuideIds.size,
       phenotypeVersions: ids.phenotypeVersionIds.size,
       phenotypeVersionAssets: ids.phenotypeVersionAssetLinks,
       assets: ids.assetIds.size,
@@ -864,6 +888,7 @@ function applySqliteGraphReset(store: SqliteDnaStore, graphId: string) {
   deleteRowsByIds(store, "generation_jobs", "generation_job_id", ids.generationJobIds);
   deleteRowsByIds(store, "review_records", "review_record_id", ids.reviewRecordIds);
   deleteRowsByIds(store, "impact_records", "impact_record_id", ids.impactRecordIds);
+  deleteRowsByIds(store, "phenotype_usage_guides", "usage_guide_id", ids.usageGuideIds);
   deleteRowsByIds(store, "phenotype_versions", "phenotype_version_id", ids.phenotypeVersionIds);
   deleteRowsByIds(store, "phenotypes", "phenotype_id", ids.phenotypeIds);
   deleteRowsByIds(store, "entity_compile_artifacts", "artifact_id", ids.entityArtifactIds);
@@ -906,6 +931,7 @@ function collectSqliteGraphResetIds(store: SqliteDnaStore, graphId: string) {
   const entityArtifactIds = new Set(store.entityCompileArtifacts.listByGraph(graphId).map((artifact) => artifact.artifactId));
   const phenotypeArtifactIds = new Set(store.phenotypeCompileArtifacts.listByGraph(graphId).map((artifact) => artifact.artifactId));
   const phenotypeIds = new Set(store.phenotypes.listByGraph(graphId).map((phenotype) => phenotype.phenotypeId));
+  const usageGuideIds = new Set(store.phenotypeUsageGuides.listByGraph(graphId).map((guide) => guide.usageGuideId));
   const phenotypeVersionRows = parseRows<PhenotypeVersion>(
     store.db.prepare("SELECT payload FROM phenotype_versions WHERE graph_id = ?").all(graphId) as Row[]
   );
@@ -931,6 +957,7 @@ function collectSqliteGraphResetIds(store: SqliteDnaStore, graphId: string) {
     ...groupIds,
     ...membershipIds,
     ...phenotypeIds,
+    ...usageGuideIds,
     ...phenotypeVersionIds,
     ...entityArtifactIds,
     ...speciesArtifactIds,
@@ -966,6 +993,7 @@ function collectSqliteGraphResetIds(store: SqliteDnaStore, graphId: string) {
     speciesArtifactIds,
     phenotypeArtifactIds,
     phenotypeIds,
+    usageGuideIds,
     phenotypeVersionIds,
     phenotypeVersionAssetLinks,
     generationJobIds,
@@ -1592,6 +1620,59 @@ class SqlitePhenotypeRepository implements PhenotypeRepository {
   }
   listByGraph(graphId: string) {
     return parseRows<Phenotype>(this.store.db.prepare("SELECT payload FROM phenotypes WHERE graph_id = ? ORDER BY created_at, phenotype_id").all(graphId) as Row[]);
+  }
+}
+
+class SqlitePhenotypeUsageGuideRepository implements PhenotypeUsageGuideRepository {
+  constructor(private readonly store: SqliteDnaStore) {}
+  create(guide: PhenotypeUsageGuide) {
+    this.store.db
+      .prepare(
+        "INSERT INTO phenotype_usage_guides (usage_guide_id, phenotype_id, graph_id, node_id, status, revision, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      )
+      .run(
+        guide.usageGuideId,
+        guide.phenotypeId,
+        guide.graphId,
+        guide.nodeId,
+        guide.status,
+        guide.revision,
+        JSON.stringify(guide),
+        guide.createdAt,
+        guide.updatedAt
+      );
+  }
+  update(guide: PhenotypeUsageGuide) {
+    this.store.db
+      .prepare("UPDATE phenotype_usage_guides SET status = ?, revision = ?, payload = ?, updated_at = ? WHERE usage_guide_id = ?")
+      .run(guide.status, guide.revision, JSON.stringify(guide), guide.updatedAt, guide.usageGuideId);
+  }
+  get(usageGuideId: string) {
+    return parsePayload<PhenotypeUsageGuide>(
+      this.store.db.prepare("SELECT payload FROM phenotype_usage_guides WHERE usage_guide_id = ?").get(usageGuideId) as Row | undefined
+    );
+  }
+  getActiveByPhenotype(phenotypeId: string) {
+    return parsePayload<PhenotypeUsageGuide>(
+      this.store.db
+        .prepare("SELECT payload FROM phenotype_usage_guides WHERE phenotype_id = ? AND status = 'active' ORDER BY revision DESC, updated_at DESC LIMIT 1")
+        .get(phenotypeId) as Row | undefined
+    );
+  }
+  listByGraph(graphId: string) {
+    return parseRows<PhenotypeUsageGuide>(
+      this.store.db.prepare("SELECT payload FROM phenotype_usage_guides WHERE graph_id = ? ORDER BY node_id, phenotype_id, revision").all(graphId) as Row[]
+    );
+  }
+  listByNode(nodeId: string) {
+    return parseRows<PhenotypeUsageGuide>(
+      this.store.db.prepare("SELECT payload FROM phenotype_usage_guides WHERE node_id = ? ORDER BY phenotype_id, revision").all(nodeId) as Row[]
+    );
+  }
+  listByPhenotype(phenotypeId: string) {
+    return parseRows<PhenotypeUsageGuide>(
+      this.store.db.prepare("SELECT payload FROM phenotype_usage_guides WHERE phenotype_id = ? ORDER BY revision").all(phenotypeId) as Row[]
+    );
   }
 }
 
@@ -2347,7 +2428,8 @@ export function exportProject(store: SqliteDnaStore, outDir: string, options: Ex
     profile === "review-current"
       ? {
           stage: "reviewed" as const,
-          cleanCurrentState: true
+          cleanCurrentState: true,
+          usageGuideCoverage: createUsageGuideCoverage(store)
         }
       : undefined;
   mkdirSync(outDir, { recursive: true });
@@ -2421,7 +2503,14 @@ export function exportProject(store: SqliteDnaStore, outDir: string, options: Ex
       writeJson(join(graphDir, "group-memberships", `${membership.membershipId}.json`), membership);
     }
     for (const node of store.nodes.listByGraph(graph.graphId)) writeJson(join(graphDir, "nodes", `${node.nodeId}.json`), node);
-    for (const phenotype of store.phenotypes.listByGraph(graph.graphId)) writeJson(join(graphDir, "phenotypes", `${phenotype.phenotypeId}.json`), phenotype);
+    for (const phenotype of store.phenotypes.listByGraph(graph.graphId)) {
+      writeJson(join(graphDir, "phenotypes", `${phenotype.phenotypeId}.json`), phenotype);
+      const guide = store.phenotypeUsageGuides.getActiveByPhenotype(phenotype.phenotypeId);
+      if (guide) {
+        writeJson(join(graphDir, "phenotypes", phenotype.phenotypeId, "usage-guide.json"), guide);
+        writeFileSync(join(graphDir, "phenotypes", phenotype.phenotypeId, "usage-guide.md"), `${renderPhenotypeUsageGuideMarkdown(guide)}\n`);
+      }
+    }
     for (const phenotype of store.phenotypes.listByGraph(graph.graphId)) {
       for (const version of store.phenotypeVersions.listByPhenotype(phenotype.phenotypeId)) {
         writeJson(join(graphDir, "phenotypes", `${version.phenotypeVersionId}.version.json`), version);
@@ -2457,6 +2546,19 @@ export function exportProject(store: SqliteDnaStore, outDir: string, options: Ex
     for (const record of store.reviews.listByGraph(graph.graphId)) writeJson(join(graphDir, "reviews", `${record.reviewRecordId}.json`), record);
     for (const record of store.impacts.listByGraph(graph.graphId)) writeJson(join(graphDir, "impacts", `${record.impactRecordId}.json`), record);
   }
+}
+
+function createUsageGuideCoverage(store: SqliteDnaStore) {
+  const phenotypes = store.graphs.list().flatMap((graph) => store.phenotypes.listByGraph(graph.graphId));
+  const missingGuidePhenotypeIds = phenotypes
+    .filter((phenotype) => !store.phenotypeUsageGuides.getActiveByPhenotype(phenotype.phenotypeId))
+    .map((phenotype) => phenotype.phenotypeId)
+    .sort();
+  return {
+    phenotypeCount: phenotypes.length,
+    activeGuideCount: phenotypes.length - missingGuidePhenotypeIds.length,
+    missingGuidePhenotypeIds
+  };
 }
 
 function requireExportProposal(proposals: Proposal[], changeSets: ChangeSet[], proposalId: string | undefined): Proposal {
@@ -2532,6 +2634,10 @@ export function importProject(store: SqliteDnaStore, inDir: string): void {
       const value = JSON.parse(readFileSync(file, "utf8"));
       if ("phenotypeVersionId" in value) store.phenotypeVersions.create(value);
       else store.phenotypes.create(value);
+    }
+    for (const phenotypeDir of safeReadDirs(join(graphDir, "phenotypes"))) {
+      const guide = readJsonIfExists<PhenotypeUsageGuide>(join(phenotypeDir, "usage-guide.json"));
+      if (guide) store.phenotypeUsageGuides.create(guide);
     }
     for (const file of listJsonFiles(join(graphDir, "compile", "graph"))) {
       store.entityCompileArtifacts.create(JSON.parse(readFileSync(file, "utf8")));

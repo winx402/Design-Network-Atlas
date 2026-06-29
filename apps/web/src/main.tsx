@@ -519,7 +519,14 @@ function GraphExplorerView(props: {
           items={graph.phenotypeOverlay.map((phenotype) => ({
             id: phenotype.phenotypeId,
             title: phenotype.name,
-            detail: `${phenotype.phenotypeType} · ${phenotypeOverlaySummary(phenotype)}`,
+            detail: [
+              `${phenotype.phenotypeType} · ${phenotypeOverlaySummary(phenotype)}`,
+              `Guide coverage: ${phenotype.usageGuideCoverage ?? "missing"}`,
+              phenotype.usageGuide?.title,
+              phenotype.usageGuide?.mustPreserve[0]
+            ]
+              .filter(Boolean)
+              .join(" · "),
             status: phenotype.currentAcceptedVersionId ? "accepted" : phenotype.status,
             raw: phenotype,
             inspect: inspectPhenotypeOverlay(phenotype, props.snapshot)
@@ -551,6 +558,7 @@ function SpeciesCard(props: {
   const phenotypes = props.graph.phenotypeOverlay.filter((phenotype) => phenotype.nodeId === props.node.nodeId);
   const candidateCount = phenotypes.reduce((count, phenotype) => count + phenotype.versions.filter((version) => version.status === "candidate").length, 0);
   const acceptedCount = phenotypes.filter((phenotype) => Boolean(phenotype.currentAcceptedVersionId)).length;
+  const activeGuideCount = phenotypes.filter((phenotype) => phenotype.usageGuideCoverage === "active").length;
   const missingCount = phenotypes.length ? 0 : 1;
   return (
     <button className="species-card" onClick={() => props.onSelect(inspectSpecies(props.node, props.graph))} type="button">
@@ -566,6 +574,7 @@ function SpeciesCard(props: {
         <span>{phenotypes.length ? `${phenotypes.length} planned` : "missing phenotype"}</span>
         {acceptedCount ? <span>{acceptedCount} accepted</span> : null}
         {candidateCount ? <span>{candidateCount} candidate</span> : null}
+        {activeGuideCount ? <span>{activeGuideCount} Usage Guide</span> : null}
         {missingCount ? <span>{missingCount} missing</span> : null}
       </div>
     </button>
@@ -1041,18 +1050,34 @@ function inspectRelationship(relationship: RelationshipLike): InspectorDetail {
 }
 
 function inspectPhenotypeOverlay(phenotype: WorkbenchGraphDetail["phenotypeOverlay"][number], snapshot: WorkbenchSnapshot): InspectorDetail {
+  const guide = phenotype.usageGuide ?? snapshot.usageGuides.find((item) => item.phenotypeId === phenotype.phenotypeId);
   return {
     type: "Phenotype",
     id: phenotype.phenotypeId,
     status: phenotype.currentAcceptedVersionId ? "accepted" : phenotype.status,
-    summary: [phenotype.name, phenotype.phenotypeType],
-    generationLinks: phenotype.versions.flatMap((version) =>
-      [version.speciesCompileArtifactId, version.phenotypeCompileArtifactId].filter((value): value is string => Boolean(value))
-    ),
+    summary: [phenotype.name, phenotype.phenotypeType, guide ? guide.title : "Usage Guide: missing"],
+    boundSemantics: guide
+      ? [
+          `Guide coverage: active revision ${guide.revision}`,
+          `primary use: ${guide.primaryUsageScenario ?? "None"}`,
+          ...guide.mustPreserve.map((value) => `must preserve: ${value}`),
+          ...guide.mustAvoid.map((value) => `must avoid: ${value}`)
+        ]
+      : ["Guide coverage: missing"],
+    generationLinks: [
+      ...phenotype.versions.flatMap((version) =>
+        [
+          version.speciesCompileArtifactId,
+          version.phenotypeCompileArtifactId,
+          version.usageGuideId ? `Usage Guide: ${version.usageGuideId}@${version.usageGuideRevision ?? "unknown"}` : undefined
+        ].filter((value): value is string => Boolean(value))
+      )
+    ],
     phenotypeAssets: [
       ...phenotype.versions.map((version) => `${version.phenotypeVersionId}: ${version.status}`),
       ...snapshot.resultPreviews.filter((preview) => preview.phenotypeId === phenotype.phenotypeId).map((preview) => `${preview.objectType}: ${preview.objectId}`)
     ],
+    governance: guide ? [`usage guide ${guide.status}`, `${guide.reviewChecklistCount} guide review checks`, `${guide.variantCount} planned variants`] : ["usage guide missing"],
     raw: phenotype
   };
 }
@@ -1322,6 +1347,7 @@ function filterSnapshot(snapshot: WorkbenchSnapshot, query: string, statusFilter
     !graphScopeId || value.graphId === graphScopeId || (value.graphIds ?? []).includes(graphScopeId);
   return {
     ...snapshot,
+    usageGuides: snapshot.usageGuides.filter((guide) => matchesGraphScope(guide) && matchesText(guide) && matchesStatus(guide)),
     graphs: snapshot.graphs.filter((graph) => matchesText(graph) && matchesStatus(graph)),
     generation: {
       plans: snapshot.generation.plans.filter((plan) => matchesGraphScope(plan) && matchesText(plan) && matchesStatus(plan)),

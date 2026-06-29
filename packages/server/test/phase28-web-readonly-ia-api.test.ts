@@ -11,6 +11,7 @@ import {
   createDefaultLibraryRoutingPolicy,
   createDefaultOutputReference,
   createDefaultPhenotype,
+  createDefaultPhenotypeUsageGuide,
   createDefaultPhenotypeGenerationPlan,
   createDefaultPhenotypeGenerationTask,
   createDefaultPhenotypeLibrary,
@@ -93,6 +94,22 @@ describe("Phase 28 PRD-21 read-only workbench information architecture API", () 
       status: "generated",
       currentAcceptedVersion: "pv-web-accepted",
       tags: ["ui", "preview"]
+    });
+    const usageGuide = createDefaultPhenotypeUsageGuide({
+      usageGuideId: "guide-web",
+      graphId: graph.graphId,
+      nodeId: node.nodeId,
+      phenotypeId: phenotype.phenotypeId,
+      phenotypeType: phenotype.phenotypeType,
+      title: "Workbench icon usage guide",
+      summary: "Use this icon for read-only workbench warning affordances.",
+      usageScenarios: [{ scenarioId: "primary", name: "Primary", designIntent: "Warn without blocking exploration.", priority: "primary" }],
+      usageInstructions: { primaryUse: "Show near inspectable warning text." },
+      designSemantics: { mustPreserve: ["split diamond"], mustAvoid: ["credential-like text"] },
+      variantPlan: [{ variantId: "default", name: "Default", purpose: "baseline workbench preview", required: true }],
+      productionHints: { suggestedAssetTypes: ["image"] },
+      reviewChecklist: [{ checklistId: "check-web-guide", question: "Does it communicate warning usage?", severity: "warning" }],
+      sourceSummary: "Derived from workbench test graph."
     });
     const speciesArtifact = compileSpeciesSnapshot({
       artifactId: "sca-web",
@@ -218,6 +235,7 @@ describe("Phase 28 PRD-21 read-only workbench information architecture API", () 
     store.designRelationships.create(relationship);
     store.designRelationships.create(graphRelationship);
     store.phenotypes.create(phenotype);
+    store.phenotypeUsageGuides.create(usageGuide);
     store.speciesCompileArtifacts.create(speciesArtifact);
     store.phenotypeCompileArtifacts.create(phenotypeArtifact);
     store.phenotypeVersions.create(candidateVersion);
@@ -336,6 +354,15 @@ describe("Phase 28 PRD-21 read-only workbench information architecture API", () 
       generationJobId: "job-web",
       phenotypeVersionId: "pv-web-accepted"
     });
+    const webGraph = snapshot.graphs.find((item: { graphId: string }) => item.graphId === "graph-web");
+    expect(webGraph?.phenotypeOverlay[0].usageGuide).toMatchObject({
+      usageGuideId: "guide-web",
+      revision: 1,
+      summary: "Use this icon for read-only workbench warning affordances."
+    });
+    expect(snapshot.usageGuides).toEqual(
+      expect.arrayContaining([expect.objectContaining({ usageGuideId: "guide-web", phenotypeId: "ph-web", revision: 1 })])
+    );
     expect(snapshot.libraries[0]).toMatchObject({
       libraryId: "library-web",
       mounts: [expect.objectContaining({ mountId: "mount-web", credentialStatus: "configured" })],

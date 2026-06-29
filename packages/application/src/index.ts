@@ -10,6 +10,7 @@ import {
   createDefaultPhenotypeGenerationTask,
   createDefaultPhenotypeVersion,
   createGenerationJob,
+  summarizePhenotypeUsageGuideForCompile,
   makeId,
   nowIso,
   sanitizePhenotypeVersionFeedback,
@@ -28,6 +29,7 @@ import {
   type GenerationVersionBinding,
   type Graph,
   type Phenotype,
+  type PhenotypeUsageGuideCompileSnapshot,
   type PhenotypeGenerationPlan,
   type PhenotypeGenerationTask,
   type PhenotypeCompileArtifact,
@@ -62,6 +64,7 @@ import type {
   PhenotypeGenerationPlanRepository,
   PhenotypeGenerationTaskRepository,
   PhenotypeRepository,
+  PhenotypeUsageGuideRepository,
   PhenotypeVersionRepository,
   SpeciesCompileArtifactRepository,
   SpeciesGroupMembershipRepository,
@@ -106,6 +109,7 @@ export interface LayeredCompileRepositories extends SpeciesCompileInputRepositor
 
 export interface PhenotypeGenerationRepositories extends LayeredCompileRepositories {
   phenotypes: Pick<PhenotypeRepository, "get">;
+  phenotypeUsageGuides?: Pick<PhenotypeUsageGuideRepository, "getActiveByPhenotype">;
   speciesCompileArtifacts: Pick<SpeciesCompileArtifactRepository, "get">;
   phenotypeCompileArtifacts: Pick<PhenotypeCompileArtifactRepository, "get">;
 }
@@ -307,6 +311,8 @@ export interface PreparePhenotypeCompileArtifactOptions {
   nodeVersionId?: string;
   speciesArtifact?: SpeciesCompileArtifact;
   speciesArtifactId?: string;
+  usageGuideSnapshot?: PhenotypeUsageGuideCompileSnapshot;
+  usageGuideWarning?: string;
 }
 
 export interface PreparedPhenotypeGeneration {
@@ -491,6 +497,8 @@ export function preparePhenotypeCompileArtifact(
     phenotypeType: options.phenotypeType,
     taskBrief: options.taskBrief,
     speciesArtifact,
+    usageGuideSnapshot: options.usageGuideSnapshot,
+    usageGuideWarning: options.usageGuideWarning,
     contextReferences: compileInput.contextReferences,
     contextReviewRubrics: compileInput.contextReviewRubrics
   });
@@ -504,6 +512,13 @@ export function preparePhenotypeGeneration(
   let phenotypeArtifact: PhenotypeCompileArtifact | undefined;
   let createdSpeciesArtifact = false;
   let createdPhenotypeArtifact = false;
+  const phenotypeId = options.phenotypeId ?? options.ids?.phenotypeId ?? makeId("ph");
+  const existingPhenotype = store.phenotypes.get(phenotypeId);
+  const usageGuideSnapshot = store.phenotypeUsageGuides?.getActiveByPhenotype(phenotypeId)
+    ? summarizePhenotypeUsageGuideForCompile(store.phenotypeUsageGuides.getActiveByPhenotype(phenotypeId)!)
+    : undefined;
+  const usageGuideWarning =
+    existingPhenotype && !usageGuideSnapshot ? `phenotype ${phenotypeId} is missing an active usage guide` : undefined;
 
   if (options.phenotypeArtifactId) {
     phenotypeArtifact = store.phenotypeCompileArtifacts.get(options.phenotypeArtifactId);
@@ -521,6 +536,8 @@ export function preparePhenotypeGeneration(
     if (!speciesArtifact) throw new Error(`species compile artifact not found: ${phenotypeArtifact.speciesCompileArtifactId}`);
     validateSpeciesArtifact(speciesArtifact, options);
     validateSuppliedCompileArtifactsCurrent(store, options, speciesArtifact, phenotypeArtifact);
+    if (usageGuideSnapshot && !phenotypeArtifact.usageGuideSnapshot) phenotypeArtifact = { ...phenotypeArtifact, usageGuideSnapshot };
+    if (usageGuideWarning) phenotypeArtifact = addPhenotypeUsageGuideWarning(phenotypeArtifact, usageGuideWarning);
   } else {
     if (options.speciesArtifactId) {
       speciesArtifact = store.speciesCompileArtifacts.get(options.speciesArtifactId);
@@ -543,13 +560,13 @@ export function preparePhenotypeGeneration(
       nodeVersionId: options.versionBinding?.nodeVersionId,
       phenotypeType: options.phenotypeType,
       taskBrief: options.taskBrief,
-      speciesArtifact
+      speciesArtifact,
+      usageGuideSnapshot,
+      usageGuideWarning
     });
     createdPhenotypeArtifact = true;
   }
 
-  const phenotypeId = options.phenotypeId ?? options.ids?.phenotypeId ?? makeId("ph");
-  const existingPhenotype = store.phenotypes.get(phenotypeId);
   if (
     existingPhenotype &&
     (existingPhenotype.graphId !== options.graphId ||
@@ -589,13 +606,19 @@ export function preparePhenotypeGeneration(
       jobId: generationJobId,
       generationTaskId: options.generationTaskId,
       generationPlanId: options.generationPlanId,
-      versionBinding: options.versionBinding
+      versionBinding: options.versionBinding,
+      usageGuideId: usageGuideSnapshot?.usageGuideId,
+      usageGuideRevision: usageGuideSnapshot?.usageGuideRevision,
+      usageGuideSnapshot,
+      usageGuideWarning
     },
     generationBrief: options.taskBrief,
     promptSnapshot: phenotypeArtifact.prompt,
     tool: options.tool ?? "manual",
     speciesCompileArtifactId: speciesArtifact.artifactId,
     phenotypeCompileArtifactId: phenotypeArtifact.artifactId,
+    usageGuideId: usageGuideSnapshot?.usageGuideId,
+    usageGuideRevision: usageGuideSnapshot?.usageGuideRevision,
     compileArtifactSnapshot: createCompileArtifactSnapshot(speciesArtifact, phenotypeArtifact, compileValidity)
   });
   const job = createGenerationJob({
@@ -616,6 +639,10 @@ export function preparePhenotypeGeneration(
       compileMode: options.replayHistorical ? "historical-replay" : "current",
       speciesCompileArtifactId: speciesArtifact.artifactId,
       phenotypeCompileArtifactId: phenotypeArtifact.artifactId,
+      usageGuideId: usageGuideSnapshot?.usageGuideId,
+      usageGuideRevision: usageGuideSnapshot?.usageGuideRevision,
+      usageGuideSummary: usageGuideSnapshot,
+      usageGuideWarning,
       generationTaskId: options.generationTaskId,
       generationPlanId: options.generationPlanId,
       versionBinding: options.versionBinding
@@ -2283,6 +2310,7 @@ function createCompileArtifactSnapshot(
       promptDigest: phenotypeArtifact.prompt,
       negativePrompt: phenotypeArtifact.negativePrompt,
       artBrief: phenotypeArtifact.artBrief,
+      usageGuideSnapshot: phenotypeArtifact.usageGuideSnapshot,
       reviewChecklist: phenotypeArtifact.reviewChecklist,
       generationConstraints: phenotypeArtifact.generationConstraints,
       conflictCount: phenotypeArtifact.conflictReport.length,
@@ -2295,6 +2323,29 @@ function createCompileArtifactSnapshot(
       decisionCount: phenotypeArtifact.decisionRequests.length + phenotypeArtifact.decisionPatches.length,
       openQuestions: phenotypeArtifact.openQuestions
     }
+  };
+}
+
+function addPhenotypeUsageGuideWarning(artifact: PhenotypeCompileArtifact, reason: string): PhenotypeCompileArtifact {
+  if (artifact.feedback.some((item) => item.reason === reason)) return artifact;
+  const feedback = [
+    ...artifact.feedback,
+    {
+      feedbackId: `${artifact.artifactId}:usage-guide-warning`,
+      severity: "warning" as const,
+      targetLevel: "phenotype" as const,
+      target: { objectType: "phenotype" as const, objectId: `${artifact.speciesNodeId}:${artifact.phenotypeType}`, graphId: artifact.graphId },
+      reason,
+      suggestedAction: "create or attach a phenotype usage guide before production generation",
+      sourceObjectIds: []
+    }
+  ];
+  return {
+    ...artifact,
+    feedback,
+    frames: artifact.frames.map((frame) =>
+      frame.level === "phenotype" && !frame.feedback.some((item) => item.reason === reason) ? { ...frame, feedback: [...frame.feedback, feedback.at(-1)!] } : frame
+    )
   };
 }
 

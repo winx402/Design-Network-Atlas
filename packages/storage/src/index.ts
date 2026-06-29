@@ -26,6 +26,7 @@ import {
   Phenotype,
   PhenotypeGenerationPlan,
   PhenotypeGenerationTask,
+  PhenotypeUsageGuide,
   PhenotypeCompileArtifact,
   PhenotypeLibrary,
   PhenotypeLibraryGraphBinding,
@@ -202,6 +203,16 @@ export interface PhenotypeRepository {
   updateCurrentAcceptedVersion(phenotypeId: string, phenotypeVersionId: string | null): void;
   get(phenotypeId: string): Phenotype | undefined;
   listByGraph(graphId: string): Phenotype[];
+}
+
+export interface PhenotypeUsageGuideRepository {
+  create(guide: PhenotypeUsageGuide): void;
+  update(guide: PhenotypeUsageGuide): void;
+  get(usageGuideId: string): PhenotypeUsageGuide | undefined;
+  getActiveByPhenotype(phenotypeId: string): PhenotypeUsageGuide | undefined;
+  listByGraph(graphId: string): PhenotypeUsageGuide[];
+  listByNode(nodeId: string): PhenotypeUsageGuide[];
+  listByPhenotype(phenotypeId: string): PhenotypeUsageGuide[];
 }
 
 export interface PhenotypeVersionRepository {

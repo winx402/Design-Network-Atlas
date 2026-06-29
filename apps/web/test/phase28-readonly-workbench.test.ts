@@ -83,6 +83,10 @@ describe("Phase 28 PRD-21 DNA read-only workbench", () => {
     expect(html).not.toContain("Anomaly entry points");
     expect(html).not.toContain("Overview");
     expect(html).toContain("Gallery");
+    expect(html).toContain("Usage Guide");
+    expect(html).toContain("Guide coverage");
+    expect(html).toContain("must preserve");
+    expect(html).toContain("Warning Toolbar Icon usage");
     expect(html).toContain("filter-sheet");
     expect(html).toContain("gallery-grid");
     expect((html.match(/gallery-card/g) ?? []).length).toBeGreaterThanOrEqual(2);
@@ -123,5 +127,6 @@ describe("Phase 28 PRD-21 DNA read-only workbench", () => {
     const serialized = JSON.stringify(sampleWorkbenchSnapshot);
     expect(serialized).not.toMatch(/sk-test|OPENAI_API_KEY|password|secret|private_key|Bearer|X-Amz-Signature|\/Users\/bot/);
     expect(sampleWorkbenchSnapshot.resultPreviews.map((preview) => preview.preview.kind)).toContain("placeholder");
+    expect(JSON.stringify(sampleWorkbenchSnapshot.usageGuides)).toContain("ph-warning-icon");
   });
 });

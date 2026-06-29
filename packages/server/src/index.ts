@@ -11,6 +11,7 @@ import {
   type GenerationJob,
   type OutputReference,
   type Phenotype,
+  type PhenotypeUsageGuide,
   type PhenotypeGenerationPlan,
   type PhenotypeGenerationTask,
   type PhenotypeLibrary,
@@ -247,6 +248,9 @@ function createReadonlyWorkbenchSnapshot(store: SqliteDnaStore, graphId: string 
   const graphs = getScopedGraphs(store, graphId);
   const graphIds = new Set(graphs.map((graph) => graph.graphId));
   const graphPhenotypes = graphs.flatMap((graph) => store.phenotypes.listByGraph(graph.graphId));
+  const usageGuides = graphPhenotypes
+    .map((phenotype) => store.phenotypeUsageGuides.getActiveByPhenotype(phenotype.phenotypeId))
+    .filter((guide): guide is NonNullable<typeof guide> => Boolean(guide));
   const designRelationships = uniqueById(graphs.flatMap((graph) => store.designRelationships.listByGraph(graph.graphId)), (relationship) => relationship.relationshipId);
   const phenotypeVersions = graphPhenotypes.flatMap((phenotype) => store.phenotypeVersions.listByPhenotype(phenotype.phenotypeId));
   const generationPlans = graphs.flatMap((graph) => store.generationPlans.listByGraph(graph.graphId));
@@ -271,6 +275,8 @@ function createReadonlyWorkbenchSnapshot(store: SqliteDnaStore, graphId: string 
         speciesNodes: graphs.reduce((count, graph) => count + store.nodes.listByGraph(graph.graphId).length, 0),
         designRelationships: designRelationships.length,
         phenotypes: graphPhenotypes.length,
+        phenotypeUsageGuides: usageGuides.length,
+        missingPhenotypeUsageGuides: graphPhenotypes.length - usageGuides.length,
         phenotypeVersions: phenotypeVersions.length,
         candidateVersions: phenotypeVersions.filter((version) => version.status === "candidate").length,
         acceptedVersions: phenotypeVersions.filter((version) => version.status === "accepted").length,
@@ -284,7 +290,7 @@ function createReadonlyWorkbenchSnapshot(store: SqliteDnaStore, graphId: string 
         libraries: libraries.length,
         mounts: mounts.length
       },
-      anomalies: createWorkbenchAnomalies({ graphs, generationJobs, outputReferences }),
+      anomalies: createWorkbenchAnomalies({ graphs, generationJobs, outputReferences, missingUsageGuideCount: graphPhenotypes.length - usageGuides.length }),
       latest: {
         graphs: graphs.slice(-5).map((graph) => ({ graphId: graph.graphId, name: graph.name, updatedAt: graph.updatedAt })),
         phenotypeVersions: [...phenotypeVersions]
@@ -302,6 +308,7 @@ function createReadonlyWorkbenchSnapshot(store: SqliteDnaStore, graphId: string 
           .map((job) => ({ generationJobId: job.generationJobId, graphId: job.graphId, updatedAt: job.updatedAt }))
       }
     },
+    usageGuides: usageGuides.map((guide) => createUsageGuideSummary(guide)),
     graphs: graphs.map((graph) => createGraphWorkbenchDetail(store, graph)),
     generation: {
       plans: generationPlans.map((plan) => ({
@@ -699,7 +706,32 @@ function getScopedLibraries(store: SqliteDnaStore, graphIds: Set<string>): Pheno
   return libraries.filter((library) => library.graphIds.some((id) => graphIds.has(id)) || libraryIdsFromBindings.has(library.libraryId));
 }
 
-function createWorkbenchAnomalies(input: { graphs: Graph[]; generationJobs: GenerationJob[]; outputReferences: OutputReference[] }) {
+function createUsageGuideSummary(guide: PhenotypeUsageGuide) {
+  return {
+    usageGuideId: guide.usageGuideId,
+    phenotypeId: guide.phenotypeId,
+    graphId: guide.graphId,
+    nodeId: guide.nodeId,
+    phenotypeType: guide.phenotypeType,
+    status: guide.status,
+    revision: guide.revision,
+    title: guide.title,
+    summary: summarizeText(guide.summary, 220),
+    primaryUsageScenario: guide.usageScenarios.find((scenario) => scenario.priority === "primary")?.name ?? guide.usageScenarios[0]?.name,
+    mustPreserve: guide.designSemantics.mustPreserve.slice(0, 8),
+    mustAvoid: guide.designSemantics.mustAvoid.slice(0, 8),
+    variantCount: guide.variantPlan.length,
+    reviewChecklistCount: guide.reviewChecklist.length,
+    updatedAt: guide.updatedAt
+  };
+}
+
+function createWorkbenchAnomalies(input: {
+  graphs: Graph[];
+  generationJobs: GenerationJob[];
+  outputReferences: OutputReference[];
+  missingUsageGuideCount?: number;
+}) {
   const anomalies: Array<{ type: string; severity: "info" | "warning"; count?: number; message: string }> = [];
   if (input.graphs.length === 0) {
     anomalies.push({
@@ -719,6 +751,14 @@ function createWorkbenchAnomalies(input: { graphs: Graph[]; generationJobs: Gene
       severity: "warning",
       count: missingReferences,
       message: "Some output references are missing or stale."
+    });
+  }
+  if ((input.missingUsageGuideCount ?? 0) > 0) {
+    anomalies.push({
+      type: "missing-phenotype-usage-guides",
+      severity: "warning",
+      count: input.missingUsageGuideCount,
+      message: "Some phenotypes are missing usage guides."
     });
   }
   return anomalies;
@@ -768,21 +808,28 @@ function createGraphWorkbenchDetail(store: SqliteDnaStore, graph: Graph) {
         values: sanitizeForWorkbench(assignment.values)
       }))
     },
-    phenotypeOverlay: phenotypes.map((phenotype) => ({
-      phenotypeId: phenotype.phenotypeId,
-      name: phenotype.name,
-      nodeId: phenotype.nodeId,
-      phenotypeType: phenotype.phenotypeType,
-      status: phenotype.status,
-      currentAcceptedVersionId: phenotype.currentAcceptedVersion,
-      versions: store.phenotypeVersions.listByPhenotype(phenotype.phenotypeId).map((version) => ({
-        phenotypeVersionId: version.phenotypeVersionId,
-        status: version.status,
-        speciesCompileArtifactId: version.speciesCompileArtifactId,
-        phenotypeCompileArtifactId: version.phenotypeCompileArtifactId,
-        createdAt: version.createdAt
-      }))
-    })),
+    phenotypeOverlay: phenotypes.map((phenotype) => {
+      const usageGuide = store.phenotypeUsageGuides.getActiveByPhenotype(phenotype.phenotypeId);
+      return {
+        phenotypeId: phenotype.phenotypeId,
+        name: phenotype.name,
+        nodeId: phenotype.nodeId,
+        phenotypeType: phenotype.phenotypeType,
+        status: phenotype.status,
+        currentAcceptedVersionId: phenotype.currentAcceptedVersion,
+        usageGuideCoverage: usageGuide ? "active" : "missing",
+        usageGuide: usageGuide ? createUsageGuideSummary(usageGuide) : undefined,
+        versions: store.phenotypeVersions.listByPhenotype(phenotype.phenotypeId).map((version) => ({
+          phenotypeVersionId: version.phenotypeVersionId,
+          status: version.status,
+          speciesCompileArtifactId: version.speciesCompileArtifactId,
+          phenotypeCompileArtifactId: version.phenotypeCompileArtifactId,
+          usageGuideId: version.usageGuideId,
+          usageGuideRevision: version.usageGuideRevision,
+          createdAt: version.createdAt
+        }))
+      };
+    }),
     compileTrace: {
       entityArtifacts: store.entityCompileArtifacts.listByGraph(graph.graphId).length,
       speciesArtifacts: store.speciesCompileArtifacts.listByGraph(graph.graphId).length,
@@ -891,6 +938,7 @@ function createRelationshipSummary(relationship: DesignRelationship) {
 }
 
 function createGenerationJobSummary(job: GenerationJob) {
+  const inputSnapshot = job.inputSnapshot as Record<string, unknown> | undefined;
   return {
     generationJobId: job.generationJobId,
     graphId: job.graphId,
@@ -902,6 +950,14 @@ function createGenerationJobSummary(job: GenerationJob) {
     status: job.status,
     tool: job.tool,
     errorSummary: job.errorMessage ? sanitizeText(job.errorMessage) : undefined,
+    usageGuide:
+      typeof inputSnapshot?.usageGuideId === "string"
+        ? {
+            usageGuideId: inputSnapshot.usageGuideId,
+            revision: inputSnapshot.usageGuideRevision,
+            summary: sanitizeForWorkbench(inputSnapshot.usageGuideSummary ?? inputSnapshot.usageGuideWarning)
+          }
+        : undefined,
     inputSnapshotSummary: sanitizeForWorkbench(job.inputSnapshot),
     outputSnapshotSummary: sanitizeForWorkbench(job.outputSnapshot),
     createdAt: job.createdAt,

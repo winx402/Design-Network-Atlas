@@ -106,6 +106,24 @@ export interface WorkbenchOverview {
   latest?: Record<string, unknown>;
 }
 
+export interface WorkbenchUsageGuideSummary {
+  usageGuideId: string;
+  phenotypeId: string;
+  graphId: string;
+  nodeId: string;
+  phenotypeType: string;
+  status: string;
+  revision: number;
+  title: string;
+  summary: string;
+  primaryUsageScenario?: string;
+  mustPreserve: string[];
+  mustAvoid: string[];
+  variantCount: number;
+  reviewChecklistCount: number;
+  updatedAt?: string;
+}
+
 export type WorkbenchRelationshipEndpoint =
   | { type: "graph"; graphId: string }
   | { type: "species-group"; graphId: string; groupId: string }
@@ -169,7 +187,16 @@ export interface WorkbenchGraphDetail {
     phenotypeType: string;
     status: string;
     currentAcceptedVersionId?: string;
-    versions: Array<{ phenotypeVersionId: string; status: WorkbenchVersionStatus; speciesCompileArtifactId?: string; phenotypeCompileArtifactId?: string }>;
+    usageGuideCoverage?: "active" | "missing";
+    usageGuide?: WorkbenchUsageGuideSummary;
+    versions: Array<{
+      phenotypeVersionId: string;
+      status: WorkbenchVersionStatus;
+      speciesCompileArtifactId?: string;
+      phenotypeCompileArtifactId?: string;
+      usageGuideId?: string;
+      usageGuideRevision?: number;
+    }>;
   }>;
   compileTrace?: {
     entityArtifacts: number;
@@ -191,6 +218,11 @@ export interface WorkbenchGenerationJob {
   status: string;
   tool?: string;
   errorSummary?: string;
+  usageGuide?: {
+    usageGuideId: string;
+    revision?: unknown;
+    summary?: unknown;
+  };
   createdAt?: string;
   updatedAt?: string;
 }
@@ -263,6 +295,7 @@ export interface WorkbenchLibrarySummary {
 
 export interface WorkbenchSnapshot {
   overview: WorkbenchOverview;
+  usageGuides: WorkbenchUsageGuideSummary[];
   graphs: WorkbenchGraphDetail[];
   generation: {
     plans: WorkbenchGenerationPlan[];
@@ -315,6 +348,8 @@ export function createEmptyWorkbenchSnapshot(): WorkbenchSnapshot {
         designRelationships: 0,
         phenotypes: 0,
         phenotypeVersions: 0,
+        phenotypeUsageGuides: 0,
+        missingPhenotypeUsageGuides: 0,
         candidateVersions: 0,
         acceptedVersions: 0,
         generationPlans: 0,
@@ -328,6 +363,7 @@ export function createEmptyWorkbenchSnapshot(): WorkbenchSnapshot {
       },
       anomalies: [{ type: "empty-store", severity: "info", message: "No DNA records found in the current read-only Explorer scope." }]
     },
+    usageGuides: [],
     graphs: [],
     generation: { plans: [], tasks: [], jobs: [] },
     libraries: [],
@@ -492,6 +528,24 @@ export const samplePhenotypes: WorkbenchPhenotype[] = [
   }
 ];
 
+const sampleWorkbenchSnapshotUsageGuide: WorkbenchUsageGuideSummary = {
+  usageGuideId: "guide-warning-usage",
+  phenotypeId: "ph-warning-icon",
+  graphId: "graph-explorer",
+  nodeId: "node-warning",
+  phenotypeType: "image-prompt",
+  status: "active",
+  revision: 2,
+  title: "Warning Toolbar Icon usage",
+  summary: "Use this phenotype as a compact warning affordance in dense toolbar and inspector surfaces.",
+  primaryUsageScenario: "Toolbar warning affordance",
+  mustPreserve: ["must preserve sharp amber warning semantics", "must preserve readable silhouette at 32px"],
+  mustAvoid: ["soft rounded danger language", "credential-like text in icon art"],
+  variantCount: 2,
+  reviewChecklistCount: 3,
+  updatedAt: "2026-06-30T08:30:00.000Z"
+};
+
 export const sampleWorkbenchSnapshot: WorkbenchSnapshot = {
   overview: {
     counts: {
@@ -502,6 +556,8 @@ export const sampleWorkbenchSnapshot: WorkbenchSnapshot = {
       designRelationships: 2,
       phenotypes: samplePhenotypes.length,
       phenotypeVersions: samplePhenotypes.reduce((count, phenotype) => count + phenotype.versions.length, 0),
+      phenotypeUsageGuides: 1,
+      missingPhenotypeUsageGuides: 1,
       candidateVersions: 1,
       acceptedVersions: 1,
       deprecatedOrReplacedVersions: 1,
@@ -516,6 +572,7 @@ export const sampleWorkbenchSnapshot: WorkbenchSnapshot = {
     },
     anomalies: [{ type: "missing-or-stale-output-references", severity: "warning", count: 1, message: "Some output references need review." }]
   },
+  usageGuides: [sampleWorkbenchSnapshotUsageGuide],
   graphs: [
     {
       graphId: "graph-language",
@@ -644,11 +701,15 @@ export const sampleWorkbenchSnapshot: WorkbenchSnapshot = {
         phenotypeType: phenotype.phenotypeType,
         status: "generated",
         currentAcceptedVersionId: phenotype.currentAcceptedVersionId,
+        usageGuideCoverage: phenotype.id === "ph-warning-icon" ? "active" : "missing",
+        usageGuide: phenotype.id === "ph-warning-icon" ? sampleWorkbenchSnapshotUsageGuide : undefined,
         versions: phenotype.versions.map((version) => ({
           phenotypeVersionId: version.id,
           status: version.status,
           speciesCompileArtifactId: "sca-explorer",
-          phenotypeCompileArtifactId: "pca-explorer"
+          phenotypeCompileArtifactId: "pca-explorer",
+          usageGuideId: phenotype.id === "ph-warning-icon" ? "guide-warning-usage" : undefined,
+          usageGuideRevision: phenotype.id === "ph-warning-icon" ? 2 : undefined
         }))
       })),
       compileTrace: {
@@ -929,6 +990,7 @@ function normalizeWorkbenchSnapshot(body: Partial<WorkbenchSnapshot>): Workbench
       },
       anomalies: body.phenotypes?.length ? [] : empty.overview.anomalies
     },
+    usageGuides: body.usageGuides ?? [],
     graphs: body.graphs ?? [],
     generation: {
       plans: generationPlans,

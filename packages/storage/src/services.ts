@@ -20,6 +20,7 @@ import {
   createDefaultLibraryRoutingPolicy,
   createDefaultNodeVersion,
   createDefaultPhenotype,
+  createDefaultPhenotypeUsageGuide,
   createDefaultPhenotypeLibrary,
   createDefaultPhenotypeLibraryGraphBinding,
   createDefaultProposal,
@@ -49,6 +50,8 @@ import {
   nowIso,
   Phenotype,
   PhenotypeSchema,
+  PhenotypeUsageGuide,
+  PhenotypeUsageGuideSchema,
   PhenotypeLibrary,
   PhenotypeLibraryGraphBinding,
   Proposal,
@@ -326,6 +329,20 @@ export interface CreatePlannedPhenotypeInput {
   tags?: string[];
   facets?: Record<string, unknown>;
   outputPlan?: Phenotype["outputPlan"];
+}
+
+export interface CreatePhenotypeUsageGuideInput
+  extends Partial<Omit<PhenotypeUsageGuide, "phenotypeId" | "graphId" | "nodeId" | "phenotypeType" | "revision" | "status" | "createdAt" | "updatedAt">> {
+  phenotypeId: string;
+  usageGuideId: string;
+  title: string;
+  summary: string;
+  status?: PhenotypeUsageGuide["status"];
+}
+
+export interface UpdatePhenotypeUsageGuideInput
+  extends Partial<Omit<PhenotypeUsageGuide, "usageGuideId" | "phenotypeId" | "graphId" | "nodeId" | "phenotypeType" | "revision" | "createdAt" | "updatedAt">> {
+  usageGuideId: string;
 }
 
 export interface CreateProposalInput {
@@ -922,6 +939,95 @@ export function createDnaServices(store: DnaServiceStore) {
         store.changeSets.create(changeSet);
         if (shouldApply(options)) return applyPhenotypeChangeSet(store, changeSet);
         return { value: phenotype, changeSet };
+      }
+    },
+    phenotypeGuide: {
+      create(input: CreatePhenotypeUsageGuideInput, options: WriteOptions): ServiceResult<PhenotypeUsageGuide> {
+        const phenotype = requirePhenotype(store, input.phenotypeId);
+        const guide = PhenotypeUsageGuideSchema.parse(
+          createDefaultPhenotypeUsageGuide({
+            ...input,
+            graphId: phenotype.graphId,
+            nodeId: phenotype.nodeId,
+            phenotypeType: phenotype.phenotypeType,
+            status: input.status ?? "active"
+          })
+        );
+        validatePhenotypeUsageGuideCreate(store, guide);
+        const changeSet = createChangeSet({
+          mode: options.mode,
+          objectType: "phenotype-usage-guide",
+          operation: "create",
+          summary: `create phenotype usage guide ${guide.usageGuideId}`,
+          diff: {
+            usageGuideId: guide.usageGuideId,
+            phenotypeId: guide.phenotypeId,
+            graphId: guide.graphId,
+            status: guide.status,
+            revision: guide.revision
+          },
+          payload: { guide }
+        });
+        store.changeSets.create(changeSet);
+        if (shouldApply(options)) return applyPhenotypeUsageGuideChangeSet(store, changeSet);
+        return { value: guide, changeSet };
+      },
+      update(input: UpdatePhenotypeUsageGuideInput, options: WriteOptions): ServiceResult<PhenotypeUsageGuide> {
+        const existing = store.phenotypeUsageGuides.get(input.usageGuideId);
+        if (!existing) throw new Error(`phenotype usage guide not found: ${input.usageGuideId}`);
+        const guide = PhenotypeUsageGuideSchema.parse(
+          createDefaultPhenotypeUsageGuide({
+            ...existing,
+            ...input,
+            usageGuideId: existing.usageGuideId,
+            phenotypeId: existing.phenotypeId,
+            graphId: existing.graphId,
+            nodeId: existing.nodeId,
+            phenotypeType: existing.phenotypeType,
+            status: input.status ?? existing.status,
+            revision: existing.revision + 1,
+            createdAt: existing.createdAt,
+            updatedAt: nowIso()
+          })
+        );
+        validatePhenotypeUsageGuideUpdate(store, existing, guide);
+        const changeSet = createChangeSet({
+          mode: options.mode,
+          objectType: "phenotype-usage-guide",
+          operation: "update",
+          summary: `update phenotype usage guide ${guide.usageGuideId} to revision ${guide.revision}`,
+          diff: {
+            usageGuideId: guide.usageGuideId,
+            phenotypeId: guide.phenotypeId,
+            previousRevision: existing.revision,
+            revision: guide.revision,
+            status: guide.status
+          },
+          payload: { guide }
+        });
+        store.changeSets.create(changeSet);
+        if (shouldApply(options)) return applyPhenotypeUsageGuideChangeSet(store, changeSet);
+        return { value: guide, changeSet };
+      },
+      archive(usageGuideId: string, options: WriteOptions): ServiceResult<PhenotypeUsageGuide> {
+        const existing = store.phenotypeUsageGuides.get(usageGuideId);
+        if (!existing) throw new Error(`phenotype usage guide not found: ${usageGuideId}`);
+        const guide = PhenotypeUsageGuideSchema.parse({
+          ...existing,
+          status: "archived",
+          updatedAt: nowIso()
+        });
+        const changeSet = createChangeSet({
+          mode: options.mode,
+          objectType: "phenotype-usage-guide",
+          operation: "archive",
+          summary: `archive phenotype usage guide ${guide.usageGuideId}`,
+          diff: { usageGuideId: guide.usageGuideId, phenotypeId: guide.phenotypeId, status: "archived" },
+          payload: { guide }
+        });
+        store.changeSets.create(changeSet);
+        if (shouldApply(options)) return applyPhenotypeUsageGuideChangeSet(store, changeSet);
+        return { value: guide, changeSet };
       }
     },
     proposal: {
@@ -1902,6 +2008,43 @@ function validatePlannedPhenotype(store: DnaServiceStore, phenotype: Phenotype):
   return errors;
 }
 
+function requirePhenotype(store: DnaServiceStore, phenotypeId: string): Phenotype {
+  const phenotype = store.phenotypes.get(phenotypeId);
+  if (!phenotype) throw new Error(`phenotype not found: ${phenotypeId}`);
+  return phenotype;
+}
+
+function validatePhenotypeUsageGuideCreate(store: DnaServiceStore, guide: PhenotypeUsageGuide) {
+  const phenotype = requirePhenotype(store, guide.phenotypeId);
+  if (phenotype.graphId !== guide.graphId || phenotype.nodeId !== guide.nodeId || phenotype.phenotypeType !== guide.phenotypeType) {
+    throw new Error(`phenotype usage guide ${guide.usageGuideId} target does not match phenotype ${guide.phenotypeId}`);
+  }
+  if (store.phenotypeUsageGuides.get(guide.usageGuideId)) throw new Error(`phenotype usage guide already exists: ${guide.usageGuideId}`);
+  const active = store.phenotypeUsageGuides.getActiveByPhenotype(guide.phenotypeId);
+  if (guide.status === "active" && active && active.usageGuideId !== guide.usageGuideId) {
+    throw new Error(`active usage guide already exists for phenotype ${guide.phenotypeId}: ${active.usageGuideId}`);
+  }
+}
+
+function validatePhenotypeUsageGuideUpdate(store: DnaServiceStore, before: PhenotypeUsageGuide, guide: PhenotypeUsageGuide) {
+  const phenotype = requirePhenotype(store, guide.phenotypeId);
+  if (
+    before.phenotypeId !== guide.phenotypeId ||
+    before.graphId !== guide.graphId ||
+    before.nodeId !== guide.nodeId ||
+    before.phenotypeType !== guide.phenotypeType ||
+    phenotype.graphId !== guide.graphId ||
+    phenotype.nodeId !== guide.nodeId ||
+    phenotype.phenotypeType !== guide.phenotypeType
+  ) {
+    throw new Error(`phenotype usage guide ${guide.usageGuideId} target identity is immutable`);
+  }
+  const active = store.phenotypeUsageGuides.getActiveByPhenotype(guide.phenotypeId);
+  if (guide.status === "active" && active && active.usageGuideId !== guide.usageGuideId) {
+    throw new Error(`active usage guide already exists for phenotype ${guide.phenotypeId}: ${active.usageGuideId}`);
+  }
+}
+
 function applyChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ServiceResult<unknown> {
   if (changeSet.objectType === "graph") return changeSet.operation === "update" ? applyGraphUpdateChangeSet(store, changeSet) : applyGraphChangeSet(store, changeSet);
   if (changeSet.objectType === "node") return applyNodeChangeSet(store, changeSet);
@@ -1920,6 +2063,7 @@ function applyChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ServiceRe
   if (changeSet.objectType === "facet-schema") return applyFacetSchemaChangeSet(store, changeSet);
   if (changeSet.objectType === "facet-assignment") return applyFacetAssignmentChangeSet(store, changeSet);
   if (changeSet.objectType === "phenotype") return applyPhenotypeChangeSet(store, changeSet);
+  if (changeSet.objectType === "phenotype-usage-guide") return applyPhenotypeUsageGuideChangeSet(store, changeSet);
   if (changeSet.objectType === "phenotype-library") return applyPhenotypeLibraryChangeSet(store, changeSet);
   if (changeSet.objectType === "phenotype-library-graph-binding") return applyPhenotypeLibraryGraphBindingChangeSet(store, changeSet);
   if (changeSet.objectType === "storage-mount") return applyStorageMountChangeSet(store, changeSet);
@@ -2422,6 +2566,24 @@ function applyPhenotypeChangeSet(store: DnaServiceStore, changeSet: ChangeSet): 
     return next;
   });
   return { value: phenotype, changeSet: applied };
+}
+
+function applyPhenotypeUsageGuideChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ServiceResult<PhenotypeUsageGuide> {
+  requireChangeSetObjectType(changeSet, "phenotype-usage-guide");
+  const guide = changeSet.payload.guide as PhenotypeUsageGuide | undefined;
+  if (!guide) throw new Error("change-set payload missing phenotype usage guide");
+  const applied = store.transaction(() => {
+    const existing = store.phenotypeUsageGuides.get(guide.usageGuideId);
+    if (changeSet.operation === "create") validatePhenotypeUsageGuideCreate(store, guide);
+    else if (existing) validatePhenotypeUsageGuideUpdate(store, existing, guide);
+    else throw new Error(`phenotype usage guide not found: ${guide.usageGuideId}`);
+    if (changeSet.operation === "create") store.phenotypeUsageGuides.create(guide);
+    else store.phenotypeUsageGuides.update(guide);
+    const next = markChangeSetApplied(changeSet);
+    store.changeSets.update(next);
+    return next;
+  });
+  return { value: guide, changeSet: applied };
 }
 
 function applyPhenotypeLibraryChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ServiceResult<PhenotypeLibrary> {

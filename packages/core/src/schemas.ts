@@ -18,6 +18,10 @@ export const ParentRoleSchema = z.enum([
 ]);
 export const PhenotypeTypeSourceSchema = z.enum(["built-in", "template", "custom"]);
 export const PhenotypeStatusSchema = z.enum(["planned", "active", "archived", "deleted"]);
+export const PhenotypeUsageGuideStatusSchema = z.enum(["draft", "active", "archived", "deleted"]);
+export const PhenotypeUsageGuideScenarioPrioritySchema = z.enum(["primary", "secondary", "optional"]);
+export const PhenotypeUsageGuideChecklistSeveritySchema = z.enum(["info", "warning", "blocking"]);
+export const PhenotypeUsageGuideTransparencySchema = z.enum(["required", "recommended", "not-needed"]);
 export const PhenotypeVersionStatusSchema = z.enum([
   "draft",
   "candidate",
@@ -690,6 +694,97 @@ export const PhenotypeSchema = z.object({
   updatedAt: IsoDateSchema
 });
 
+export const PhenotypeUsageScenarioSchema = z.object({
+  scenarioId: z.string().min(1),
+  name: z.string().min(1),
+  surface: z.string().optional(),
+  userMoment: z.string().optional(),
+  designIntent: z.string().min(1),
+  implementationRole: z.string().optional(),
+  priority: PhenotypeUsageGuideScenarioPrioritySchema.optional()
+});
+
+export const PhenotypeUsageInstructionsSchema = z.object({
+  primaryUse: z.string().min(1),
+  placement: z.string().optional(),
+  composition: z.string().optional(),
+  stateBehavior: z.string().optional(),
+  doNotUseFor: z.array(z.string()).default([])
+});
+
+export const PhenotypeUsageDesignSemanticsSchema = z.object({
+  sourceContextIds: z.array(z.string()).default([]),
+  sourceFactIds: z.array(z.string()).default([]),
+  sourcePrincipleIds: z.array(z.string()).default([]),
+  sourceMotifIds: z.array(z.string()).default([]),
+  sourceFacetIds: z.array(z.string()).default([]),
+  sourceRelationshipIds: z.array(z.string()).default([]),
+  mustPreserve: z.array(z.string()).default([]),
+  mustAvoid: z.array(z.string()).default([])
+});
+
+export const PhenotypeUsageVariantPlanItemSchema = z.object({
+  variantId: z.string().min(1),
+  name: z.string().min(1),
+  purpose: z.string().min(1),
+  required: z.boolean(),
+  notes: z.string().optional()
+});
+
+export const PhenotypeUsageProductionHintsSchema = z.object({
+  suggestedAssetTypes: z.array(AssetTypeSchema).default([]),
+  suggestedAspectRatio: z.string().optional(),
+  suggestedTransparency: PhenotypeUsageGuideTransparencySchema.optional(),
+  suggestedSize: z.string().optional(),
+  namingHint: z.string().optional(),
+  deliveryNotes: z.string().optional()
+});
+
+export const PhenotypeUsageReviewChecklistItemSchema = z.object({
+  checklistId: z.string().min(1),
+  question: z.string().min(1),
+  severity: PhenotypeUsageGuideChecklistSeveritySchema
+});
+
+export const PhenotypeUsageGuideSchema = z.object({
+  usageGuideId: z.string().min(1),
+  phenotypeId: z.string().min(1),
+  graphId: z.string().min(1),
+  nodeId: z.string().min(1),
+  phenotypeType: z.string().min(1),
+  status: PhenotypeUsageGuideStatusSchema,
+  revision: z.number().int().positive(),
+  title: z.string().min(1),
+  summary: z.string().min(1),
+  usageScenarios: z.array(PhenotypeUsageScenarioSchema).default([]),
+  usageInstructions: PhenotypeUsageInstructionsSchema,
+  designSemantics: PhenotypeUsageDesignSemanticsSchema.default({}),
+  variantPlan: z.array(PhenotypeUsageVariantPlanItemSchema).default([]),
+  productionHints: PhenotypeUsageProductionHintsSchema.default({}),
+  reviewChecklist: z.array(PhenotypeUsageReviewChecklistItemSchema).default([]),
+  llmPromptTemplate: z.string().optional(),
+  sourceSummary: z.string().default(""),
+  metadata: JsonRecordSchema,
+  extensions: JsonRecordSchema,
+  createdAt: IsoDateSchema,
+  updatedAt: IsoDateSchema
+});
+
+export const PhenotypeUsageGuideCompileSnapshotSchema = z.object({
+  usageGuideId: z.string().min(1),
+  usageGuideRevision: z.number().int().positive(),
+  phenotypeId: z.string().min(1),
+  title: z.string().min(1),
+  summary: z.string().min(1),
+  primaryUsageScenario: z.string().optional(),
+  selectedScenarios: z.array(z.string()).default([]),
+  mustPreserve: z.array(z.string()).default([]),
+  mustAvoid: z.array(z.string()).default([]),
+  variantPlan: z.array(z.object({ variantId: z.string(), name: z.string(), purpose: z.string(), required: z.boolean() })).default([]),
+  reviewChecklist: z.array(z.object({ checklistId: z.string(), question: z.string(), severity: PhenotypeUsageGuideChecklistSeveritySchema })).default([]),
+  productionHints: PhenotypeUsageProductionHintsSchema.default({})
+});
+
 export const PhenotypeVersionFeedbackItemSchema = z.object({
   feedbackId: z.string().min(1),
   severity: PhenotypeVersionFeedbackSeveritySchema,
@@ -720,6 +815,8 @@ export const PhenotypeVersionSchema = z.object({
   assetIds: z.array(z.string()).default([]),
   speciesCompileArtifactId: z.string().optional(),
   phenotypeCompileArtifactId: z.string().optional(),
+  usageGuideId: z.string().optional(),
+  usageGuideRevision: z.number().int().positive().optional(),
   compileArtifactSnapshot: JsonRecordSchema,
   status: PhenotypeVersionStatusSchema,
   feedback: PhenotypeVersionFeedbackSchema.default({ items: [] }),
@@ -1004,6 +1101,7 @@ export const PhenotypeCompileArtifactSchema = z.object({
   decisionRequests: z.array(CompileDecisionRequestSchema).default([]),
   decisionPatches: z.array(CompileDecisionPatchSchema).default([]),
   feedback: z.array(CompileFeedbackSchema).default([]),
+  usageGuideSnapshot: PhenotypeUsageGuideCompileSnapshotSchema.optional(),
   prompt: z.string().default(""),
   negativePrompt: z.string().default(""),
   artBrief: z.string().default(""),
@@ -1051,6 +1149,8 @@ export const OutputReferenceSchema = z.object({
   graphId: z.string().min(1),
   phenotypeId: z.string().min(1).optional(),
   phenotypeVersionId: z.string().min(1),
+  usageGuideId: z.string().min(1).optional(),
+  usageGuideRevision: z.number().int().positive().optional(),
   libraryId: z.string().min(1).optional(),
   storageMountId: z.string().min(1).optional(),
   externalId: z.string().min(1).optional(),
@@ -1307,6 +1407,9 @@ export type NodeVersion = z.infer<typeof NodeVersionSchema>;
 export type AssetType = z.infer<typeof AssetTypeSchema>;
 export type PhenotypeOutputPlan = z.infer<typeof PhenotypeOutputPlanSchema>;
 export type Phenotype = z.infer<typeof PhenotypeSchema>;
+export type PhenotypeUsageScenario = z.infer<typeof PhenotypeUsageScenarioSchema>;
+export type PhenotypeUsageGuide = z.infer<typeof PhenotypeUsageGuideSchema>;
+export type PhenotypeUsageGuideCompileSnapshot = z.infer<typeof PhenotypeUsageGuideCompileSnapshotSchema>;
 export type PhenotypeVersionFeedback = z.infer<typeof PhenotypeVersionFeedbackSchema>;
 export type PhenotypeVersionFeedbackItem = z.infer<typeof PhenotypeVersionFeedbackItemSchema>;
 export type PhenotypeVersion = z.infer<typeof PhenotypeVersionSchema>;

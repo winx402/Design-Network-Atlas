@@ -53,6 +53,7 @@
 | Phase 27 | phenotype version lifecycle | `PhenotypeVersion` candidate/accepted/replaced/rolled-back lifecycle、feedback metadata、single accepted invariant、task/job provenance projection、export/import 和 secret redaction |
 | Phase 28 | Web read-only information architecture | `/api/workbench/snapshot` server-side view model；Atlas Map、Graph Explorer、Generation Board、Phenotype Library、Inspector；安全图库预览；empty/error/missing 状态；移动端无宽表和文本溢出 |
 | Phase 29 | generation update + scoped reference generation | `generation-plan update` / `generation-task update` 默认 preview、apply 后只改 mutable orchestration metadata；批量 task selector 防止 update-all 并跳过已有执行链接；graph/group scoped `reference-generation` 不创建 synthetic phenotype records；external reference completion 需要 active linked asset evidence 并支持 atomic `link-asset --mark-generated`；`replace-asset` 覆盖 local -> Eagle pointer migration、旧 pointer 归档、新 pointer current evidence、URI storageType 推断和冲突拒绝；reference jobs/assets export/import round-trip 且脱敏私密链接和 provider credentials |
+| Phase 31 | phenotype usage guide | `PhenotypeUsageGuide` schema/defaults、同 phenotype 单 active guide、revision update、CLI preview/apply、compile/generation usageGuideSnapshot、GenerationJob input snapshot、export/import `usage-guide.json/md`、Web Inspector coverage、skill contract 和 secret/project-path redaction |
 
 ## 4. 关键测试数据
 

@@ -213,6 +213,18 @@ export const phenotypes = sqliteTable("phenotypes", {
   updatedAt: text("updated_at").notNull()
 });
 
+export const phenotypeUsageGuides = sqliteTable("phenotype_usage_guides", {
+  usageGuideId: text("usage_guide_id").primaryKey(),
+  phenotypeId: text("phenotype_id").notNull(),
+  graphId: text("graph_id").notNull(),
+  nodeId: text("node_id").notNull(),
+  status: text("status").notNull(),
+  revision: integer("revision").notNull(),
+  payload: text("payload", { mode: "json" }).notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull()
+});
+
 export const phenotypeVersions = sqliteTable("phenotype_versions", {
   phenotypeVersionId: text("phenotype_version_id").primaryKey(),
   phenotypeId: text("phenotype_id").notNull(),
