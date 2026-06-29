@@ -424,6 +424,31 @@ export class InMemoryDnaStore implements DnaServiceStore {
           if (filter.linkedObjectId && asset.linkedObjectId !== filter.linkedObjectId) return false;
           if (filter.status && asset.status !== filter.status) return false;
           if (filter.tag && !asset.tags.includes(filter.tag)) return false;
+          if (filter.graphId) {
+            const graphIds = new Set([filter.graphId]);
+            const groupIds = new Set([...this.state.speciesGroups.values()].filter((group) => group.graphId === filter.graphId).map((group) => group.groupId));
+            const nodeIds = new Set([...this.state.nodes.values()].filter((node) => node.graphId === filter.graphId).map((node) => node.nodeId));
+            const phenotypes = [...this.state.phenotypes.values()].filter((phenotype) => phenotype.graphId === filter.graphId);
+            const phenotypeIds = new Set(phenotypes.map((phenotype) => phenotype.phenotypeId));
+            const phenotypeVersionIds = new Set(
+              [...this.state.phenotypeVersions.values()]
+                .filter((version) => version.graphId === filter.graphId || phenotypeIds.has(version.phenotypeId))
+                .map((version) => version.phenotypeVersionId)
+            );
+            const generationJobIds = new Set(
+              [...this.state.generationJobs.values()].filter((job) => job.graphId === filter.graphId).map((job) => job.generationJobId)
+            );
+            if (
+              !graphIds.has(asset.linkedObjectId) &&
+              !groupIds.has(asset.linkedObjectId) &&
+              !nodeIds.has(asset.linkedObjectId) &&
+              !phenotypeIds.has(asset.linkedObjectId) &&
+              !phenotypeVersionIds.has(asset.linkedObjectId) &&
+              !generationJobIds.has(asset.linkedObjectId)
+            ) {
+              return false;
+            }
+          }
           return true;
         })
     };

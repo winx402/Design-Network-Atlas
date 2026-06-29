@@ -333,7 +333,7 @@ export const libraryRoutingPolicies = sqliteTable("library_routing_policies", {
 export const generationJobs = sqliteTable("generation_jobs", {
   generationJobId: text("generation_job_id").primaryKey(),
   graphId: text("graph_id").notNull(),
-  nodeId: text("node_id").notNull(),
+  nodeId: text("node_id"),
   status: text("status").notNull(),
   payload: text("payload", { mode: "json" }).notNull(),
   createdAt: text("created_at").notNull(),

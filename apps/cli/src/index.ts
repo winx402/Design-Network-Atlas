@@ -19,15 +19,20 @@ import {
   preparePhenotypeCompileArtifact,
   preparePhenotypeGeneration,
   preparePhenotypeGenerationForTask,
+  prepareReferenceGeneration,
   prepareSpeciesCompileArtifact,
   createGenerationPlan,
   createGenerationTask,
   expandGenerationPlan,
+  linkReferenceAsset,
   persistPhenotypeGeneration,
+  persistReferenceGeneration,
   rejectPhenotypeVersion,
   replacePhenotypeVersion,
   rollbackPhenotypeVersion,
   submitPhenotypeVersionCandidate,
+  updateGenerationPlan,
+  updateGenerationTasks,
   updatePhenotypeVersionFeedbackSummary,
   type ApplicationImpactSummary
 } from "@dna/application";
@@ -312,6 +317,37 @@ function parseVersionBinding(options: {
       };
 }
 
+function parseOptionalVersionBinding(options: {
+  versionBinding?: string;
+  nodeVersion?: string;
+  speciesArtifact?: string;
+  phenotypeArtifact?: string;
+  replayHistorical?: boolean;
+}): GenerationVersionBinding | undefined {
+  if (!options.versionBinding && !options.nodeVersion && !options.speciesArtifact && !options.phenotypeArtifact && !options.replayHistorical) {
+    return undefined;
+  }
+  return parseVersionBinding(options);
+}
+
+function parseJsonPatch(options: { set?: string[]; remove?: string[]; clear?: boolean }) {
+  if (!options.clear && !(options.set?.length) && !(options.remove?.length)) return undefined;
+  return {
+    clear: Boolean(options.clear),
+    set: parseKeyValue(options.set),
+    remove: options.remove ?? []
+  };
+}
+
+function parseTagsPatch(options: { add?: string[]; remove?: string[]; clear?: boolean }) {
+  if (!options.clear && !(options.add?.length) && !(options.remove?.length)) return undefined;
+  return {
+    clear: Boolean(options.clear),
+    add: options.add ?? [],
+    remove: options.remove ?? []
+  };
+}
+
 function printJsonOrText(format: "text" | "json" | undefined, jsonValue: unknown, textValue: string) {
   if (format === "json") console.log(JSON.stringify(jsonValue, null, 2));
   else console.log(textValue);
@@ -368,6 +404,67 @@ function formatGenerationExpansion(result: {
     ...(result.warnings.length ? result.warnings.map((warning) => `  - ${warning}`) : ["  - none"])
   ];
   if (!result.persisted) lines.push("Re-run with --apply or --yes to persist tasks.");
+  return `${lines.join("\n")}\n`;
+}
+
+function formatGenerationPlanUpdate(result: { persisted: boolean; before: PhenotypeGenerationPlan; after: PhenotypeGenerationPlan }) {
+  const lines = [
+    result.persisted ? "Updated generation plan" : "Preview generation plan update",
+    `Plan: ${result.after.planId}`,
+    `Status: ${result.before.status} -> ${result.after.status}`,
+    `Priority: ${result.before.priority} -> ${result.after.priority}`,
+    `Description: ${result.after.description}`,
+    `Tags: ${result.after.tags.length ? result.after.tags.join(", ") : "none"}`
+  ];
+  if (!result.persisted) lines.push("Re-run with --apply or --yes to persist the generation plan update.");
+  return `${lines.join("\n")}\n`;
+}
+
+function formatGenerationTaskUpdate(result: {
+  persisted: boolean;
+  selectedTaskIds: string[];
+  skippedTaskIds: string[];
+  updatedTasks: PhenotypeGenerationTask[];
+}) {
+  const lines = [
+    result.persisted ? "Updated generation tasks" : "Preview generation task update",
+    `Selected tasks: ${result.selectedTaskIds.length ? result.selectedTaskIds.join(", ") : "none"}`,
+    `Skipped tasks: ${result.skippedTaskIds.length ? result.skippedTaskIds.join(", ") : "none"}`
+  ];
+  for (const task of result.updatedTasks) {
+    lines.push(`- ${task.taskId} [${task.status}] priority=${task.priority}`);
+    if (task.blockingReason) lines.push(`  blocked: ${task.blockingReason}`);
+  }
+  if (!result.persisted) lines.push("Re-run with --apply or --yes to persist selected task updates.");
+  return `${lines.join("\n")}\n`;
+}
+
+function formatReferenceGeneration(result: {
+  persisted: boolean;
+  job: { generationJobId: string; generationKind?: string; status: string; target?: { type: string; id: string } };
+  entityArtifact: { artifactId: string; targetLevel: string };
+  artBrief: string;
+}) {
+  const lines = [
+    result.persisted ? "Created reference generation" : "Preview reference generation",
+    `Job: ${result.job.generationJobId}`,
+    `Status: ${result.job.status}`,
+    `Scope: ${result.job.target?.type ?? "unknown"} ${result.job.target?.id ?? "unknown"}`,
+    `Entity artifact: ${result.entityArtifact.artifactId} (${result.entityArtifact.targetLevel})`,
+    `Brief: ${result.artBrief}`
+  ];
+  if (!result.persisted) lines.push("Re-run with --apply or --yes to persist the reference generation job.");
+  return `${lines.join("\n")}\n`;
+}
+
+function formatReferenceAssetLink(result: { persisted: boolean; asset: { assetId: string; uri: string; linkedObjectId: string } }) {
+  const lines = [
+    result.persisted ? "Linked reference asset" : "Preview reference asset link",
+    `Asset: ${result.asset.assetId}`,
+    `Generation job: ${result.asset.linkedObjectId}`,
+    `URI: ${result.asset.uri}`
+  ];
+  if (!result.persisted) lines.push("Re-run with --apply or --yes to persist the reference asset pointer.");
   return `${lines.join("\n")}\n`;
 }
 
@@ -1699,6 +1796,68 @@ generationPlan
     store.close();
   });
 generationPlan
+  .command("update")
+  .requiredOption("--id <planId>", "generation plan id")
+  .option("--description <text>", "updated description")
+  .option("--status <status>", "updated plan status")
+  .option("--priority <number>", "updated numeric priority", parseInteger)
+  .option("--type <phenotypeType>", "updated phenotype type")
+  .option("--brief <taskBrief>", "updated task brief")
+  .option("--model <text>", "model preference")
+  .option("--provider <text>", "provider preference; never store credentials here")
+  .option("--tool <text>", "tool preference")
+  .option("--llm-instructions <text>", "LLM-readable non-sensitive instructions")
+  .option("--operator-notes <text>", "operator notes")
+  .option("--set-requirement <key=value>", "set requirement metadata", collect, [])
+  .option("--remove-requirement <key>", "remove requirement metadata key", collect, [])
+  .option("--clear-requirements", "clear all requirement metadata")
+  .option("--set-metadata <key=value>", "set metadata", collect, [])
+  .option("--remove-metadata <key>", "remove metadata key", collect, [])
+  .option("--clear-metadata", "clear all metadata")
+  .option("--set-extension <key=value>", "set extension metadata", collect, [])
+  .option("--remove-extension <key>", "remove extension metadata key", collect, [])
+  .option("--clear-extensions", "clear all extension metadata")
+  .option("--add-tag <tag>", "add tag", collect, [])
+  .option("--remove-tag <tag>", "remove tag", collect, [])
+  .option("--clear-tags", "clear tags")
+  .option("--version-binding <mode>", "version binding: latest-at-execution|pinned")
+  .option("--node-version <nodeVersionId>", "pinned node version id")
+  .option("--species-artifact <artifactId>", "pinned species compile artifact id")
+  .option("--phenotype-artifact <artifactId>", "pinned phenotype compile artifact id")
+  .option("--replay-historical", "allow historical replay for pinned artifacts")
+  .option("--apply", "persist the generation plan update")
+  .option("--format <format>", "output format: text|json")
+  .action((options, command) => {
+    const store = openStore(command);
+    const versionBinding = parseOptionalVersionBinding(options);
+    const result = updateGenerationPlan(
+      store,
+      {
+        planId: options.id,
+        patch: {
+          description: options.description,
+          status: options.status,
+          priority: options.priority,
+          phenotypeType: options.type,
+          taskBrief: options.brief,
+          modelPreference: options.model,
+          providerPreference: options.provider,
+          toolPreference: options.tool,
+          llmInstructions: options.llmInstructions,
+          operatorNotes: options.operatorNotes,
+          versionBinding,
+          requirements: parseJsonPatch({ set: options.setRequirement, remove: options.removeRequirement, clear: options.clearRequirements }),
+          metadata: parseJsonPatch({ set: options.setMetadata, remove: options.removeMetadata, clear: options.clearMetadata }),
+          extensions: parseJsonPatch({ set: options.setExtension, remove: options.removeExtension, clear: options.clearExtensions }),
+          tags: parseTagsPatch({ add: options.addTag, remove: options.removeTag, clear: options.clearTags })
+        }
+      },
+      { apply: Boolean(options.apply || shouldApply(command)) }
+    );
+    printJsonOrText(parseOutputFormat(options.format), result, formatGenerationPlanUpdate(result));
+    store.close();
+  });
+generationPlan
   .command("list")
   .option("--graph <graphId>", "filter by graph id")
   .option("--format <format>", "output format: text|json")
@@ -1813,6 +1972,84 @@ generationTask
     store.close();
   });
 generationTask
+  .command("update")
+  .option("--id <taskId>", "select one generation task id")
+  .option("--plan <planId>", "select tasks by generation plan id")
+  .option("--graph <graphId>", "select tasks by graph id")
+  .option("--where-status <status>", "select tasks by current status")
+  .option("--tag <tag>", "select tasks by existing tag")
+  .option("--where-type <phenotypeType>", "select tasks by phenotype type")
+  .option("--set-plan <planId>", "set task plan id; only allowed before execution links")
+  .option("--clear-plan", "clear task plan id; only allowed before execution links")
+  .option("--brief <taskBrief>", "updated task brief")
+  .option("--status <status>", "updated task status")
+  .option("--priority <number>", "updated numeric priority", parseInteger)
+  .option("--model <text>", "model preference")
+  .option("--provider <text>", "provider preference; never store credentials here")
+  .option("--tool <text>", "tool preference")
+  .option("--llm-instructions <text>", "LLM-readable non-sensitive instructions")
+  .option("--operator-notes <text>", "operator notes")
+  .option("--blocking-reason <text>", "blocking reason; requires status blocked")
+  .option("--clear-blocking-reason", "clear blocking reason")
+  .option("--set-requirement <key=value>", "set requirement metadata", collect, [])
+  .option("--remove-requirement <key>", "remove requirement metadata key", collect, [])
+  .option("--clear-requirements", "clear all requirement metadata")
+  .option("--set-metadata <key=value>", "set metadata", collect, [])
+  .option("--remove-metadata <key>", "remove metadata key", collect, [])
+  .option("--clear-metadata", "clear all metadata")
+  .option("--set-extension <key=value>", "set extension metadata", collect, [])
+  .option("--remove-extension <key>", "remove extension metadata key", collect, [])
+  .option("--clear-extensions", "clear all extension metadata")
+  .option("--add-tag <tag>", "add tag", collect, [])
+  .option("--remove-tag <tag>", "remove tag", collect, [])
+  .option("--clear-tags", "clear tags")
+  .option("--version-binding <mode>", "version binding: latest-at-execution|pinned")
+  .option("--node-version <nodeVersionId>", "pinned node version id")
+  .option("--species-artifact <artifactId>", "pinned species compile artifact id")
+  .option("--phenotype-artifact <artifactId>", "pinned phenotype compile artifact id")
+  .option("--replay-historical", "allow historical replay for pinned artifacts")
+  .option("--apply", "persist selected task updates")
+  .option("--format <format>", "output format: text|json")
+  .action((options, command) => {
+    const store = openStore(command);
+    const versionBinding = parseOptionalVersionBinding(options);
+    const result = updateGenerationTasks(
+      store,
+      {
+        selector: {
+          id: options.id,
+          planId: options.plan,
+          graphId: options.graph,
+          status: options.whereStatus,
+          tag: options.tag,
+          phenotypeType: options.whereType
+        },
+        patch: {
+          planId: options.setPlan,
+          clearPlanId: options.clearPlan,
+          taskBrief: options.brief,
+          status: options.status,
+          priority: options.priority,
+          modelPreference: options.model,
+          providerPreference: options.provider,
+          toolPreference: options.tool,
+          llmInstructions: options.llmInstructions,
+          operatorNotes: options.operatorNotes,
+          blockingReason: options.blockingReason,
+          clearBlockingReason: options.clearBlockingReason,
+          versionBinding,
+          requirements: parseJsonPatch({ set: options.setRequirement, remove: options.removeRequirement, clear: options.clearRequirements }),
+          metadata: parseJsonPatch({ set: options.setMetadata, remove: options.removeMetadata, clear: options.clearMetadata }),
+          extensions: parseJsonPatch({ set: options.setExtension, remove: options.removeExtension, clear: options.clearExtensions }),
+          tags: parseTagsPatch({ add: options.addTag, remove: options.removeTag, clear: options.clearTags })
+        }
+      },
+      { apply: Boolean(options.apply || shouldApply(command)) }
+    );
+    printJsonOrText(parseOutputFormat(options.format), result, formatGenerationTaskUpdate(result));
+    store.close();
+  });
+generationTask
   .command("list")
   .option("--graph <graphId>", "filter by graph id")
   .option("--plan <planId>", "filter by generation plan id")
@@ -1889,6 +2126,124 @@ generationTask
     };
     store.generationTasks.update(linked);
     printJsonOrText(parseOutputFormat(options.format), linked, formatGenerationTask(linked));
+    store.close();
+  });
+
+function addReferenceGenerationOptions(command: Command) {
+  return command
+    .requiredOption("--scope <scope>", "reference scope: graph|species-group")
+    .requiredOption("--graph <graphId>", "graph id")
+    .requiredOption("--brief <brief>", "reference generation brief")
+    .option("--group <groupId>", "species group id for species-group scope")
+    .option("--reference-type <type>", "reference output type", "reference")
+    .option("--entity-artifact <artifactId>", "explicit or reusable entity compile artifact id")
+    .option("--job <generationJobId>", "explicit generation job id")
+    .option("--model <text>", "model preference")
+    .option("--provider <text>", "provider preference; never store credentials here")
+    .option("--tool <text>", "tool preference")
+    .option("--llm-instructions <text>", "LLM-readable non-sensitive instructions")
+    .option("--operator-notes <text>", "operator notes")
+    .option("--metadata <key=value>", "metadata", collect, [])
+    .option("--tag <tag>", "tag", collect, [])
+    .option("--apply", "persist entity compile artifact and reference generation job")
+    .option("--format <format>", "output format: text|json");
+}
+
+function referenceGenerationInput(options: {
+  scope: string;
+  graph: string;
+  group?: string;
+  brief: string;
+  referenceType?: string;
+  entityArtifact?: string;
+  job?: string;
+  model?: string;
+  provider?: string;
+  tool?: string;
+  llmInstructions?: string;
+  operatorNotes?: string;
+  metadata?: string[];
+  tag?: string[];
+}): {
+  scope: "graph" | "species-group";
+  graphId: string;
+  groupId?: string;
+  brief: string;
+  referenceType?: string;
+  modelPreference?: string;
+  providerPreference?: string;
+  toolPreference?: string;
+  llmInstructions?: string;
+  operatorNotes?: string;
+  metadata: Record<string, string>;
+  tags: string[];
+  ids: { entityArtifactId?: string; generationJobId?: string };
+} {
+  if (options.scope !== "graph" && options.scope !== "species-group") throw new Error(`unknown reference scope: ${options.scope}`);
+  return {
+    scope: options.scope,
+    graphId: options.graph,
+    groupId: options.group,
+    brief: options.brief,
+    referenceType: options.referenceType,
+    modelPreference: options.model,
+    providerPreference: options.provider,
+    toolPreference: options.tool,
+    llmInstructions: options.llmInstructions,
+    operatorNotes: options.operatorNotes,
+    metadata: parseKeyValue(options.metadata),
+    tags: options.tag ?? [],
+    ids: {
+      entityArtifactId: options.entityArtifact,
+      generationJobId: options.job
+    }
+  };
+}
+
+const referenceGeneration = program.command("reference-generation").description("Prepare graph or group scoped reference generation without phenotype records");
+addReferenceGenerationOptions(referenceGeneration.command("prepare"))
+  .action((options, command) => {
+    const store = openStore(command);
+    const prepared = prepareReferenceGeneration(store, referenceGenerationInput(options));
+    const result = options.apply || shouldApply(command) ? persistReferenceGeneration(store, prepared) : prepared;
+    printJsonOrText(parseOutputFormat(options.format), result, formatReferenceGeneration(result));
+    store.close();
+  });
+addReferenceGenerationOptions(referenceGeneration.command("run-mock"))
+  .action((options, command) => {
+    const store = openStore(command);
+    const prepared = prepareReferenceGeneration(store, { ...referenceGenerationInput(options), mock: true });
+    const result = options.apply || shouldApply(command) ? persistReferenceGeneration(store, prepared) : prepared;
+    printJsonOrText(parseOutputFormat(options.format), result, formatReferenceGeneration(result));
+    store.close();
+  });
+referenceGeneration
+  .command("link-asset")
+  .requiredOption("--job <generationJobId>", "reference generation job id")
+  .requiredOption("--asset-id <assetId>", "asset id")
+  .requiredOption("--uri <uri>", "safe local or public pointer URI; signed/private URLs are rejected")
+  .option("--asset-type <type>", "asset type", "image")
+  .option("--role <role>", "asset role", "reference")
+  .option("--description <text>", "asset description")
+  .option("--tag <tag>", "asset tag", collect, [])
+  .option("--apply", "persist asset pointer")
+  .option("--format <format>", "output format: text|json")
+  .action((options, command) => {
+    const store = openStore(command);
+    const result = linkReferenceAsset(
+      store,
+      {
+        generationJobId: options.job,
+        assetId: options.assetId,
+        uri: options.uri,
+        assetType: options.assetType,
+        role: options.role,
+        description: options.description,
+        tags: options.tag
+      },
+      { apply: Boolean(options.apply || shouldApply(command)) }
+    );
+    printJsonOrText(parseOutputFormat(options.format), result, formatReferenceAssetLink(result));
     store.close();
   });
 

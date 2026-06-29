@@ -45,11 +45,11 @@ export function makeId(prefix: string) {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-const SENSITIVE_KEY_PATTERN = /api[_-]?key|authorization|bearer|credential|password|private[_-]?key|secret|token|signed[_-]?url/i;
+const SENSITIVE_KEY_PATTERN = /api[_-]?key|authorization|bearer|credential|password|private[_-]?(?:key|link|url)|secret|token|signed[_-]?url/i;
 const SENSITIVE_STRING_PATTERNS = [
   /OPENAI_API_KEY\s*=\s*\S+/gi,
-  /sk-[A-Za-z0-9_-]+/g,
   /Bearer\s+[A-Za-z0-9._~+/=-]+/gi,
+  /sk-[A-Za-z0-9_-]+/g,
   /password\s*=\s*\S+/gi,
   /private[_-]?key\s*=\s*\S+/gi,
   /https?:\/\/[^\s"'<>]*(?:[?&](?:token|signature|sig|X-Amz-Signature|se|sp|sv)=)[^\s"'<>]*/gi,
@@ -793,11 +793,19 @@ export function createDefaultLibraryRoutingPolicy(
   };
 }
 
-export function createGenerationJob(input: Partial<GenerationJob> & Pick<GenerationJob, "generationJobId" | "graphId" | "nodeId" | "phenotypeType">): GenerationJob {
+export function createGenerationJob(input: Partial<GenerationJob> & Pick<GenerationJob, "generationJobId" | "graphId">): GenerationJob {
   const timestamp = nowIso();
+  const generationKind = input.generationKind ?? "phenotype";
+  const target =
+    input.target ??
+    (generationKind === "phenotype" && input.nodeId
+      ? { type: "species-node" as const, id: input.nodeId, graphId: input.graphId }
+      : undefined);
   return {
     generationJobId: input.generationJobId,
     graphId: input.graphId,
+    generationKind,
+    target,
     nodeId: input.nodeId,
     phenotypeId: input.phenotypeId,
     phenotypeVersionId: input.phenotypeVersionId,

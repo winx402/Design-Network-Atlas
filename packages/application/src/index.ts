@@ -4,6 +4,7 @@ import {
   compileEntityArtifact,
   compilePhenotypeGeneration,
   compileSpeciesSnapshot,
+  createDefaultAsset,
   createDefaultPhenotype,
   createDefaultPhenotypeGenerationPlan,
   createDefaultPhenotypeGenerationTask,
@@ -12,11 +13,17 @@ import {
   makeId,
   nowIso,
   sanitizePhenotypeVersionFeedback,
+  sanitizePlanningJson,
+  sanitizePlanningText,
+  PhenotypeGenerationPlanSchema,
+  PhenotypeGenerationTaskSchema,
   type EntityCompileArtifact,
+  type AssetIndex,
   type ContextAttachment,
   type DesignRelationship,
   type DesignContext,
   type GenerationJob,
+  type GenerationJobTarget,
   type GenerationVersionBinding,
   type Graph,
   type Phenotype,
@@ -31,6 +38,7 @@ import {
   type TraceEntry
 } from "@dna/core";
 import type {
+  AssetRepository,
   AtlasRepository,
   ContextAttachmentRepository,
   ContextFactRepository,
@@ -119,6 +127,82 @@ export interface GenerationPlanningRepositories extends PhenotypeGenerationRepos
   speciesGroupMemberships: Pick<SpeciesGroupMembershipRepository, "listByGroup" | "listByNode">;
   generationPlans: PhenotypeGenerationPlanRepository;
   generationTasks: PhenotypeGenerationTaskRepository;
+}
+
+export interface ReferenceGenerationRepositories extends LayeredCompileRepositories {
+  transaction<T>(fn: () => T): T;
+  entityCompileArtifacts: Pick<EntityCompileArtifactRepository, "get" | "create" | "listByGraph" | "listByTarget">;
+  generationJobs: Pick<GenerationJobRepository, "get" | "create">;
+  assets: Pick<AssetRepository, "get" | "create">;
+}
+
+export type PlanningJsonPatch = {
+  set?: Record<string, unknown>;
+  remove?: string[];
+  clear?: boolean;
+};
+
+export type PlanningTagsPatch = {
+  add?: string[];
+  remove?: string[];
+  clear?: boolean;
+};
+
+export type GenerationPlanUpdatePatch = {
+  description?: string;
+  status?: PhenotypeGenerationPlan["status"];
+  priority?: number;
+  phenotypeType?: string;
+  taskBrief?: string;
+  modelPreference?: string;
+  providerPreference?: string;
+  toolPreference?: string;
+  llmInstructions?: string;
+  operatorNotes?: string;
+  versionBinding?: GenerationVersionBinding;
+  requirements?: PlanningJsonPatch;
+  metadata?: PlanningJsonPatch;
+  extensions?: PlanningJsonPatch;
+  tags?: PlanningTagsPatch;
+};
+
+export type GenerationTaskUpdatePatch = {
+  planId?: string;
+  clearPlanId?: boolean;
+  taskBrief?: string;
+  status?: PhenotypeGenerationTask["status"];
+  priority?: number;
+  modelPreference?: string;
+  providerPreference?: string;
+  toolPreference?: string;
+  llmInstructions?: string;
+  operatorNotes?: string;
+  versionBinding?: GenerationVersionBinding;
+  blockingReason?: string;
+  clearBlockingReason?: boolean;
+  requirements?: PlanningJsonPatch;
+  metadata?: PlanningJsonPatch;
+  extensions?: PlanningJsonPatch;
+  tags?: PlanningTagsPatch;
+};
+
+export type GenerationTaskUpdateSelector = {
+  id?: string;
+  planId?: string;
+  graphId?: string;
+  status?: PhenotypeGenerationTask["status"];
+  tag?: string;
+  phenotypeType?: string;
+};
+
+export interface PreparedReferenceGeneration {
+  entityArtifact: EntityCompileArtifact;
+  job: GenerationJob;
+  prompt: string;
+  artBrief: string;
+  reviewChecklist: string[];
+  createdEntityArtifact: boolean;
+  persisted: boolean;
 }
 
 export interface ImpactRepositories {
@@ -584,6 +668,258 @@ export function createGenerationTask(
   if (!options.apply) return { task, persisted: false };
   store.transaction(() => store.generationTasks.create(task));
   return { task, persisted: true };
+}
+
+export function updateGenerationPlan(
+  store: Pick<GenerationPlanningRepositories, "transaction" | "generationPlans">,
+  input: { planId: string; patch: GenerationPlanUpdatePatch },
+  options: { apply?: boolean } = {}
+) {
+  const before = store.generationPlans.get(input.planId);
+  if (!before) throw new Error(`generation plan not found: ${input.planId}`);
+  const patch = normalizeGenerationPlanPatch(input.patch);
+  const after = PhenotypeGenerationPlanSchema.parse({
+    ...before,
+    ...planningTextPatch(patch, [
+      "description",
+      "phenotypeType",
+      "taskBrief",
+      "modelPreference",
+      "providerPreference",
+      "toolPreference",
+      "llmInstructions",
+      "operatorNotes"
+    ]),
+    status: patch.status ?? before.status,
+    priority: patch.priority ?? before.priority,
+    versionBinding: patch.versionBinding ?? before.versionBinding,
+    requirements: applyPlanningJsonPatch(before.requirements, patch.requirements),
+    metadata: applyPlanningJsonPatch(before.metadata, patch.metadata),
+    extensions: applyPlanningJsonPatch(before.extensions, patch.extensions),
+    tags: applyPlanningTagsPatch(before.tags, patch.tags),
+    updatedAt: nowIso()
+  });
+  if (!options.apply) return { before, after, patch, persisted: false };
+  store.transaction(() => store.generationPlans.update(after));
+  return { before, after: store.generationPlans.get(before.planId) ?? after, patch, persisted: true };
+}
+
+export function updateGenerationTasks(
+  store: Pick<GenerationPlanningRepositories, "transaction" | "generationTasks">,
+  input: { selector: GenerationTaskUpdateSelector; patch: GenerationTaskUpdatePatch },
+  options: { apply?: boolean } = {}
+) {
+  const selector = input.selector;
+  if (!selector.id && !selector.planId && !selector.graphId && !selector.status && !selector.tag && !selector.phenotypeType) {
+    throw new Error("generation task update requires at least one selector");
+  }
+  const patch = normalizeGenerationTaskPatch(input.patch);
+  if (patch.status && ["generated", "completed", "failed"].includes(patch.status)) {
+    throw new Error(`generation task update cannot write result status ${patch.status}; use execution or link-result workflows for result status`);
+  }
+  const candidates = selectGenerationTasks(store.generationTasks, selector);
+  if (!candidates.length) throw new Error("generation task update selector matched no tasks");
+
+  const skippedTaskIds: string[] = [];
+  const selectedTasks = candidates.filter((task) => {
+    if (!selector.id && taskHasExecutionLinks(task)) {
+      skippedTaskIds.push(task.taskId);
+      return false;
+    }
+    return true;
+  });
+  if (!selectedTasks.length) {
+    throw new Error("generation task update selector matched only tasks with execution links; select an explicit task id for narrow safe updates");
+  }
+  const updatedTasks = selectedTasks.map((task) => updateGenerationTaskRecord(task, patch));
+  const beforeTasks = selectedTasks;
+  if (!options.apply) {
+    return {
+      selector,
+      beforeTasks,
+      updatedTasks,
+      selectedTaskIds: selectedTasks.map((task) => task.taskId),
+      skippedTaskIds,
+      patch,
+      persisted: false
+    };
+  }
+  store.transaction(() => {
+    for (const task of updatedTasks) store.generationTasks.update(task);
+  });
+  return {
+    selector,
+    beforeTasks,
+    updatedTasks: updatedTasks.map((task) => store.generationTasks.get(task.taskId) ?? task),
+    selectedTaskIds: selectedTasks.map((task) => task.taskId),
+    skippedTaskIds,
+    patch,
+    persisted: true
+  };
+}
+
+export function prepareReferenceGeneration(
+  store: ReferenceGenerationRepositories,
+  input: {
+    scope: "graph" | "species-group";
+    graphId: string;
+    groupId?: string;
+    brief: string;
+    referenceType?: string;
+    providerPreference?: string;
+    modelPreference?: string;
+    toolPreference?: string;
+    llmInstructions?: string;
+    operatorNotes?: string;
+    metadata?: Record<string, unknown>;
+    tags?: string[];
+    mock?: boolean;
+    entityArtifactId?: string;
+    ids?: { entityArtifactId?: string; generationJobId?: string };
+  }
+): PreparedReferenceGeneration {
+  const group = input.groupId ? store.speciesGroups.get(input.groupId) : undefined;
+  if (input.scope === "species-group") {
+    if (!group) throw new Error(`species group not found: ${input.groupId}`);
+    if (group.graphId !== input.graphId) throw new Error(`species group ${group.groupId} does not belong to graph ${input.graphId}`);
+  }
+  const graph = store.graphs.get(input.graphId);
+  if (!graph) throw new Error(`graph not found: ${input.graphId}`);
+
+  const target: GenerationJobTarget =
+    input.scope === "graph"
+      ? { type: "graph", id: graph.graphId, graphId: graph.graphId, label: graph.name }
+      : { type: "species-group", id: group!.groupId, graphId: graph.graphId, label: group!.name };
+  const requestedArtifactId = input.ids?.entityArtifactId ?? input.entityArtifactId;
+  const existingArtifact = requestedArtifactId ? store.entityCompileArtifacts.get(requestedArtifactId) : undefined;
+  const expectedTargetLevel = input.scope === "graph" ? "graph" : "species-group";
+  const expectedObjectId = input.scope === "graph" ? graph.graphId : group!.groupId;
+  if (existingArtifact) {
+    if (existingArtifact.targetLevel !== expectedTargetLevel || existingArtifact.target.objectId !== expectedObjectId) {
+      throw new Error(`entity compile artifact ${existingArtifact.artifactId} does not match ${input.scope} ${expectedObjectId}`);
+    }
+  }
+  const entityArtifact =
+    existingArtifact ??
+    prepareEntityCompileArtifact(store, {
+      artifactId: requestedArtifactId ?? makeId("eca"),
+      targetLevel: expectedTargetLevel,
+      graphId: graph.graphId,
+      groupId: input.scope === "species-group" ? group!.groupId : undefined
+    });
+
+  const referenceType = sanitizePlanningText(input.referenceType) ?? "reference";
+  const brief = sanitizePlanningText(input.brief) ?? "";
+  const providerPreference = sanitizePlanningText(input.providerPreference);
+  const modelPreference = sanitizePlanningText(input.modelPreference);
+  const toolPreference = sanitizePlanningText(input.toolPreference);
+  const llmInstructions = sanitizePlanningText(input.llmInstructions);
+  const operatorNotes = sanitizePlanningText(input.operatorNotes);
+  const metadata = sanitizePlanningJson(input.metadata);
+  const prompt = [
+    "Design Network Atlas reference generation request.",
+    `Scope: ${target.type} ${target.id}.`,
+    `Graph: ${graph.graphId} ${graph.name}.`,
+    `Reference type: ${referenceType}.`,
+    `Brief: ${brief}.`,
+    `Entity compile artifact: ${entityArtifact.artifactId}.`,
+    llmInstructions ? `LLM instructions: ${llmInstructions}.` : undefined,
+    operatorNotes ? `Operator notes: ${operatorNotes}.` : undefined
+  ]
+    .filter((line): line is string => Boolean(line))
+    .join("\n");
+  const artBrief = `${target.label ?? target.id}: ${brief}`;
+  const reviewChecklist = [
+    "Verify the reference stays within the graph/group design language.",
+    "Verify reusable cues are expressed as reviewable references, not graph facts.",
+    "Verify no private provider credentials or signed URLs are present."
+  ];
+  const job = createGenerationJob({
+    generationJobId: input.ids?.generationJobId ?? makeId("job"),
+    graphId: graph.graphId,
+    generationKind: "reference",
+    target,
+    taskBrief: brief,
+    compilePolicy: entityArtifact.compilePolicy,
+    inputSnapshot: {
+      scope: input.scope,
+      graphId: graph.graphId,
+      groupId: input.scope === "species-group" ? group!.groupId : undefined,
+      entityCompileArtifactId: entityArtifact.artifactId,
+      referenceType,
+      providerPreference,
+      modelPreference,
+      toolPreference,
+      llmInstructions,
+      operatorNotes,
+      metadata,
+      tags: input.tags ?? []
+    },
+    outputSnapshot: {
+      prompt,
+      artBrief,
+      reviewChecklist,
+      mockResult: input.mock ? `mock ${referenceType} for ${target.type} ${target.id}` : undefined
+    },
+    tool: toolPreference ?? "manual",
+    status: input.mock ? "generated" : "created"
+  });
+  return {
+    entityArtifact,
+    job,
+    prompt,
+    artBrief,
+    reviewChecklist,
+    createdEntityArtifact: !existingArtifact,
+    persisted: false
+  };
+}
+
+export function persistReferenceGeneration(store: ReferenceGenerationRepositories, prepared: PreparedReferenceGeneration): PreparedReferenceGeneration {
+  return store.transaction(() => {
+    if (prepared.createdEntityArtifact && !store.entityCompileArtifacts.get(prepared.entityArtifact.artifactId)) {
+      store.entityCompileArtifacts.create(prepared.entityArtifact);
+    }
+    if (store.generationJobs.get(prepared.job.generationJobId)) {
+      throw new Error(`generation job already exists: ${prepared.job.generationJobId}`);
+    }
+    store.generationJobs.create(prepared.job);
+    return { ...prepared, persisted: true };
+  });
+}
+
+export function linkReferenceAsset(
+  store: Pick<ReferenceGenerationRepositories, "transaction" | "generationJobs" | "assets">,
+  input: {
+    generationJobId: string;
+    assetId: string;
+    uri: string;
+    assetType?: AssetIndex["assetType"];
+    role?: AssetIndex["role"];
+    tags?: string[];
+    description?: string;
+  },
+  options: { apply?: boolean } = {}
+) {
+  const job = store.generationJobs.get(input.generationJobId);
+  if (!job) throw new Error(`generation job not found: ${input.generationJobId}`);
+  if (job.generationKind !== "reference") throw new Error(`generation job ${input.generationJobId} is not a reference generation job`);
+  if (store.assets.get(input.assetId)) throw new Error(`asset already exists: ${input.assetId}`);
+  assertSafeReferenceAssetUri(input.uri);
+  const asset = createDefaultAsset({
+    assetId: input.assetId,
+    uri: input.uri,
+    storageType: input.uri.startsWith("http://") || input.uri.startsWith("https://") ? "url" : "local",
+    assetType: input.assetType ?? "image",
+    role: input.role ?? "reference",
+    linkedObjectType: "generation-job",
+    linkedObjectId: input.generationJobId,
+    tags: input.tags ?? [],
+    description: sanitizePlanningText(input.description) ?? ""
+  });
+  if (!options.apply) return { job, asset, persisted: false };
+  store.transaction(() => store.assets.create(asset));
+  return { job, asset: store.assets.get(asset.assetId) ?? asset, persisted: true };
 }
 
 export function expandGenerationPlan(
@@ -1087,6 +1423,157 @@ function inferLifecycleProvenance(
 function stringFromRecord(value: Record<string, unknown>, key: string) {
   const entry = value[key];
   return typeof entry === "string" ? entry : undefined;
+}
+
+function normalizeGenerationPlanPatch(patch: GenerationPlanUpdatePatch): GenerationPlanUpdatePatch {
+  return {
+    ...patch,
+    description: sanitizePlanningText(patch.description),
+    phenotypeType: sanitizePlanningText(patch.phenotypeType),
+    taskBrief: sanitizePlanningText(patch.taskBrief),
+    modelPreference: sanitizePlanningText(patch.modelPreference),
+    providerPreference: sanitizePlanningText(patch.providerPreference),
+    toolPreference: sanitizePlanningText(patch.toolPreference),
+    llmInstructions: sanitizePlanningText(patch.llmInstructions),
+    operatorNotes: sanitizePlanningText(patch.operatorNotes),
+    requirements: normalizePlanningJsonPatch(patch.requirements),
+    metadata: normalizePlanningJsonPatch(patch.metadata),
+    extensions: normalizePlanningJsonPatch(patch.extensions),
+    tags: normalizePlanningTagsPatch(patch.tags)
+  };
+}
+
+function normalizeGenerationTaskPatch(patch: GenerationTaskUpdatePatch): GenerationTaskUpdatePatch {
+  return {
+    ...patch,
+    taskBrief: sanitizePlanningText(patch.taskBrief),
+    modelPreference: sanitizePlanningText(patch.modelPreference),
+    providerPreference: sanitizePlanningText(patch.providerPreference),
+    toolPreference: sanitizePlanningText(patch.toolPreference),
+    llmInstructions: sanitizePlanningText(patch.llmInstructions),
+    operatorNotes: sanitizePlanningText(patch.operatorNotes),
+    blockingReason: sanitizePlanningText(patch.blockingReason),
+    requirements: normalizePlanningJsonPatch(patch.requirements),
+    metadata: normalizePlanningJsonPatch(patch.metadata),
+    extensions: normalizePlanningJsonPatch(patch.extensions),
+    tags: normalizePlanningTagsPatch(patch.tags)
+  };
+}
+
+function normalizePlanningJsonPatch(patch: PlanningJsonPatch | undefined): PlanningJsonPatch | undefined {
+  if (!patch) return undefined;
+  return {
+    clear: patch.clear,
+    remove: patch.remove,
+    set: sanitizePlanningJson(patch.set)
+  };
+}
+
+function normalizePlanningTagsPatch(patch: PlanningTagsPatch | undefined): PlanningTagsPatch | undefined {
+  if (!patch) return undefined;
+  return {
+    clear: patch.clear,
+    add: patch.add?.filter(Boolean),
+    remove: patch.remove?.filter(Boolean)
+  };
+}
+
+function planningTextPatch<T extends GenerationPlanUpdatePatch | GenerationTaskUpdatePatch>(patch: T, keys: (keyof T)[]) {
+  const result: Record<string, string> = {};
+  for (const key of keys) {
+    const value = patch[key];
+    if (typeof value === "string") result[String(key)] = value;
+  }
+  return result;
+}
+
+function applyPlanningJsonPatch(current: Record<string, unknown>, patch: PlanningJsonPatch | undefined) {
+  if (!patch) return current;
+  const next: Record<string, unknown> = patch.clear ? {} : { ...current };
+  for (const key of patch.remove ?? []) delete next[key];
+  Object.assign(next, sanitizePlanningJson(patch.set));
+  return next;
+}
+
+function applyPlanningTagsPatch(current: string[], patch: PlanningTagsPatch | undefined) {
+  if (!patch) return current;
+  const removed = new Set(patch.remove ?? []);
+  const next = patch.clear ? [] : current.filter((tag) => !removed.has(tag));
+  for (const tag of patch.add ?? []) {
+    if (!next.includes(tag)) next.push(tag);
+  }
+  return next;
+}
+
+function selectGenerationTasks(
+  repository: Pick<PhenotypeGenerationTaskRepository, "get" | "list" | "listByPlan" | "listByGraph">,
+  selector: GenerationTaskUpdateSelector
+) {
+  let tasks: PhenotypeGenerationTask[] = [];
+  if (selector.id) {
+    const task = repository.get(selector.id);
+    tasks = task ? [task] : [];
+  } else if (selector.planId) {
+    tasks = repository.listByPlan(selector.planId);
+  } else if (selector.graphId) {
+    tasks = repository.listByGraph(selector.graphId);
+  } else {
+    tasks = repository.list();
+  }
+  return tasks
+    .filter((task) => !selector.planId || task.planId === selector.planId)
+    .filter((task) => !selector.graphId || task.graphId === selector.graphId)
+    .filter((task) => !selector.status || task.status === selector.status)
+    .filter((task) => !selector.tag || task.tags.includes(selector.tag))
+    .filter((task) => !selector.phenotypeType || task.phenotypeType === selector.phenotypeType)
+    .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.taskId.localeCompare(right.taskId));
+}
+
+function updateGenerationTaskRecord(task: PhenotypeGenerationTask, patch: GenerationTaskUpdatePatch) {
+  if ((patch.clearPlanId || patch.planId !== undefined) && taskHasExecutionLinks(task)) {
+    throw new Error(`cannot change planId after execution links exist for generation task ${task.taskId}`);
+  }
+  const nextPlanId = patch.clearPlanId ? undefined : patch.planId !== undefined ? patch.planId : task.planId;
+  const status = patch.status ?? task.status;
+  const blockingReason = patch.clearBlockingReason ? undefined : patch.blockingReason ?? task.blockingReason;
+  if (blockingReason && status !== "blocked") throw new Error("blockingReason requires status blocked");
+  return PhenotypeGenerationTaskSchema.parse({
+    ...task,
+    ...planningTextPatch(patch, [
+      "taskBrief",
+      "modelPreference",
+      "providerPreference",
+      "toolPreference",
+      "llmInstructions",
+      "operatorNotes",
+      "blockingReason"
+    ]),
+    planId: nextPlanId,
+    status,
+    priority: patch.priority ?? task.priority,
+    versionBinding: patch.versionBinding ?? task.versionBinding,
+    blockingReason,
+    requirements: applyPlanningJsonPatch(task.requirements, patch.requirements),
+    metadata: applyPlanningJsonPatch(task.metadata, patch.metadata),
+    extensions: applyPlanningJsonPatch(task.extensions, patch.extensions),
+    tags: applyPlanningTagsPatch(task.tags, patch.tags),
+    updatedAt: nowIso()
+  });
+}
+
+function taskHasExecutionLinks(task: PhenotypeGenerationTask) {
+  return Boolean(task.generationJobIds.length || task.phenotypeVersionIds.length || task.speciesCompileArtifactId || task.phenotypeCompileArtifactId);
+}
+
+function assertSafeReferenceAssetUri(uri: string) {
+  if (
+    /(?:[?&](?:token|signature|sig|X-Amz-Signature|se|sp|sv)=)/i.test(uri) ||
+    /https?:\/\/private\./i.test(uri) ||
+    /(?:api[_-]?key|credential|password|private[_-]?key|secret|bearer)/i.test(uri) ||
+    /^\/Users\//.test(uri)
+  ) {
+    throw new Error("private or credential-bearing asset uri is not allowed");
+  }
 }
 
 function resolvePlanGraphId(

@@ -1162,25 +1162,52 @@ export const LibraryRoutingPolicySchema = z.object({
   updatedAt: IsoDateSchema
 });
 
-export const GenerationJobSchema = z.object({
-  generationJobId: z.string().min(1),
-  graphId: z.string().min(1),
-  nodeId: z.string().min(1),
-  phenotypeId: z.string().optional(),
-  phenotypeVersionId: z.string().optional(),
-  phenotypeType: z.string().min(1),
-  taskBrief: z.string().default(""),
-  compilePolicy: CompilePolicySchema,
-  inputSnapshot: JsonRecordSchema,
-  outputSnapshot: JsonRecordSchema,
-  tool: z.string().default("manual"),
-  toolParameters: JsonRecordSchema,
-  status: z.enum(["created", "generated", "failed"]),
-  errorMessage: z.string().optional(),
-  facets: FacetsSchema,
-  createdAt: IsoDateSchema,
-  updatedAt: IsoDateSchema
+export const GenerationJobTargetSchema = z.object({
+  type: z.enum(["graph", "species-group", "species-node", "phenotype"]),
+  id: z.string().min(1),
+  graphId: z.string().min(1).optional(),
+  label: z.string().optional()
 });
+
+export const GenerationJobSchema = z
+  .object({
+    generationJobId: z.string().min(1),
+    graphId: z.string().min(1),
+    generationKind: z.enum(["phenotype", "reference"]).default("phenotype"),
+    target: GenerationJobTargetSchema.optional(),
+    nodeId: z.string().min(1).optional(),
+    phenotypeId: z.string().optional(),
+    phenotypeVersionId: z.string().optional(),
+    phenotypeType: z.string().min(1).optional(),
+    taskBrief: z.string().default(""),
+    compilePolicy: CompilePolicySchema,
+    inputSnapshot: JsonRecordSchema,
+    outputSnapshot: JsonRecordSchema,
+    tool: z.string().default("manual"),
+    toolParameters: JsonRecordSchema,
+    status: z.enum(["created", "generated", "failed"]),
+    errorMessage: z.string().optional(),
+    facets: FacetsSchema,
+    createdAt: IsoDateSchema,
+    updatedAt: IsoDateSchema
+  })
+  .superRefine((job, ctx) => {
+    if (job.generationKind === "phenotype") {
+      if (!job.nodeId) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["nodeId"], message: "phenotype generation jobs require nodeId" });
+      }
+      if (!job.phenotypeType) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["phenotypeType"], message: "phenotype generation jobs require phenotypeType" });
+      }
+    }
+    if (job.generationKind === "reference") {
+      if (!job.target) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["target"], message: "reference generation jobs require target" });
+      } else if (job.target.type !== "graph" && job.target.type !== "species-group") {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["target", "type"], message: "reference generation target must be graph or species-group" });
+      }
+    }
+  });
 
 export const ReviewRecordSchema = z.object({
   reviewRecordId: z.string().min(1),
@@ -1311,6 +1338,7 @@ export type PhenotypeLibraryGraphBinding = z.infer<typeof PhenotypeLibraryGraphB
 export type ExternalLibraryMapping = z.infer<typeof ExternalLibraryMappingSchema>;
 export type LibraryRoutingPolicy = z.infer<typeof LibraryRoutingPolicySchema>;
 export type LibraryRoutingPolicyMatch = z.infer<typeof LibraryRoutingPolicyMatchSchema>;
+export type GenerationJobTarget = z.infer<typeof GenerationJobTargetSchema>;
 export type GenerationJob = z.infer<typeof GenerationJobSchema>;
 export type ReviewRecord = z.infer<typeof ReviewRecordSchema>;
 export type ImpactRecord = z.infer<typeof ImpactRecordSchema>;

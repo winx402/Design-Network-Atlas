@@ -263,6 +263,27 @@ function repairSqliteLibraryGraphIds(store: SqliteDnaStore): number {
   return repaired;
 }
 
+function ensureGenerationJobsNodeNullable(store: SqliteDnaStore) {
+  const columns = store.db.prepare("PRAGMA table_info(generation_jobs)").all() as Array<{ name: string; notnull: number }>;
+  const nodeColumn = columns.find((column) => column.name === "node_id");
+  if (!nodeColumn?.notnull) return;
+  store.db.exec(`
+    ALTER TABLE generation_jobs RENAME TO generation_jobs_old;
+    CREATE TABLE generation_jobs (
+      generation_job_id TEXT PRIMARY KEY,
+      graph_id TEXT NOT NULL,
+      node_id TEXT,
+      status TEXT NOT NULL,
+      payload TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    INSERT INTO generation_jobs (generation_job_id, graph_id, node_id, status, payload, created_at, updated_at)
+      SELECT generation_job_id, graph_id, node_id, status, payload, created_at, updated_at FROM generation_jobs_old;
+    DROP TABLE generation_jobs_old;
+  `);
+}
+
 export class SqliteDnaStore implements StorageEngine {
   readonly db: DatabaseSync;
   private transactionDepth = 0;
@@ -674,7 +695,7 @@ export class SqliteDnaStore implements StorageEngine {
       CREATE TABLE IF NOT EXISTS generation_jobs (
         generation_job_id TEXT PRIMARY KEY,
         graph_id TEXT NOT NULL,
-        node_id TEXT NOT NULL,
+        node_id TEXT,
         status TEXT NOT NULL,
         payload TEXT NOT NULL,
         created_at TEXT NOT NULL,
@@ -750,6 +771,7 @@ export class SqliteDnaStore implements StorageEngine {
         updated_at TEXT NOT NULL
       );
     `);
+    ensureGenerationJobsNodeNullable(this);
     repairSqliteLibraryGraphIds(this);
   }
 
@@ -1758,7 +1780,9 @@ class SqliteAssetRepository implements AssetRepository {
     if (filter.status) assets = assets.filter((asset) => asset.status === filter.status);
     if (filter.tag) assets = assets.filter((asset) => asset.tags.includes(filter.tag!));
     if (filter.graphId) {
+      const graphIds = new Set([filter.graphId]);
       const nodeIds = new Set(this.store.nodes.listByGraph(filter.graphId).map((node) => node.nodeId));
+      const groupIds = new Set(this.store.speciesGroups.listByGraph(filter.graphId).map((group) => group.groupId));
       const phenotypes = this.store.phenotypes.listByGraph(filter.graphId);
       const phenotypeIds = new Set(phenotypes.map((phenotype) => phenotype.phenotypeId));
       const phenotypeVersionIds = new Set(
@@ -1766,11 +1790,15 @@ class SqliteAssetRepository implements AssetRepository {
           this.store.phenotypeVersions.listByPhenotype(phenotype.phenotypeId).map((version) => version.phenotypeVersionId)
         )
       );
+      const generationJobIds = new Set(this.store.generationJobs.listByGraph(filter.graphId).map((job) => job.generationJobId));
       assets = assets.filter(
         (asset) =>
+          graphIds.has(asset.linkedObjectId) ||
+          groupIds.has(asset.linkedObjectId) ||
           nodeIds.has(asset.linkedObjectId) ||
           phenotypeIds.has(asset.linkedObjectId) ||
-          phenotypeVersionIds.has(asset.linkedObjectId)
+          phenotypeVersionIds.has(asset.linkedObjectId) ||
+          generationJobIds.has(asset.linkedObjectId)
       );
     }
     return assets;
@@ -2044,7 +2072,7 @@ class SqliteGenerationJobRepository implements GenerationJobRepository {
   create(job: GenerationJob) {
     this.store.db
       .prepare("INSERT INTO generation_jobs (generation_job_id, graph_id, node_id, status, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
-      .run(job.generationJobId, job.graphId, job.nodeId, job.status, JSON.stringify(job), job.createdAt, job.updatedAt);
+      .run(job.generationJobId, job.graphId, job.nodeId ?? null, job.status, JSON.stringify(job), job.createdAt, job.updatedAt);
   }
   update(job: GenerationJob) {
     this.store.db.prepare("UPDATE generation_jobs SET status = ?, payload = ?, updated_at = ? WHERE generation_job_id = ?").run(job.status, JSON.stringify(job), job.updatedAt, job.generationJobId);
