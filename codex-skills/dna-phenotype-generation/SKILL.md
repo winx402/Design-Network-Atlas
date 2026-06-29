@@ -17,7 +17,7 @@ Use `docs/design/write-boundary-matrix.md` for write strategy vocabulary: compil
 - SpeciesNode and NodeVersion define the stable design target.
 - PhenotypeGenerationPlan is a production orchestration record for graph, species-group, species-node, or phenotype scope. It captures priority, model/provider/tool preference, requirements, LLM-readable llmInstructions, operatorNotes, metadata, extensions, and versionBinding without storing credentials.
 - PhenotypeGenerationTask is the concrete work item that may come from a plan or stand alone. It records graph, node or phenotype target, phenotype type, task brief, status, priority, versionBinding, blockingReason, linked compile artifacts, GenerationJob ids, and PhenotypeVersion ids.
-- Scoped reference generation is a separate graph/species-group workflow for reference prompts or reference assets. It uses EntityCompileArtifact plus a reference GenerationJob and may link safe AssetIndex pointers, but it must not create synthetic SpeciesNode, Phenotype, or PhenotypeVersion records.
+- Scoped reference generation is a separate graph/species-group workflow for reference prompts or reference assets. It uses EntityCompileArtifact plus a reference GenerationJob and may link safe AssetIndex pointers, but it must not create synthetic SpeciesNode, Phenotype, or PhenotypeVersion records. If an accepted reference moves from a temporary local pointer into Eagle, NAS, Git, URL, or object storage, treat that as pointer migration: create a new active AssetIndex pointer, archive the old pointer as history, and make current reference evidence point to the new id.
 - SpeciesCompileArtifact provides atlas/graph/group/species-node compile frames, resolved genes, dependency vector, traces, conflicts, feedback, and open questions.
 - Phenotype type defines the output shape: image, UI icon, concept brief, model brief, animation brief, runtime export, document, dataset, or custom type.
 - ContextReference and ContextReviewRubric provide examples, badcases, review questions, and acceptance criteria.
@@ -40,7 +40,7 @@ Use `docs/design/write-boundary-matrix.md` for write strategy vocabulary: compil
 7. prompt gate: produce prompt, negative prompt, art brief, and review checklist from existing graph facts and compile artifacts.
 8. tool gate: select manual, mock, or external tool execution. Do not default to calling an external tool when conflicts are blocking.
 9. lifecycle gate: decide whether the result should stay candidate, be accepted, rejected, replaced, rolled back, deprecated, archived, or deleted. Feedback belongs on `PhenotypeVersion.feedback`, not in ReviewRecord unless a separate review workflow is explicitly needed.
-10. reference-generation gate: if the user wants graph-wide or group-wide reference material, use scoped reference generation rather than phenotype generation. Store only reference GenerationJob ids, reference AssetIndex ids, or ContextReference ids for later tasks; do not copy private URLs into plan/task records.
+10. reference-generation gate: if the user wants graph-wide or group-wide reference material, use scoped reference generation rather than phenotype generation. Store only reference GenerationJob ids, reference AssetIndex ids, or ContextReference ids for later tasks; do not copy private URLs into plan/task records. For reference asset migration, keep asset ids stable as evidence records: do not rewrite a local pointer into an Eagle pointer in place, and do not include archived/deleted pointers as current completion evidence.
 11. storage gate: route output references through PhenotypeLibrary and StorageMount when available, or record direct OutputReference when the user does not use a DNA result library.
 
 ## Workflow
@@ -50,6 +50,7 @@ Use `docs/design/write-boundary-matrix.md` for write strategy vocabulary: compil
    - Use a standalone PhenotypeGenerationTask when the user has one clear target and wants status, blockingReason, versionBinding, and generated result links without creating a plan.
    - Use direct manual generation when the user needs an immediate one-off preview or artifact-backed result and accepts that no plan/task queue record will be created.
    - Use scoped reference generation when the user needs graph/group reference prompts or reference assets that later phenotype tasks can cite by id. Do not force these references into phenotype tasks by inventing nodes or versions.
+   - For reference assets that move from temporary local output to Eagle or another catalog, use a replacement plan: infer or name the storage type from the safe URI, create a new active AssetIndex pointer, archive the old local pointer with bounded migration metadata, and set GenerationJob current evidence to the new asset id.
    - Treat llmInstructions and operatorNotes as non-sensitive orchestration context. They may guide an Agent, but they must not contain API keys, provider credentials, raw provider payloads, or complete private links.
 
 2. Validate the generation target.
@@ -102,7 +103,7 @@ Return a generationPlan with these fields:
 - nonBlockingQuestions: questions that can be resolved after a draft output exists.
 - promptPackage: prompt, negative prompt, art brief, generation constraints, and review checklist.
 - toolPlan: manual, mock, or external tool, plus what will and will not be recorded in GenerationJob.
-- referenceGenerationPlan: graph/group scope, EntityCompileArtifact id, reference GenerationJob id, safe AssetIndex pointer plan, and how later phenotype tasks will cite reference ids when scoped reference material is requested.
+- referenceGenerationPlan: graph/group scope, EntityCompileArtifact id, reference GenerationJob id, safe AssetIndex pointer plan, reference asset migration plan when needed, and how later phenotype tasks will cite reference ids when scoped reference material is requested.
 - reviewPlan: checklist, expected failure cases, and acceptance decision path.
 - registrationPlan: Phenotype identity, candidate PhenotypeVersion, compileArtifactSnapshot, OutputReference or AssetIndex records, and library/mount routing.
 - lifecyclePlan: candidate/accepted/rejected/replaced/rolled-back/deprecated/archive decision, currentAcceptedVersion effect, and non-sensitive feedback summary/items when applicable.
@@ -119,3 +120,4 @@ Return a generationPlan with these fields:
 - Do not recommend registering a generated PhenotypeVersion without a PhenotypeCompileArtifact-backed provenance path.
 - Do not store provider credentials, complete private links, raw Agent host responses, or sensitive provider parameters.
 - Do not store API keys, provider credentials, complete private links, raw provider payloads, or signed URLs in PhenotypeGenerationPlan, PhenotypeGenerationTask, llmInstructions, operatorNotes, toolPreference, metadata, or extensions.
+- Do not copy old local URI values into new reference asset migration metadata; asset ids are enough for traceability.

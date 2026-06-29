@@ -254,11 +254,12 @@ function createReadonlyWorkbenchSnapshot(store: SqliteDnaStore, graphId: string 
   const generationJobs = graphs.flatMap((graph) => store.generationJobs.listByGraph(graph.graphId));
   const outputReferences = graphs.flatMap((graph) => store.outputReferences.listByGraph(graph.graphId));
   const assets = uniqueById(graphs.flatMap((graph) => store.assets.search({ graphId: graph.graphId })), (asset) => asset.assetId);
+  const currentAssets = assets.filter(isCurrentAssetPointer);
   const libraries = getScopedLibraries(store, graphIds);
   const mounts = libraries.flatMap((library) => store.storageMounts.listByLibrary(library.libraryId));
   const resultPreviews = [
     ...outputReferences.map((reference) => createOutputReferencePreview(store, reference)),
-    ...assets.map((asset) => createAssetPreview(store, asset))
+    ...currentAssets.map((asset) => createAssetPreview(store, asset))
   ];
 
   return {
@@ -928,6 +929,7 @@ function createLibraryResultSummary(store: SqliteDnaStore, version: PhenotypeVer
   const assets = version.assetIds
     .map((assetId) => store.assets.get(assetId))
     .filter((asset): asset is AssetIndex => Boolean(asset));
+  const currentAssets = assets.filter(isCurrentAssetPointer);
   return {
     phenotypeId: version.phenotypeId,
     phenotypeName: phenotype?.name ?? version.phenotypeId,
@@ -939,13 +941,13 @@ function createLibraryResultSummary(store: SqliteDnaStore, version: PhenotypeVer
     phenotypeType: phenotype?.phenotypeType ?? "",
     outputRoles: [...new Set(versionReferences.map((reference) => reference.role))],
     referenceCount: versionReferences.length,
-    assetCount: assets.length,
+    assetCount: currentAssets.length,
     latestStatus: versionReferences.some((reference) => reference.status === "missing" || reference.status === "stale")
       ? "needs-review"
       : version.status,
     preview: selectBestPreview([
       ...versionReferences.map((reference) => createOutputReferencePreview(store, reference)),
-      ...assets.map((asset) => createAssetPreview(store, asset))
+      ...currentAssets.map((asset) => createAssetPreview(store, asset))
     ])?.preview ?? createPlaceholderPreview("no-preview")
   };
 }
@@ -1092,6 +1094,10 @@ function uniqueById<T>(items: T[], getId: (item: T) => string) {
     seen.add(id);
     return true;
   });
+}
+
+function isCurrentAssetPointer(asset: AssetIndex) {
+  return asset.status !== "archived" && asset.status !== "deleted";
 }
 
 function inferAssetType(uri: string) {

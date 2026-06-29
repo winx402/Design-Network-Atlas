@@ -305,8 +305,46 @@ describe("Phase 29 issues #14/#15 generation update and reference generation CLI
     expect(linked.asset).toMatchObject({
       assetId: "asset-reference-group-cli",
       linkedObjectType: "generation-job",
-      linkedObjectId: "job-reference-group-cli"
+      linkedObjectId: "job-reference-group-cli",
+      storageType: "local"
     });
+    const linkedEagle = JSON.parse(
+      runDna([
+        "--db",
+        db,
+        "reference-generation",
+        "link-asset",
+        "--job",
+        "job-reference-group-cli",
+        "--asset-id",
+        "asset-reference-group-eagle-cli",
+        "--uri",
+        "eagle://item/group-sheet",
+        "--storage-type",
+        "eagle",
+        "--apply",
+        "--format",
+        "json"
+      ])
+    );
+    expect(linkedEagle.asset).toMatchObject({ storageType: "eagle" });
+    expect(
+      runDnaFail([
+        "--db",
+        db,
+        "reference-generation",
+        "link-asset",
+        "--job",
+        "job-reference-group-cli",
+        "--asset-id",
+        "asset-reference-group-conflict-cli",
+        "--uri",
+        "eagle://item/group-conflict",
+        "--storage-type",
+        "local",
+        "--apply"
+      ])
+    ).toContain("storage type local conflicts with inferred storage type eagle");
     expect(runDna(["--db", db, "generation-task", "show", "--id", "task-ref", "--format", "json"])).not.toContain("local://references/group-sheet.png");
 
     runDna([
@@ -439,5 +477,157 @@ describe("Phase 29 issues #14/#15 generation update and reference generation CLI
         }
       }
     });
+  }, CLI_TIMEOUT);
+
+  test("migrates reference asset pointers to Eagle through replace-asset", () => {
+    const dir = tempDir("phase29-reference-asset-migration-cli");
+    const db = join(dir, "dna.sqlite");
+    seedGraphPlanAndTask(db);
+
+    runDna([
+      "--db",
+      db,
+      "reference-generation",
+      "prepare",
+      "--scope",
+      "graph",
+      "--graph",
+      "graph-ref",
+      "--brief",
+      "Create graph-wide reference for Eagle migration",
+      "--reference-type",
+      "moodboard",
+      "--entity-artifact",
+      "eca-reference-migrate-cli",
+      "--job",
+      "job-reference-migrate-cli",
+      "--apply"
+    ]);
+    runDna([
+      "--db",
+      db,
+      "reference-generation",
+      "link-asset",
+      "--job",
+      "job-reference-migrate-cli",
+      "--asset-id",
+      "asset-reference-local-cli",
+      "--uri",
+      "local://references/migrate.png",
+      "--apply"
+    ]);
+    runDna([
+      "--db",
+      db,
+      "reference-generation",
+      "complete",
+      "--job",
+      "job-reference-migrate-cli",
+      "--asset",
+      "asset-reference-local-cli",
+      "--note",
+      "accepted local result",
+      "--apply"
+    ]);
+
+    const preview = runDna([
+      "--db",
+      db,
+      "reference-generation",
+      "replace-asset",
+      "--job",
+      "job-reference-migrate-cli",
+      "--old-asset",
+      "asset-reference-local-cli",
+      "--new-asset-id",
+      "asset-reference-eagle-cli",
+      "--uri",
+      "eagle://item/reference-migrate",
+      "--note",
+      "migrated with Bearer sk-secret-token"
+    ]);
+    expect(preview).toContain("Preview reference asset replacement");
+    expect(preview).toContain("Old asset: asset-reference-local-cli pending -> archived");
+    expect(preview).toContain("New asset: asset-reference-eagle-cli active");
+    expect(preview).toContain("Migration: asset-reference-local-cli -> asset-reference-eagle-cli");
+    expect(preview).toContain("Storage type: eagle");
+    expect(preview).not.toMatch(/sk-secret|Bearer/);
+    expect(JSON.parse(runDna(["--db", db, "asset", "search", "--linked-id", "job-reference-migrate-cli"]))).toHaveLength(1);
+
+    const applied = JSON.parse(
+      runDna([
+        "--db",
+        db,
+        "reference-generation",
+        "replace-asset",
+        "--job",
+        "job-reference-migrate-cli",
+        "--old-asset",
+        "asset-reference-local-cli",
+        "--new-asset-id",
+        "asset-reference-eagle-cli",
+        "--uri",
+        "eagle://item/reference-migrate",
+        "--storage-type",
+        "eagle",
+        "--note",
+        "migrated with Bearer sk-secret-token",
+        "--apply",
+        "--format",
+        "json"
+      ])
+    );
+    expect(applied.oldAssetAfter).toMatchObject({
+      assetId: "asset-reference-local-cli",
+      status: "archived",
+      facets: {
+        referenceAssetMigration: {
+          supersededByAssetId: "asset-reference-eagle-cli"
+        }
+      }
+    });
+    expect(applied.newAsset).toMatchObject({
+      assetId: "asset-reference-eagle-cli",
+      storageType: "eagle",
+      status: "active",
+      facets: {
+        referenceAssetMigration: {
+          supersedesAssetId: "asset-reference-local-cli"
+        }
+      }
+    });
+    const assets = JSON.parse(runDna(["--db", db, "asset", "search", "--linked-id", "job-reference-migrate-cli"]));
+    expect(assets).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ assetId: "asset-reference-local-cli", status: "archived" }),
+        expect.objectContaining({ assetId: "asset-reference-eagle-cli", status: "active", storageType: "eagle" })
+      ])
+    );
+    expect(JSON.parse(runDna(["--db", db, "provider", "job", "show", "--id", "job-reference-migrate-cli"]))).toMatchObject({
+      status: "generated",
+      outputSnapshot: {
+        referenceCompletion: {
+          linkedAssetIds: ["asset-reference-eagle-cli"]
+        }
+      }
+    });
+    expect(
+      runDnaFail([
+        "--db",
+        db,
+        "reference-generation",
+        "replace-asset",
+        "--job",
+        "job-reference-migrate-cli",
+        "--old-asset",
+        "asset-reference-local-cli",
+        "--new-asset-id",
+        "asset-reference-conflict-cli",
+        "--uri",
+        "eagle://item/conflict",
+        "--storage-type",
+        "local"
+      ])
+    ).toContain("storage type local conflicts with inferred storage type eagle");
   }, CLI_TIMEOUT);
 });

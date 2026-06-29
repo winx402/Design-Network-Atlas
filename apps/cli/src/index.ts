@@ -29,6 +29,7 @@ import {
   persistPhenotypeGeneration,
   persistReferenceGeneration,
   rejectPhenotypeVersion,
+  replaceReferenceAsset,
   replacePhenotypeVersion,
   rollbackPhenotypeVersion,
   submitPhenotypeVersionCandidate,
@@ -474,13 +475,41 @@ function formatReferenceAssetLink(result: { persisted: boolean; asset: { assetId
     result.persisted ? "Linked reference asset" : "Preview reference asset link",
     `Asset: ${result.asset.assetId}`,
     `Generation job: ${result.asset.linkedObjectId}`,
-    `URI: ${result.asset.uri}`
-  ];
+    `URI: ${result.asset.uri}`,
+    "storageType" in result.asset ? `Storage type: ${result.asset.storageType}` : undefined
+  ].filter((line): line is string => Boolean(line));
   if ("markedGenerated" in result && result.markedGenerated) {
     const completedJob = result as { job?: { status: string }; completedJob?: { status: string } };
     lines.push(`Status: ${completedJob.job?.status ?? "created"} -> ${completedJob.completedJob?.status ?? "generated"}`);
   }
   if (!result.persisted) lines.push("Re-run with --apply or --yes to persist the reference asset pointer.");
+  return `${lines.join("\n")}\n`;
+}
+
+function formatReferenceAssetReplacement(result: {
+  persisted: boolean;
+  oldAssetBefore: { assetId: string; status: string };
+  oldAssetAfter: { status: string };
+  newAsset: { assetId: string; status: string; storageType: string; uri: string; facets?: Record<string, unknown> };
+  storageType: string;
+  inferredStorageType: string;
+  job: { generationJobId: string; status: string };
+  jobAfter: { status: string };
+}) {
+  const lines = [
+    result.persisted ? "Replaced reference asset" : "Preview reference asset replacement",
+    `Job: ${result.job.generationJobId}`,
+    `Status: ${result.job.status} -> ${result.jobAfter.status}`,
+    `Old asset: ${result.oldAssetBefore.assetId} ${result.oldAssetBefore.status} -> ${result.oldAssetAfter.status}`,
+    `New asset: ${result.newAsset.assetId} ${result.newAsset.status}`,
+    `Migration: ${result.oldAssetBefore.assetId} -> ${result.newAsset.assetId}`,
+    `Storage type: ${result.storageType}`,
+    result.inferredStorageType !== result.storageType ? `Inferred storage type: ${result.inferredStorageType}` : undefined,
+    `URI: ${result.newAsset.uri}`
+  ].filter((line): line is string => Boolean(line));
+  const migration = result.newAsset.facets?.referenceAssetMigration as { note?: string } | undefined;
+  if (migration?.note) lines.push(`Note: ${migration.note}`);
+  if (!result.persisted) lines.push("Re-run with --apply or --yes to persist the reference asset replacement.");
   return `${lines.join("\n")}\n`;
 }
 
@@ -2288,6 +2317,7 @@ referenceGeneration
   .requiredOption("--job <generationJobId>", "reference generation job id")
   .requiredOption("--asset-id <assetId>", "asset id")
   .requiredOption("--uri <uri>", "safe local or public pointer URI; signed/private URLs are rejected")
+  .option("--storage-type <storageType>", "storage type; inferred from URI when omitted")
   .option("--asset-type <type>", "asset type", "image")
   .option("--role <role>", "asset role", "reference")
   .option("--description <text>", "asset description")
@@ -2306,6 +2336,7 @@ referenceGeneration
         generationJobId: options.job,
         assetId: options.assetId,
         uri: options.uri,
+        storageType: options.storageType,
         assetType: options.assetType,
         role: options.role,
         description: options.description,
@@ -2322,6 +2353,41 @@ referenceGeneration
       }
     );
     printJsonOrText(parseOutputFormat(options.format), result, formatReferenceAssetLink(result));
+    store.close();
+  });
+referenceGeneration
+  .command("replace-asset")
+  .requiredOption("--job <generationJobId>", "reference generation job id")
+  .requiredOption("--old-asset <assetId>", "old linked asset id")
+  .requiredOption("--new-asset-id <assetId>", "new asset id")
+  .requiredOption("--uri <uri>", "safe replacement pointer URI; signed/private URLs are rejected")
+  .option("--storage-type <storageType>", "storage type; inferred from URI when omitted")
+  .option("--asset-type <type>", "asset type")
+  .option("--role <role>", "asset role")
+  .option("--description <text>", "asset description")
+  .option("--tag <tag>", "asset tag", collect, [])
+  .option("--note <text>", "safe migration note")
+  .option("--apply", "persist asset replacement")
+  .option("--format <format>", "output format: text|json")
+  .action((options, command) => {
+    const store = openStore(command);
+    const result = replaceReferenceAsset(
+      store,
+      {
+        generationJobId: options.job,
+        oldAssetId: options.oldAsset,
+        newAssetId: options.newAssetId,
+        uri: options.uri,
+        storageType: options.storageType,
+        assetType: options.assetType,
+        role: options.role,
+        description: options.description,
+        tags: options.tag,
+        note: options.note
+      },
+      { apply: Boolean(options.apply || shouldApply(command)) }
+    );
+    printJsonOrText(parseOutputFormat(options.format), result, formatReferenceAssetReplacement(result));
     store.close();
   });
 

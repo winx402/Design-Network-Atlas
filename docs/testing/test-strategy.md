@@ -52,7 +52,7 @@
 | Phase 26 | generation planning orchestration | `PhenotypeGenerationPlan`/`PhenotypeGenerationTask` schema、service expansion、CLI preview/apply、task-linked generation、export/import、read-only API/workbench 和 secret redaction |
 | Phase 27 | phenotype version lifecycle | `PhenotypeVersion` candidate/accepted/replaced/rolled-back lifecycle、feedback metadata、single accepted invariant、task/job provenance projection、export/import 和 secret redaction |
 | Phase 28 | Web read-only information architecture | `/api/workbench/snapshot` server-side view model；Atlas Map、Graph Explorer、Generation Board、Phenotype Library、Inspector；安全图库预览；empty/error/missing 状态；移动端无宽表和文本溢出 |
-| Phase 29 | generation update + scoped reference generation | `generation-plan update` / `generation-task update` 默认 preview、apply 后只改 mutable orchestration metadata；批量 task selector 防止 update-all 并跳过已有执行链接；graph/group scoped `reference-generation` 不创建 synthetic phenotype records；external reference completion 需要 linked asset evidence 并支持 atomic `link-asset --mark-generated`；reference jobs/assets export/import round-trip 且脱敏私密链接和 provider credentials |
+| Phase 29 | generation update + scoped reference generation | `generation-plan update` / `generation-task update` 默认 preview、apply 后只改 mutable orchestration metadata；批量 task selector 防止 update-all 并跳过已有执行链接；graph/group scoped `reference-generation` 不创建 synthetic phenotype records；external reference completion 需要 active linked asset evidence 并支持 atomic `link-asset --mark-generated`；`replace-asset` 覆盖 local -> Eagle pointer migration、旧 pointer 归档、新 pointer current evidence、URI storageType 推断和冲突拒绝；reference jobs/assets export/import round-trip 且脱敏私密链接和 provider credentials |
 
 ## 4. 关键测试数据
 
@@ -154,7 +154,7 @@
 - `dna-graph-modeling` 能把新场景映射到 SpeciesNode、DesignRelationship、facets、Phenotype、phenotype library 和生效策略。
 - `dna-graph-editing` 能对已有图谱变更输出合理性、影响分析、风险等级、outdated 风险、替代方案和推荐写入路径。
 - `dna-phenotype-generation` 是正式 MVP 场景 skill，覆盖 missing compile artifact、blocking open questions、generationPlan、planningMode、planOrTaskProposal、versionBinding、registrationPlan 和 writeStrategy。
-- generation orchestration 测试覆盖 plan/task update preview/apply、immutable identity/trace links、batch selector safeguards、referenceGenerationJobIds/referenceAssetIds/contextReferenceIds 只保存 id、graph/group scoped reference generation、reference AssetIndex pointers、external completion preview/apply、atomic `link-asset --mark-generated`，以及 export/import/security redaction。
+- generation orchestration 测试覆盖 plan/task update preview/apply、immutable identity/trace links、batch selector safeguards、referenceGenerationJobIds/referenceAssetIds/contextReferenceIds 只保存 id、graph/group scoped reference generation、reference AssetIndex pointers、external completion preview/apply、atomic `link-asset --mark-generated`、reference asset pointer replacement/migration，以及 export/import/security redaction。
 - Layered compile golden tests 覆盖 atlas、graph、species-group、species-node、phenotype frame 顺序，dependency vector，staleness/current/historical 判断，decision request/patch replay，以及 compile feedback 不改写上游 graph/context/facet/template facts。
 - Skill 不建议保存 provider credentials、完整私密链接或 raw Agent host responses。
 - Skill 不把未经确认的 LLM 推断写入正式图谱，也不直接写数据库内部结构、导出目录或外部素材库。

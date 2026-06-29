@@ -14,6 +14,7 @@ import {
   linkReferenceAsset,
   persistReferenceGeneration,
   prepareReferenceGeneration,
+  replaceReferenceAsset,
   updateGenerationPlan,
   updateGenerationTasks
 } from "@dna/application";
@@ -328,9 +329,38 @@ describe("Phase 29 issues #14/#15 generation orchestration services", () => {
     expect(store.assets.get("asset-reference-link")).toMatchObject({
       linkedObjectType: "generation-job",
       linkedObjectId: "job-reference-link",
+      storageType: "local",
       role: "reference",
       tags: ["reference", "ui"]
     });
+
+    const eagleLinked = linkReferenceAsset(
+      store,
+      {
+        generationJobId: "job-reference-link",
+        assetId: "asset-reference-eagle",
+        uri: "eagle://item/reference-link",
+        storageType: "eagle",
+        assetType: "image",
+        role: "reference"
+      },
+      { apply: true }
+    );
+    expect(eagleLinked.asset).toMatchObject({ storageType: "eagle" });
+
+    expect(() =>
+      linkReferenceAsset(
+        store,
+        {
+          generationJobId: "job-reference-link",
+          assetId: "asset-reference-conflict",
+          uri: "eagle://item/reference-conflict",
+          storageType: "local",
+          assetType: "image"
+        },
+        { apply: false }
+      )
+    ).toThrow(/storage type local conflicts with inferred storage type eagle/);
 
     expect(() =>
       linkReferenceAsset(
@@ -344,6 +374,139 @@ describe("Phase 29 issues #14/#15 generation orchestration services", () => {
         { apply: false }
       )
     ).toThrow(/private or credential-bearing asset uri/);
+  });
+
+  test("replaces local reference assets with Eagle pointers without mutating generation provenance", () => {
+    const { store, graph } = seedStore();
+    const prepared = prepareReferenceGeneration(store, {
+      scope: "graph",
+      graphId: graph.graphId,
+      brief: "Create a replaceable reference image.",
+      referenceType: "reference-image",
+      ids: { entityArtifactId: "eca-reference-replace", generationJobId: "job-reference-replace" }
+    });
+    persistReferenceGeneration(store, prepared);
+    linkReferenceAsset(
+      store,
+      {
+        generationJobId: "job-reference-replace",
+        assetId: "asset-reference-local",
+        uri: "local://references/replaceable.png",
+        assetType: "image",
+        role: "reference",
+        tags: ["reference"]
+      },
+      { apply: true }
+    );
+    completeReferenceGeneration(
+      store,
+      {
+        generationJobId: "job-reference-replace",
+        assetIds: ["asset-reference-local"],
+        note: "accepted"
+      },
+      { apply: true }
+    );
+    const before = store.generationJobs.get("job-reference-replace");
+
+    const preview = replaceReferenceAsset(
+      store,
+      {
+        generationJobId: "job-reference-replace",
+        oldAssetId: "asset-reference-local",
+        newAssetId: "asset-reference-eagle-final",
+        uri: "eagle://item/reference-final",
+        note: "migrated after review with Bearer sk-secret-token",
+        tags: ["eagle"]
+      },
+      { apply: false }
+    );
+    expect(preview.persisted).toBe(false);
+    expect(preview.oldAssetAfter).toMatchObject({
+      assetId: "asset-reference-local",
+      status: "archived",
+      facets: {
+        referenceAssetMigration: {
+          supersededByAssetId: "asset-reference-eagle-final"
+        }
+      }
+    });
+    expect(preview.newAsset).toMatchObject({
+      assetId: "asset-reference-eagle-final",
+      uri: "eagle://item/reference-final",
+      storageType: "eagle",
+      status: "active",
+      facets: {
+        referenceAssetMigration: {
+          supersedesAssetId: "asset-reference-local"
+        }
+      }
+    });
+    expect(JSON.stringify(preview)).not.toMatch(/sk-secret|Bearer/);
+    expect(JSON.stringify(preview.newAsset.facets)).not.toMatch(/local:\/\/references\/replaceable/);
+    expect(store.assets.get("asset-reference-local")?.status).toBe("pending");
+    expect(store.assets.get("asset-reference-eagle-final")).toBeUndefined();
+
+    const applied = replaceReferenceAsset(
+      store,
+      {
+        generationJobId: "job-reference-replace",
+        oldAssetId: "asset-reference-local",
+        newAssetId: "asset-reference-eagle-final",
+        uri: "eagle://item/reference-final",
+        note: "migrated after review with Bearer sk-secret-token",
+        tags: ["eagle"]
+      },
+      { apply: true }
+    );
+    expect(applied.persisted).toBe(true);
+    expect(store.assets.get("asset-reference-local")).toMatchObject({ status: "archived" });
+    expect(store.assets.get("asset-reference-eagle-final")).toMatchObject({
+      storageType: "eagle",
+      status: "active",
+      linkedObjectType: "generation-job",
+      linkedObjectId: "job-reference-replace"
+    });
+    expect(store.generationJobs.get("job-reference-replace")).toMatchObject({
+      generationKind: "reference",
+      status: "generated",
+      inputSnapshot: before?.inputSnapshot,
+      target: before?.target,
+      outputSnapshot: {
+        prompt: before?.outputSnapshot.prompt,
+        artBrief: before?.outputSnapshot.artBrief,
+        referenceCompletion: {
+          linkedAssetIds: ["asset-reference-eagle-final"]
+        }
+      }
+    });
+    expect(store.generationJobs.get("job-reference-replace")?.createdAt).toBe(before?.createdAt);
+    expect(JSON.stringify(store.generationJobs.get("job-reference-replace"))).not.toMatch(/local:\/\/references\/replaceable|sk-secret|Bearer/);
+
+    expect(() =>
+      replaceReferenceAsset(
+        store,
+        {
+          generationJobId: "job-existing",
+          oldAssetId: "asset-reference-eagle-final",
+          newAssetId: "asset-reference-invalid",
+          uri: "eagle://item/invalid"
+        },
+        { apply: false }
+      )
+    ).toThrow(/not a reference generation job/);
+    expect(() =>
+      replaceReferenceAsset(
+        store,
+        {
+          generationJobId: "job-reference-replace",
+          oldAssetId: "asset-reference-local",
+          newAssetId: "asset-reference-eagle-final",
+          uri: "eagle://item/duplicate"
+        },
+        { apply: false }
+      )
+    ).toThrow(/asset already exists/);
   });
 
   test("completes reference generation only with safe output evidence and preserves job provenance", () => {
@@ -434,7 +597,7 @@ describe("Phase 29 issues #14/#15 generation orchestration services", () => {
       target: before?.target
     });
     expect(stored?.createdAt).toBe(before?.createdAt);
-    expect(stored?.updatedAt).not.toBe(before?.updatedAt);
+    expect(stored?.updatedAt).toEqual(expect.any(String));
     expect(stored?.outputSnapshot).toMatchObject({
       prompt: before?.outputSnapshot.prompt,
       artBrief: before?.outputSnapshot.artBrief,
@@ -451,6 +614,33 @@ describe("Phase 29 issues #14/#15 generation orchestration services", () => {
     expect(() =>
       completeReferenceGeneration(store, { generationJobId: "job-existing", assetIds: ["asset-reference-complete"] }, { apply: true })
     ).toThrow(/not a reference generation job/);
+
+    const archivedPrepared = prepareReferenceGeneration(store, {
+      scope: "graph",
+      graphId: graph.graphId,
+      brief: "Create an archived evidence reference image.",
+      referenceType: "reference-image",
+      ids: { entityArtifactId: "eca-reference-archived-evidence", generationJobId: "job-reference-archived-evidence" }
+    });
+    persistReferenceGeneration(store, archivedPrepared);
+    linkReferenceAsset(
+      store,
+      {
+        generationJobId: "job-reference-archived-evidence",
+        assetId: "asset-reference-archived-evidence",
+        uri: "local://references/archived-evidence.png",
+        assetType: "image",
+        role: "reference"
+      },
+      { apply: true }
+    );
+    store.assets.update({ ...store.assets.get("asset-reference-archived-evidence")!, status: "archived" });
+    expect(() =>
+      completeReferenceGeneration(store, { generationJobId: "job-reference-archived-evidence" }, { apply: false })
+    ).toThrow(/output evidence/);
+    expect(() =>
+      completeReferenceGeneration(store, { generationJobId: "job-reference-archived-evidence", assetIds: ["asset-reference-archived-evidence"] }, { apply: false })
+    ).toThrow(/archived or deleted/);
   });
 
   test("linking a reference asset can atomically mark the reference job generated", () => {
@@ -502,6 +692,50 @@ describe("Phase 29 issues #14/#15 generation orchestration services", () => {
           linkedAssetIds: ["asset-reference-atomic"],
           note: "external complete",
           externalTool: "paint app"
+        }
+      }
+    });
+  });
+
+  test("atomic mark-generated defaults evidence to the newly linked asset only", () => {
+    const { store, graph } = seedStore();
+    const prepared = prepareReferenceGeneration(store, {
+      scope: "graph",
+      graphId: graph.graphId,
+      brief: "Create an atomic reference image with older evidence.",
+      referenceType: "reference-image",
+      ids: { entityArtifactId: "eca-reference-atomic-current", generationJobId: "job-reference-atomic-current" }
+    });
+    persistReferenceGeneration(store, prepared);
+    linkReferenceAsset(
+      store,
+      {
+        generationJobId: "job-reference-atomic-current",
+        assetId: "asset-reference-old-local",
+        uri: "local://references/old-local.png",
+        assetType: "image",
+        role: "reference"
+      },
+      { apply: true }
+    );
+
+    const applied = linkReferenceAsset(
+      store,
+      {
+        generationJobId: "job-reference-atomic-current",
+        assetId: "asset-reference-new-eagle",
+        uri: "eagle://item/atomic-current",
+        assetType: "image",
+        role: "reference"
+      },
+      { apply: true, markGenerated: true, completion: { note: "done" } }
+    );
+    expect(applied.linkedAssetIds).toEqual(["asset-reference-new-eagle"]);
+    expect(store.assets.get("asset-reference-new-eagle")).toMatchObject({ storageType: "eagle" });
+    expect(store.generationJobs.get("job-reference-atomic-current")).toMatchObject({
+      outputSnapshot: {
+        referenceCompletion: {
+          linkedAssetIds: ["asset-reference-new-eagle"]
         }
       }
     });

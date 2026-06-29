@@ -261,6 +261,16 @@ describe("Phase 28 PRD-21 read-only workbench information architecture API", () 
         status: "pending"
       })
     );
+    store.assets.create(
+      createDefaultAsset({
+        assetId: "asset-web-archived",
+        uri: "local://gallery/old-icon.png",
+        linkedObjectType: "phenotype-version",
+        linkedObjectId: acceptedVersion.phenotypeVersionId,
+        variantRole: "preview",
+        status: "archived"
+      })
+    );
     store.outputReferences.create(safeReference);
     store.outputReferences.create(privateReference);
     store.generationPlans.create(plan);
@@ -342,6 +352,8 @@ describe("Phase 28 PRD-21 read-only workbench information architecture API", () 
         expect.objectContaining({ objectId: "asset-web-private", preview: expect.objectContaining({ kind: "placeholder" }) })
       ])
     );
+    expect(snapshot.resultPreviews.map((preview: { objectId: string }) => preview.objectId)).not.toContain("asset-web-archived");
+    expect(snapshot.assets).toEqual(expect.arrayContaining([expect.objectContaining({ assetId: "asset-web-archived", status: "archived" })]));
 
     const serialized = JSON.stringify(snapshot);
     expect(serialized).not.toMatch(/sk-test|OPENAI_API_KEY|password|secret|private_key|Bearer|X-Amz-Signature|\/Users\/bot/);
@@ -395,6 +407,7 @@ describe("Phase 28 PRD-21 read-only workbench information architecture API", () 
         expect.objectContaining({ id: "asset-web-private", preview: expect.objectContaining({ kind: "missing" }) })
       ])
     );
+    expect(libraryView.gallery.map((item: { id: string }) => item.id)).not.toContain("asset-web-archived");
 
     store.close();
   });

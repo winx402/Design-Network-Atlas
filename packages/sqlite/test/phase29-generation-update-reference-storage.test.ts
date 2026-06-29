@@ -15,6 +15,7 @@ import {
   linkReferenceAsset,
   persistReferenceGeneration,
   prepareReferenceGeneration,
+  replaceReferenceAsset,
   updateGenerationPlan,
   updateGenerationTasks
 } from "@dna/application";
@@ -149,14 +150,26 @@ describe("Phase 29 issues #14/#15 generation update and reference storage", () =
       },
       { apply: true }
     );
+    replaceReferenceAsset(
+      source,
+      {
+        generationJobId: "job-storage-reference",
+        oldAssetId: "asset-storage-reference",
+        newAssetId: "asset-storage-eagle-reference",
+        uri: "eagle://item/storage-reference",
+        note: "migrated after review with password=secret"
+      },
+      { apply: true }
+    );
 
     exportProject(source, out);
     expect(existsSync(join(out, "graphs", graph.graphId, "generation-plans", `${plan.planId}.json`))).toBe(true);
     expect(existsSync(join(out, "graphs", graph.graphId, "generation-tasks", `${task.taskId}.json`))).toBe(true);
     expect(existsSync(join(out, "graphs", graph.graphId, "generation-jobs", "job-storage-reference.json"))).toBe(true);
     expect(existsSync(join(out, "graphs", graph.graphId, "assets", "asset-storage-reference.json"))).toBe(true);
+    expect(existsSync(join(out, "graphs", graph.graphId, "assets", "asset-storage-eagle-reference.json"))).toBe(true);
     const exported = readAllFiles(out);
-    expect(exported).not.toMatch(/sk-storage-secret|private\.example|privateLink|OPENAI_API_KEY|X-Amz-Signature|signedUrl/);
+    expect(exported).not.toMatch(/sk-storage-secret|private\.example|privateLink|OPENAI_API_KEY|X-Amz-Signature|signedUrl|password=secret/);
 
     importProject(target, out);
     expect(target.generationPlans.get(plan.planId)).toMatchObject({ description: "Updated storage plan", tags: ["review"] });
@@ -170,16 +183,39 @@ describe("Phase 29 issues #14/#15 generation update and reference storage", () =
       target: { type: "species-group", id: group.groupId, graphId: graph.graphId },
       outputSnapshot: {
         referenceCompletion: {
-          linkedAssetIds: ["asset-storage-reference"],
+          linkedAssetIds: ["asset-storage-eagle-reference"],
           note: "Completed by external tool without [redacted]",
           externalTool: "reference board",
-          metadata: { reviewer: "lead" }
+          metadata: { reviewer: "lead" },
+          referenceAssetMigrations: [
+            expect.objectContaining({
+              oldAssetId: "asset-storage-reference",
+              newAssetId: "asset-storage-eagle-reference"
+            })
+          ]
         }
       }
     });
     expect(target.assets.get("asset-storage-reference")).toMatchObject({
       linkedObjectType: "generation-job",
-      linkedObjectId: "job-storage-reference"
+      linkedObjectId: "job-storage-reference",
+      status: "archived",
+      facets: {
+        referenceAssetMigration: {
+          supersededByAssetId: "asset-storage-eagle-reference"
+        }
+      }
+    });
+    expect(target.assets.get("asset-storage-eagle-reference")).toMatchObject({
+      linkedObjectType: "generation-job",
+      linkedObjectId: "job-storage-reference",
+      status: "active",
+      storageType: "eagle",
+      facets: {
+        referenceAssetMigration: {
+          supersedesAssetId: "asset-storage-reference"
+        }
+      }
     });
 
     source.close();

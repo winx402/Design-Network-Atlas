@@ -15,6 +15,7 @@ import {
   sanitizePhenotypeVersionFeedback,
   sanitizePlanningJson,
   sanitizePlanningText,
+  StorageTypeSchema,
   PhenotypeGenerationPlanSchema,
   PhenotypeGenerationTaskSchema,
   type EntityCompileArtifact,
@@ -133,7 +134,7 @@ export interface ReferenceGenerationRepositories extends LayeredCompileRepositor
   transaction<T>(fn: () => T): T;
   entityCompileArtifacts: Pick<EntityCompileArtifactRepository, "get" | "create" | "listByGraph" | "listByTarget">;
   generationJobs: Pick<GenerationJobRepository, "get" | "create" | "update">;
-  assets: Pick<AssetRepository, "get" | "create" | "search">;
+  assets: Pick<AssetRepository, "get" | "create" | "update" | "search">;
 }
 
 export type PlanningJsonPatch = {
@@ -938,12 +939,15 @@ function collectReferenceCompletionEvidence(
       if (!asset || asset.linkedObjectType !== "generation-job" || asset.linkedObjectId !== generationJobId) {
         throw new Error(`reference generation completion requires output evidence linked to job ${generationJobId}; asset ${assetId} is not linked to that job`);
       }
+      if (!isActiveReferenceAsset(asset)) {
+        throw new Error(`reference generation completion asset ${assetId} is archived or deleted and cannot be current output evidence`);
+      }
       selected.push(asset);
     }
     return selected;
   }
 
-  const assets = [...assetsById.values()];
+  const assets = [...assetsById.values()].filter(isActiveReferenceAsset);
   if (!assets.length) {
     throw new Error(`reference generation completion requires output evidence linked to job ${generationJobId}`);
   }
@@ -1002,6 +1006,7 @@ export function linkReferenceAsset(
     generationJobId: string;
     assetId: string;
     uri: string;
+    storageType?: AssetIndex["storageType"];
     assetType?: AssetIndex["assetType"];
     role?: AssetIndex["role"];
     tags?: string[];
@@ -1012,10 +1017,11 @@ export function linkReferenceAsset(
   const job = assertReferenceGenerationJob(store.generationJobs.get(input.generationJobId), input.generationJobId);
   if (store.assets.get(input.assetId)) throw new Error(`asset already exists: ${input.assetId}`);
   assertSafeReferenceAssetUri(input.uri);
+  const storage = resolveReferenceAssetStorageType(input.uri, input.storageType);
   const asset = createDefaultAsset({
     assetId: input.assetId,
     uri: input.uri,
-    storageType: input.uri.startsWith("http://") || input.uri.startsWith("https://") ? "url" : "local",
+    storageType: storage.storageType,
     assetType: input.assetType ?? "image",
     role: input.role ?? "reference",
     linkedObjectType: "generation-job",
@@ -1031,7 +1037,7 @@ export function linkReferenceAsset(
 
   const completion = prepareReferenceGenerationCompletion(
     store,
-    { generationJobId: input.generationJobId, ...(options.completion ?? {}) },
+    { generationJobId: input.generationJobId, ...(options.completion ?? {}), assetIds: [asset.assetId] },
     [asset]
   );
   if (!options.apply) {
@@ -1054,6 +1060,101 @@ export function linkReferenceAsset(
       linkedAssetIds: completion.linkedAssetIds,
       persisted: true,
       markedGenerated: true
+    };
+  });
+}
+
+export function replaceReferenceAsset(
+  store: Pick<ReferenceGenerationRepositories, "transaction" | "generationJobs" | "assets">,
+  input: {
+    generationJobId: string;
+    oldAssetId: string;
+    newAssetId: string;
+    uri: string;
+    storageType?: AssetIndex["storageType"];
+    assetType?: AssetIndex["assetType"];
+    role?: AssetIndex["role"];
+    tags?: string[];
+    description?: string;
+    note?: string;
+  },
+  options: { apply?: boolean } = {}
+) {
+  const job = assertReferenceGenerationJob(store.generationJobs.get(input.generationJobId), input.generationJobId);
+  if (job.status !== "created" && job.status !== "generated") {
+    throw new Error(`reference generation job ${input.generationJobId} must be created or generated before asset replacement; current status is ${job.status}`);
+  }
+  const oldAsset = store.assets.get(input.oldAssetId);
+  if (!oldAsset) throw new Error(`old asset not found: ${input.oldAssetId}`);
+  if (oldAsset.linkedObjectType !== "generation-job" || oldAsset.linkedObjectId !== input.generationJobId) {
+    throw new Error(`old asset ${input.oldAssetId} is not linked to reference generation job ${input.generationJobId}`);
+  }
+  if (store.assets.get(input.newAssetId)) throw new Error(`asset already exists: ${input.newAssetId}`);
+  assertSafeReferenceAssetUri(input.uri);
+  const storage = resolveReferenceAssetStorageType(input.uri, input.storageType);
+  const migratedAt = nowIso();
+  const note = sanitizePlanningText(input.note);
+  const migrationForOld: Record<string, unknown> = {
+    supersededByAssetId: input.newAssetId,
+    migratedAt
+  };
+  const migrationForNew: Record<string, unknown> = {
+    supersedesAssetId: input.oldAssetId,
+    migratedAt
+  };
+  if (note !== undefined) {
+    migrationForOld.note = note;
+    migrationForNew.note = note;
+  }
+  const oldAssetAfter: AssetIndex = {
+    ...oldAsset,
+    status: "archived",
+    facets: {
+      ...oldAsset.facets,
+      referenceAssetMigration: migrationForOld
+    },
+    updatedAt: migratedAt
+  };
+  const newAsset = createDefaultAsset({
+    assetId: input.newAssetId,
+    uri: input.uri,
+    storageType: storage.storageType,
+    assetType: input.assetType ?? oldAsset.assetType,
+    role: input.role ?? oldAsset.role,
+    linkedObjectType: "generation-job",
+    linkedObjectId: input.generationJobId,
+    tags: input.tags ?? oldAsset.tags,
+    description: sanitizePlanningText(input.description) ?? oldAsset.description,
+    status: "active",
+    facets: {
+      referenceAssetMigration: migrationForNew
+    },
+    createdAt: migratedAt,
+    updatedAt: migratedAt
+  });
+  const jobAfter = job.status === "generated" ? replaceReferenceCompletionEvidence(store, job, input.oldAssetId, input.newAssetId, migratedAt, note) : job;
+  const result = {
+    job,
+    jobAfter,
+    oldAssetBefore: oldAsset,
+    oldAssetAfter,
+    newAsset,
+    storageType: storage.storageType,
+    inferredStorageType: storage.inferredStorageType,
+    migratedAt,
+    persisted: false
+  };
+  if (!options.apply) return result;
+  return store.transaction(() => {
+    store.assets.update(oldAssetAfter);
+    store.assets.create(newAsset);
+    if (jobAfter !== job) store.generationJobs.update(jobAfter);
+    return {
+      ...result,
+      jobAfter: store.generationJobs.get(input.generationJobId) ?? jobAfter,
+      oldAssetAfter: store.assets.get(input.oldAssetId) ?? oldAssetAfter,
+      newAsset: store.assets.get(input.newAssetId) ?? newAsset,
+      persisted: true
     };
   });
 }
@@ -1706,10 +1807,84 @@ function assertSafeReferenceAssetUri(uri: string) {
     /(?:[?&](?:token|signature|sig|X-Amz-Signature|se|sp|sv)=)/i.test(uri) ||
     /https?:\/\/private\./i.test(uri) ||
     /(?:api[_-]?key|credential|password|private[_-]?key|secret|bearer)/i.test(uri) ||
-    /^\/Users\//.test(uri)
+    /^\/Users\//.test(uri) ||
+    /^file:\/\//i.test(uri) ||
+    /^~\//.test(uri) ||
+    /^\/(?!\/)/.test(uri)
   ) {
     throw new Error("private or credential-bearing asset uri is not allowed");
   }
+}
+
+function isActiveReferenceAsset(asset: AssetIndex) {
+  return asset.status !== "archived" && asset.status !== "deleted";
+}
+
+function resolveReferenceAssetStorageType(uri: string, explicitStorageType?: AssetIndex["storageType"]) {
+  const parsed = explicitStorageType ? StorageTypeSchema.safeParse(explicitStorageType) : undefined;
+  if (parsed && !parsed.success) throw new Error(`invalid storage type: ${explicitStorageType}`);
+  const scheme = uri.match(/^([a-z][a-z0-9+.-]*):\/\//i)?.[1]?.toLowerCase();
+  const knownSchemeStorage: Record<string, AssetIndex["storageType"]> = {
+    eagle: "eagle",
+    local: "local",
+    http: "url",
+    https: "url",
+    nas: "nas",
+    git: "git",
+    "git+ssh": "git",
+    s3: "object-storage",
+    oss: "object-storage",
+    gs: "object-storage",
+    r2: "object-storage"
+  };
+  const inferredStorageType = scheme ? knownSchemeStorage[scheme] ?? "other" : "local";
+  if (scheme && knownSchemeStorage[scheme] && explicitStorageType && explicitStorageType !== inferredStorageType) {
+    throw new Error(`storage type ${explicitStorageType} conflicts with inferred storage type ${inferredStorageType} for ${scheme} URI`);
+  }
+  return {
+    storageType: explicitStorageType ?? inferredStorageType,
+    inferredStorageType
+  };
+}
+
+function replaceReferenceCompletionEvidence(
+  store: Pick<ReferenceGenerationRepositories, "assets">,
+  job: GenerationJob,
+  oldAssetId: string,
+  newAssetId: string,
+  migratedAt: string,
+  note: string | undefined
+): GenerationJob {
+  const completion = isRecord(job.outputSnapshot.referenceCompletion) ? job.outputSnapshot.referenceCompletion : {};
+  const currentIds = Array.isArray(completion.linkedAssetIds)
+    ? completion.linkedAssetIds.filter((value): value is string => typeof value === "string")
+    : [];
+  const migratedIds = currentIds.map((assetId) => (assetId === oldAssetId ? newAssetId : assetId)).filter((assetId) => assetId !== oldAssetId);
+  const activeIds = migratedIds.filter((assetId) => {
+    if (assetId === newAssetId) return true;
+    const asset = store.assets.get(assetId);
+    return asset ? isActiveReferenceAsset(asset) : true;
+  });
+  const linkedAssetIds = unique([...activeIds, newAssetId]);
+  const migration: Record<string, unknown> = { oldAssetId, newAssetId, migratedAt };
+  if (note !== undefined) migration.note = note;
+  const priorMigrations = Array.isArray(completion.referenceAssetMigrations) ? completion.referenceAssetMigrations : [];
+  return {
+    ...job,
+    outputSnapshot: {
+      ...job.outputSnapshot,
+      referenceCompletion: {
+        ...completion,
+        linkedAssetIds,
+        referenceAssetMigrations: [...priorMigrations, migration]
+      }
+    },
+    updatedAt: migratedAt
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 function resolvePlanGraphId(
