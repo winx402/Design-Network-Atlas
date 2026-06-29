@@ -22,17 +22,25 @@ import {
   preparePhenotypeGenerationForTask,
   prepareReferenceGeneration,
   prepareSpeciesCompileArtifact,
+  acceptOutputReference,
+  archiveOutputReference,
   createGenerationPlan,
   createGenerationTask,
+  deleteOutputReference,
   expandGenerationPlan,
   linkReferenceAsset,
+  markMissingOutputReference,
+  markStaleOutputReference,
   persistPhenotypeGeneration,
   persistReferenceGeneration,
+  rejectOutputReference,
+  replaceOutputReference,
   rejectPhenotypeVersion,
   replaceReferenceAsset,
   replacePhenotypeVersion,
   rollbackPhenotypeVersion,
   submitPhenotypeVersionCandidate,
+  syncOutputReferencesForPhenotypeVersion,
   updateGenerationPlan,
   updateGenerationTasks,
   updatePhenotypeVersionFeedbackSummary,
@@ -732,6 +740,25 @@ function resolveOutputReferenceMount(
     }
   });
   return result;
+}
+
+const canonicalOutputReferenceRoles = OutputReferenceRoleSchema.options.join(", ");
+const canonicalOutputReferenceTypes = OutputReferenceTypeSchema.options.join(", ");
+
+function parseOutputReferenceRole(value: string) {
+  const parsed = OutputReferenceRoleSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new Error(`unknown output reference role: ${value}. Canonical roles: ${canonicalOutputReferenceRoles}.`);
+  }
+  return parsed.data;
+}
+
+function parseOutputReferenceType(value: string) {
+  const parsed = OutputReferenceTypeSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new Error(`unknown output reference type: ${value}. Canonical types: ${canonicalOutputReferenceTypes}.`);
+  }
+  return parsed.data;
 }
 
 function inferPhenotypeType(store: SqliteDnaStore, phenotypeId?: string, phenotypeVersionId?: string) {
@@ -3200,14 +3227,16 @@ outputRef
   .option("--normalized-tag <tag>", "normalized search tag", collect, [])
   .option("--metadata <key=value>", "metadata field", collect, [])
   .action((options, command) => {
+    const role = parseOutputReferenceRole(options.role);
+    const referenceType = parseOutputReferenceType(options.type);
     const store = openStore(command);
     const routingResult = options.storageMount ? undefined : resolveOutputReferenceMount(store, {
       libraryId: options.library,
       phenotypeId: options.phenotype,
       phenotypeVersionId: options.phenotypeVersion,
       phenotypeType: options.phenotypeType,
-      outputRole: options.role,
-      referenceType: options.type,
+      outputRole: role,
+      referenceType,
       tags: options.tag
     });
     const metadata = { ...(routingResult?.metadataDefaults ?? {}), ...parseKeyValue(options.metadata) };
@@ -3225,8 +3254,8 @@ outputRef
       storageMountId: options.storageMount ?? routingResult?.targetMountId,
       externalId: options.externalId,
       uri: options.uri,
-      referenceType: options.type,
-      role: options.role,
+      referenceType,
+      role,
       tags: options.tag,
       normalizedTags: options.normalizedTag,
       metadata
@@ -3239,6 +3268,64 @@ outputRef
     console.log(`added output reference ${reference.outputReferenceId}`);
     store.close();
   });
+
+function addOutputReferenceLifecycleOptions(command: Command) {
+  return command.option("--reason <text>", "lifecycle reason").option("--apply", "persist output reference lifecycle metadata").option("--format <format>", "output format: text|json");
+}
+
+const outputReferenceLifecycleCommands = [
+  { command: "accept", run: acceptOutputReference },
+  { command: "reject", run: rejectOutputReference },
+  { command: "archive", run: archiveOutputReference },
+  { command: "delete", run: deleteOutputReference },
+  { command: "mark-missing", run: markMissingOutputReference },
+  { command: "mark-stale", run: markStaleOutputReference }
+] as const;
+
+for (const lifecycleCommand of outputReferenceLifecycleCommands) {
+  addOutputReferenceLifecycleOptions(
+    outputRef.command(lifecycleCommand.command).requiredOption("--id <outputReferenceId>", "output reference id")
+  ).action((options, command) => {
+    const store = openStore(command);
+    const apply = Boolean(options.apply || shouldApply(command));
+    const result = lifecycleCommand.run(store, { outputReferenceId: options.id, reason: options.reason, apply });
+    printJsonOrText(parseOutputFormat(options.format), result, formatOutputReferenceLifecycleResult(result));
+    store.close();
+  });
+}
+
+addOutputReferenceLifecycleOptions(
+  outputRef
+    .command("replace")
+    .requiredOption("--old <outputReferenceId>", "old output reference id")
+    .requiredOption("--new <outputReferenceId>", "new output reference id")
+).action((options, command) => {
+  const store = openStore(command);
+  const apply = Boolean(options.apply || shouldApply(command));
+  const result = replaceOutputReference(store, {
+    oldOutputReferenceId: options.old,
+    newOutputReferenceId: options.new,
+    reason: options.reason,
+    apply
+  });
+  printJsonOrText(parseOutputFormat(options.format), result, formatOutputReferenceLifecycleResult(result));
+  store.close();
+});
+
+addOutputReferenceLifecycleOptions(
+  outputRef.command("sync").requiredOption("--phenotype-version <phenotypeVersionId>", "phenotype version id")
+).action((options, command) => {
+  const store = openStore(command);
+  const apply = Boolean(options.apply || shouldApply(command));
+  const result = syncOutputReferencesForPhenotypeVersion(store, {
+    phenotypeVersionId: options.phenotypeVersion,
+    reason: options.reason,
+    apply
+  });
+  printJsonOrText(parseOutputFormat(options.format), result, formatOutputReferenceLifecycleResult(result));
+  store.close();
+});
+
 outputRef
   .command("search")
   .option("--graph <graphId>", "graph id")
@@ -4034,6 +4121,28 @@ function formatLifecycleResult(result: {
   lines.push(`Generation plans: ${result.provenance.generationPlanIds.length ? result.provenance.generationPlanIds.join(", ") : "none"}`);
   if (result.warnings.length) lines.push(`Warnings: ${result.warnings.join("; ")}`);
   if (!result.persisted) lines.push("Re-run with --apply or --yes to persist lifecycle metadata.");
+  return `${lines.join("\n")}\n`;
+}
+
+function formatOutputReferenceLifecycleResult(result: {
+  action: string;
+  persisted: boolean;
+  phenotypeVersionId?: string;
+  changes: Array<{ outputReferenceId: string; from: string; to: string; role: string; graphId: string; phenotypeVersionId: string }>;
+  warnings: string[];
+}) {
+  const lines = [
+    `${result.persisted ? "Applied" : "Preview"} output reference lifecycle`,
+    `Action: ${result.action}`,
+    `Phenotype version: ${result.phenotypeVersionId ?? "mixed"}`,
+    "Status changes:"
+  ];
+  if (!result.changes.length) lines.push("- none");
+  for (const change of result.changes) {
+    lines.push(`- ${change.outputReferenceId}: ${change.from} -> ${change.to} (${change.role}, graph ${change.graphId}, version ${change.phenotypeVersionId})`);
+  }
+  if (result.warnings.length) lines.push(`Warnings: ${result.warnings.join("; ")}`);
+  if (!result.persisted) lines.push("Re-run with --apply or --yes to persist output reference lifecycle metadata.");
   return `${lines.join("\n")}\n`;
 }
 

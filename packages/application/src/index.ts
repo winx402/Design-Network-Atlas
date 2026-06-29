@@ -13,6 +13,7 @@ import {
   summarizePhenotypeUsageGuideForCompile,
   makeId,
   nowIso,
+  type OutputReference,
   sanitizePhenotypeVersionFeedback,
   sanitizePlanningJson,
   sanitizePlanningText,
@@ -60,6 +61,7 @@ import type {
   GraphRepository,
   LineageRepository,
   NodeVersionRepository,
+  OutputReferenceRepository,
   PhenotypeCompileArtifactRepository,
   PhenotypeGenerationPlanRepository,
   PhenotypeGenerationTaskRepository,
@@ -228,6 +230,12 @@ export interface PhenotypeVersionLifecycleRepositories {
   generationTasks: Pick<PhenotypeGenerationTaskRepository, "listByGraph">;
 }
 
+export interface OutputReferenceLifecycleRepositories {
+  transaction<T>(fn: () => T): T;
+  outputReferences: Pick<OutputReferenceRepository, "get" | "update" | "listByPhenotypeVersion">;
+  phenotypeVersions: Pick<PhenotypeVersionRepository, "get">;
+}
+
 export type PhenotypeVersionLifecycleStatusChange = {
   phenotypeVersionId: string;
   from: PhenotypeVersion["status"];
@@ -253,6 +261,35 @@ export type PhenotypeVersionLifecycleResult = {
     generationTaskIds: string[];
     generationPlanIds: string[];
   };
+  warnings: string[];
+};
+
+export type OutputReferenceLifecycleAction =
+  | "accept"
+  | "reject"
+  | "archive"
+  | "delete"
+  | "mark-missing"
+  | "mark-stale"
+  | "replace"
+  | "sync";
+
+export type OutputReferenceLifecycleChange = {
+  outputReferenceId: string;
+  phenotypeVersionId: string;
+  graphId: string;
+  role: OutputReference["role"];
+  from: OutputReference["status"];
+  to: OutputReference["status"];
+  metadataBefore: Record<string, unknown>;
+  metadataAfter: Record<string, unknown>;
+};
+
+export type OutputReferenceLifecycleResult = {
+  action: OutputReferenceLifecycleAction;
+  persisted: boolean;
+  phenotypeVersionId?: string;
+  changes: OutputReferenceLifecycleChange[];
   warnings: string[];
 };
 
@@ -1308,6 +1345,155 @@ export function persistPhenotypeGeneration(
   });
 }
 
+const outputReferenceLifecycleStatusByAction: Record<
+  Exclude<OutputReferenceLifecycleAction, "replace" | "sync">,
+  OutputReference["status"]
+> = {
+  accept: "active",
+  reject: "rejected",
+  archive: "archived",
+  delete: "deleted",
+  "mark-missing": "missing",
+  "mark-stale": "stale"
+};
+
+const generatedOutputReferenceRoles = new Set<OutputReference["role"]>([
+  "primary-output",
+  "candidate",
+  "preview",
+  "runtime-export"
+]);
+
+export function acceptOutputReference(
+  store: OutputReferenceLifecycleRepositories,
+  options: { outputReferenceId: string; reason?: string; apply?: boolean }
+) {
+  return updateOutputReferenceLifecycle(store, { ...options, action: "accept" });
+}
+
+export function rejectOutputReference(
+  store: OutputReferenceLifecycleRepositories,
+  options: { outputReferenceId: string; reason?: string; apply?: boolean }
+) {
+  return updateOutputReferenceLifecycle(store, { ...options, action: "reject" });
+}
+
+export function archiveOutputReference(
+  store: OutputReferenceLifecycleRepositories,
+  options: { outputReferenceId: string; reason?: string; apply?: boolean }
+) {
+  return updateOutputReferenceLifecycle(store, { ...options, action: "archive" });
+}
+
+export function deleteOutputReference(
+  store: OutputReferenceLifecycleRepositories,
+  options: { outputReferenceId: string; reason?: string; apply?: boolean }
+) {
+  return updateOutputReferenceLifecycle(store, { ...options, action: "delete" });
+}
+
+export function markMissingOutputReference(
+  store: OutputReferenceLifecycleRepositories,
+  options: { outputReferenceId: string; reason?: string; apply?: boolean }
+) {
+  return updateOutputReferenceLifecycle(store, { ...options, action: "mark-missing" });
+}
+
+export function markStaleOutputReference(
+  store: OutputReferenceLifecycleRepositories,
+  options: { outputReferenceId: string; reason?: string; apply?: boolean }
+) {
+  return updateOutputReferenceLifecycle(store, { ...options, action: "mark-stale" });
+}
+
+export function updateOutputReferenceLifecycle(
+  store: OutputReferenceLifecycleRepositories,
+  options: {
+    action: Exclude<OutputReferenceLifecycleAction, "replace" | "sync">;
+    outputReferenceId: string;
+    reason?: string;
+    apply?: boolean;
+  }
+): OutputReferenceLifecycleResult {
+  const reference = requireOutputReference(store, options.outputReferenceId);
+  const next = withOutputReferenceLifecycle(reference, {
+    action: options.action,
+    to: outputReferenceLifecycleStatusByAction[options.action],
+    reason: options.reason
+  });
+  return maybeApplyOutputReferenceChanges(store, {
+    action: options.action,
+    persisted: Boolean(options.apply),
+    changes: [toOutputReferenceLifecycleChange(reference, next)]
+  });
+}
+
+export function replaceOutputReference(
+  store: OutputReferenceLifecycleRepositories,
+  options: { oldOutputReferenceId: string; newOutputReferenceId: string; reason?: string; apply?: boolean }
+): OutputReferenceLifecycleResult {
+  const oldReference = requireOutputReference(store, options.oldOutputReferenceId);
+  const newReference = requireOutputReference(store, options.newOutputReferenceId);
+  if (oldReference.outputReferenceId === newReference.outputReferenceId) throw new Error("replace output references must be different ids");
+  if (oldReference.phenotypeVersionId !== newReference.phenotypeVersionId) {
+    throw new Error("replace output references must belong to the same phenotype version");
+  }
+  if (oldReference.graphId !== newReference.graphId) {
+    throw new Error("replace output references must belong to the same graph");
+  }
+  if (oldReference.phenotypeId && newReference.phenotypeId && oldReference.phenotypeId !== newReference.phenotypeId) {
+    throw new Error("replace output references must belong to the same phenotype when phenotype ids are present");
+  }
+  const oldNext = withOutputReferenceLifecycle(oldReference, {
+    action: "replace",
+    to: "archived",
+    reason: options.reason,
+    links: { replacedBy: newReference.outputReferenceId }
+  });
+  const newNext = withOutputReferenceLifecycle(newReference, {
+    action: "replace",
+    to: "active",
+    reason: options.reason,
+    links: { replaces: oldReference.outputReferenceId }
+  });
+  return maybeApplyOutputReferenceChanges(store, {
+    action: "replace",
+    persisted: Boolean(options.apply),
+    phenotypeVersionId: oldReference.phenotypeVersionId,
+    changes: [toOutputReferenceLifecycleChange(oldReference, oldNext), toOutputReferenceLifecycleChange(newReference, newNext)]
+  });
+}
+
+export function syncOutputReferencesForPhenotypeVersion(
+  store: OutputReferenceLifecycleRepositories,
+  options: { phenotypeVersionId: string; reason?: string; apply?: boolean }
+): OutputReferenceLifecycleResult {
+  const version = store.phenotypeVersions.get(options.phenotypeVersionId);
+  if (!version) throw new Error(`phenotype version not found: ${options.phenotypeVersionId}`);
+  const references = store.outputReferences.listByPhenotypeVersion(options.phenotypeVersionId);
+  const nextReferences: OutputReference[] = [];
+  for (const reference of references) {
+    if (!generatedOutputReferenceRoles.has(reference.role)) continue;
+    if (reference.status === "rejected" || reference.status === "archived" || reference.status === "deleted") continue;
+    const syncedStatus = syncedOutputReferenceStatus(version.status, reference.status);
+    if (!syncedStatus || syncedStatus === reference.status) continue;
+    nextReferences.push(
+      withOutputReferenceLifecycle(reference, {
+        action: "sync",
+        to: syncedStatus,
+        reason: options.reason ?? `sync from phenotype version status ${version.status}`
+      })
+    );
+  }
+  const currentById = new Map(references.map((reference) => [reference.outputReferenceId, reference]));
+  return maybeApplyOutputReferenceChanges(store, {
+    action: "sync",
+    persisted: Boolean(options.apply),
+    phenotypeVersionId: options.phenotypeVersionId,
+    changes: nextReferences.map((nextReference) => toOutputReferenceLifecycleChange(currentById.get(nextReference.outputReferenceId)!, nextReference))
+  });
+}
+
 export function submitPhenotypeVersionCandidate(
   store: PhenotypeVersionLifecycleRepositories,
   options: { phenotypeVersionId: string; feedback?: string; apply?: boolean }
@@ -1629,6 +1815,114 @@ function buildAndMaybeApplyLifecycleResult(
     }
   });
   return result;
+}
+
+function requireOutputReference(store: Pick<OutputReferenceLifecycleRepositories, "outputReferences">, outputReferenceId: string) {
+  const reference = store.outputReferences.get(outputReferenceId);
+  if (!reference) throw new Error(`output reference not found: ${outputReferenceId}`);
+  return reference;
+}
+
+function withOutputReferenceLifecycle(
+  reference: OutputReference,
+  input: {
+    action: OutputReferenceLifecycleAction;
+    to: OutputReference["status"];
+    reason?: string;
+    links?: Record<string, string>;
+  }
+): OutputReference {
+  const timestamp = nowIso();
+  const sanitizedReason = sanitizePlanningText(input.reason);
+  const lifecycle = sanitizePlanningJson({
+    ...recordFromUnknown(reference.metadata.lifecycle),
+    action: input.action,
+    statusFrom: reference.status,
+    statusTo: input.to,
+    updatedAt: timestamp,
+    source: "cli",
+    ...(sanitizedReason ? { reason: sanitizedReason } : {}),
+    ...(input.links ?? {})
+  });
+  return {
+    ...reference,
+    status: input.to,
+    metadata: sanitizePlanningJson({
+      ...reference.metadata,
+      lifecycle
+    }),
+    updatedAt: timestamp
+  };
+}
+
+function toOutputReferenceLifecycleChange(before: OutputReference, after: OutputReference): OutputReferenceLifecycleChange {
+  return {
+    outputReferenceId: before.outputReferenceId,
+    phenotypeVersionId: before.phenotypeVersionId,
+    graphId: before.graphId,
+    role: before.role,
+    from: before.status,
+    to: after.status,
+    metadataBefore: before.metadata,
+    metadataAfter: after.metadata
+  };
+}
+
+function maybeApplyOutputReferenceChanges(
+  store: OutputReferenceLifecycleRepositories,
+  input: {
+    action: OutputReferenceLifecycleAction;
+    persisted: boolean;
+    phenotypeVersionId?: string;
+    changes: OutputReferenceLifecycleChange[];
+  }
+): OutputReferenceLifecycleResult {
+  const result: OutputReferenceLifecycleResult = {
+    action: input.action,
+    persisted: input.persisted,
+    phenotypeVersionId: input.phenotypeVersionId,
+    changes: input.changes,
+    warnings: []
+  };
+  if (!input.persisted || input.changes.length === 0) return result;
+  store.transaction(() => {
+    for (const change of input.changes) {
+      const current = requireOutputReference(store, change.outputReferenceId);
+      store.outputReferences.update({
+        ...current,
+        status: change.to,
+        metadata: change.metadataAfter,
+        updatedAt: nowIso()
+      });
+    }
+  });
+  return result;
+}
+
+function syncedOutputReferenceStatus(
+  phenotypeVersionStatus: PhenotypeVersion["status"],
+  outputReferenceStatus: OutputReference["status"]
+): OutputReference["status"] | undefined {
+  if (phenotypeVersionStatus === "accepted") {
+    if (outputReferenceStatus === "pending" || outputReferenceStatus === "stale") return "active";
+    return undefined;
+  }
+  if (phenotypeVersionStatus === "rejected" || phenotypeVersionStatus === "deleted") {
+    if (outputReferenceStatus === "pending" || outputReferenceStatus === "active" || outputReferenceStatus === "stale" || outputReferenceStatus === "missing") {
+      return "rejected";
+    }
+    return undefined;
+  }
+  if (phenotypeVersionStatus === "replaced" || phenotypeVersionStatus === "rolled-back" || phenotypeVersionStatus === "deprecated") {
+    if (outputReferenceStatus === "pending" || outputReferenceStatus === "active" || outputReferenceStatus === "stale" || outputReferenceStatus === "missing") {
+      return "archived";
+    }
+  }
+  return undefined;
+}
+
+function recordFromUnknown(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
 function normalizeFeedback(feedback: PhenotypeVersionFeedback | undefined): PhenotypeVersionFeedback {
