@@ -206,11 +206,14 @@ export interface WorkbenchResultPreview {
   objectType: "output-reference" | "asset";
   objectId: string;
   graphId?: string;
+  nodeId?: string;
+  nodeName?: string;
   phenotypeId?: string;
   phenotypeName?: string;
   phenotypeVersionId?: string;
   libraryId?: string;
   storageMountId?: string;
+  storageType?: string;
   label: string;
   status: string;
   tags: string[];
@@ -788,11 +791,14 @@ export const sampleWorkbenchSnapshot: WorkbenchSnapshot = {
           objectType: "output-reference",
           objectId: "oref-warning-preview",
           graphId: "graph-explorer",
+          nodeId: "node-warning",
+          nodeName: "Warning Icon",
           phenotypeId: "ph-warning-icon",
           phenotypeName: "Warning Toolbar Icon",
           phenotypeVersionId: "pv-warning-2",
           libraryId: "library-explorer",
           storageMountId: "mount-preview",
+          storageType: "url",
           label: "preview url",
           status: "active",
           tags: ["preview"],
@@ -802,9 +808,12 @@ export const sampleWorkbenchSnapshot: WorkbenchSnapshot = {
           objectType: "asset",
           objectId: "asset-warning-source",
           graphId: "graph-explorer",
+          nodeId: "node-warning",
+          nodeName: "Warning Icon",
           phenotypeId: "ph-warning-icon",
           phenotypeName: "Warning Toolbar Icon",
           phenotypeVersionId: "pv-warning-2",
+          storageType: "git",
           label: "Source file",
           status: "pending",
           tags: ["source"],
@@ -820,11 +829,14 @@ export const sampleWorkbenchSnapshot: WorkbenchSnapshot = {
       objectType: "output-reference",
       objectId: "oref-warning-preview",
       graphId: "graph-explorer",
+      nodeId: "node-warning",
+      nodeName: "Warning Icon",
       phenotypeId: "ph-warning-icon",
       phenotypeName: "Warning Toolbar Icon",
       phenotypeVersionId: "pv-warning-2",
       libraryId: "library-explorer",
       storageMountId: "mount-preview",
+      storageType: "url",
       label: "preview url",
       status: "active",
       tags: ["preview"],
@@ -834,9 +846,12 @@ export const sampleWorkbenchSnapshot: WorkbenchSnapshot = {
       objectType: "asset",
       objectId: "asset-warning-source",
       graphId: "graph-explorer",
+      nodeId: "node-warning",
+      nodeName: "Warning Icon",
       phenotypeId: "ph-warning-icon",
       phenotypeName: "Warning Toolbar Icon",
       phenotypeVersionId: "pv-warning-2",
+      storageType: "git",
       label: "Source file",
       status: "pending",
       tags: ["source"],

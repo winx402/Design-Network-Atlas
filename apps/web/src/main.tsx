@@ -41,13 +41,14 @@ export function ReadonlyWorkbench(props: { initialState?: WorkbenchAppLoadState;
   const [statusFilter, setStatusFilter] = useState("all");
   const [compactFilters, setCompactFilters] = useState(false);
   const [selectedGraphId, setSelectedGraphId] = useState(() => firstGraphId(props.initialState?.snapshot ?? emptyState.snapshot));
+  const [inspectorExpanded, setInspectorExpanded] = useState(false);
   const [inspectorDetail, setInspectorDetail] = useState<InspectorDetail>(() =>
     inspectorFromSnapshot(props.initialState?.snapshot ?? emptyState.snapshot)
   );
   const snapshot = loadState.snapshot;
   const counts = snapshot.overview.counts;
   const isEmpty = loadState.status === "ready" && (counts.graphs ?? 0) === 0 && (counts.phenotypes ?? 0) === 0 && (counts.libraries ?? 0) === 0;
-  const filteredSnapshot = useMemo(() => filterSnapshot(snapshot, query, statusFilter), [query, snapshot, statusFilter]);
+  const filteredSnapshot = useMemo(() => filterSnapshot(snapshot, query, statusFilter, selectedGraphId), [query, selectedGraphId, snapshot, statusFilter]);
   const selectedGraph = filteredSnapshot.graphs.find((graph) => graph.graphId === selectedGraphId) ?? filteredSnapshot.graphs[0];
 
   useEffect(() => {
@@ -81,11 +82,13 @@ export function ReadonlyWorkbench(props: { initialState?: WorkbenchAppLoadState;
   function selectGraph(graph: WorkbenchGraphDetail) {
     setSelectedGraphId(graph.graphId);
     setInspectorDetail(inspectGraph(graph, snapshot));
+    setInspectorExpanded(false);
     setActiveModule("graph");
   }
 
   function selectDetail(detail: InspectorDetail) {
     setInspectorDetail(detail);
+    setInspectorExpanded(true);
   }
 
   function selectGraphScope(graphId: string) {
@@ -93,6 +96,12 @@ export function ReadonlyWorkbench(props: { initialState?: WorkbenchAppLoadState;
     if (!graph) return;
     setSelectedGraphId(graph.graphId);
     setInspectorDetail(inspectGraph(graph, snapshot));
+    setInspectorExpanded(false);
+  }
+
+  function changeModule(module: ModuleId) {
+    setActiveModule(module);
+    setInspectorExpanded(false);
   }
 
   return (
@@ -103,7 +112,7 @@ export function ReadonlyWorkbench(props: { initialState?: WorkbenchAppLoadState;
           <h1>DNA Read-only Explorer</h1>
           <p className="read-only-note">Map-first local view of design graphs, generation traces, and phenotype results.</p>
         </div>
-        <ModuleNav activeModule={activeModule} onChange={setActiveModule} variant="desktop" />
+        <ModuleNav activeModule={activeModule} onChange={changeModule} variant="desktop" />
         <div className="side-note">
           <StatusChip status="read-only" />
           <span>No Web write actions. Durable writes stay behind CLI/service boundaries.</span>
@@ -120,9 +129,9 @@ export function ReadonlyWorkbench(props: { initialState?: WorkbenchAppLoadState;
           <details className="filter-sheet" aria-label="Read-only filters" open={!compactFilters}>
             <summary className="filter-summary">Filters</summary>
             <div className="filter-fields">
-              <label>
+              <label htmlFor="graph-scope-select">
                 <span>Graph scope</span>
-                <select value={selectedGraph?.graphId ?? ""} onChange={(event) => selectGraphScope(event.target.value)}>
+                <select id="graph-scope-select" aria-label="Graph scope" value={selectedGraph?.graphId ?? ""} onChange={(event) => selectGraphScope(event.target.value)}>
                   {snapshot.graphs.length ? (
                     snapshot.graphs.map((graph) => (
                       <option key={graph.graphId} value={graph.graphId}>
@@ -134,13 +143,19 @@ export function ReadonlyWorkbench(props: { initialState?: WorkbenchAppLoadState;
                   )}
                 </select>
               </label>
-              <label>
+              <label htmlFor="object-search-input">
                 <span>Search objects</span>
-                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="graph, group, species, task, result, asset" />
+                <input
+                  id="object-search-input"
+                  aria-label="Search objects"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="graph, group, species, task, result, asset"
+                />
               </label>
-              <label>
+              <label htmlFor="status-filter-select">
                 <span>Status</span>
-                <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+                <select id="status-filter-select" aria-label="Status" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
                   <option value="all">All statuses</option>
                   <option value="active">active</option>
                   <option value="candidate">candidate</option>
@@ -196,7 +211,7 @@ export function ReadonlyWorkbench(props: { initialState?: WorkbenchAppLoadState;
               <PhenotypeLibraryView snapshot={filteredSnapshot} onSelect={selectDetail} />
             </section>
           </section>
-          <Inspector detail={inspectorDetail} />
+          <Inspector detail={inspectorDetail} expanded={inspectorExpanded} onToggle={() => setInspectorExpanded((value) => !value)} />
         </section>
 
         <footer className="status-bar" aria-label="Explorer status">
@@ -208,18 +223,22 @@ export function ReadonlyWorkbench(props: { initialState?: WorkbenchAppLoadState;
         </footer>
       </section>
 
-      <ModuleNav activeModule={activeModule} onChange={setActiveModule} variant="mobile" />
+      <ModuleNav activeModule={activeModule} onChange={changeModule} variant="mobile" />
     </main>
   );
 }
 
 function ModuleNav(props: { activeModule: ModuleId; onChange: (module: ModuleId) => void; variant: "desktop" | "mobile" }) {
   return (
-    <nav className={props.variant === "desktop" ? "desktop-module-nav" : "mobile-bottom-nav"} aria-label="Explorer modules">
+    <nav
+      className={props.variant === "desktop" ? "desktop-module-nav" : "mobile-bottom-nav"}
+      aria-label={props.variant === "desktop" ? "Desktop Explorer modules" : "Mobile Explorer modules"}
+    >
       {moduleLabels.map((module) => (
         <button
           key={module.id}
           className={props.activeModule === module.id ? "is-active" : ""}
+          aria-current={props.activeModule === module.id ? "page" : undefined}
           onClick={() => props.onChange(module.id)}
           type="button"
         >
@@ -238,6 +257,21 @@ function AtlasMapView(props: {
 }) {
   const relationships = getGraphLevelRelationships(props.snapshot);
   const [highlightedGraphId, setHighlightedGraphId] = useState<string | undefined>();
+  const [selectedRelationshipId, setSelectedRelationshipId] = useState<string | undefined>();
+  const positions = props.snapshot.graphs.map((graph, index) => ({
+    graph,
+    position: graphMapPosition(index, props.snapshot.graphs.length)
+  }));
+  const positionByGraphId = new Map(positions.map((item) => [item.graph.graphId, item.position]));
+  const relationshipRoutes = relationships.map((relationship, index) => {
+    const source = relationship.source?.graphId ? positionByGraphId.get(relationship.source.graphId) : undefined;
+    const target = relationship.target?.graphId ? positionByGraphId.get(relationship.target.graphId) : undefined;
+    return {
+      relationship,
+      source: source ?? graphMapPosition(index, Math.max(relationships.length, 1)),
+      target: target ?? graphMapPosition(index + 1, Math.max(relationships.length + 1, 2))
+    };
+  });
   const highlightedRelationships = highlightedGraphId
     ? relationships.filter((relationship) => relationship.source?.graphId === highlightedGraphId || relationship.target?.graphId === highlightedGraphId)
     : relationships;
@@ -261,26 +295,58 @@ function AtlasMapView(props: {
       <section className="graph-relationship-map" aria-label="Graph relationship map">
         {relationships.length ? (
           <svg className="map-lines" aria-hidden="true" viewBox="0 0 100 100" preserveAspectRatio="none">
-            {relationships.map((relationship, index) => (
+            <defs>
+              <marker id="map-arrow" markerHeight="6" markerWidth="6" orient="auto" refX="5" refY="3">
+                <path d="M0,0 L6,3 L0,6 Z" />
+              </marker>
+            </defs>
+            {relationshipRoutes.map(({ relationship, source, target }) => (
               <g key={relationship.relationshipId}>
                 <line
-                  className={`map-line ${isRelationshipHighlighted(relationship) ? "is-highlighted" : "is-dimmed"}`}
-                  x1={index % 2 === 0 ? 14 : 20}
-                  y1={24 + index * 14}
-                  x2={index % 2 === 0 ? 82 : 72}
-                  y2={62 - index * 10}
+                  className={`map-line ${selectedRelationshipId === relationship.relationshipId ? "is-selected" : ""} ${
+                    isRelationshipHighlighted(relationship) ? "is-highlighted" : "is-dimmed"
+                  }`}
+                  x1={source.x}
+                  y1={source.y}
+                  x2={target.x}
+                  y2={target.y}
                 />
-                <text x="48" y={42 + index * 4}>
-                  {relationship.relationshipType}
-                </text>
               </g>
             ))}
           </svg>
         ) : (
           <div className="map-empty-line">No graph-level relationships yet</div>
         )}
-        <div className="map-node-grid">
-          {props.snapshot.graphs.map((graph, index) => (
+        <div className="map-route-layer" aria-label="Clickable graph relationships">
+          {relationshipRoutes.map(({ relationship, source, target }) => {
+            const midpoint = routeMidpoint(source, target);
+            return (
+              <button
+                key={relationship.relationshipId}
+                className={`atlas-route-button ${selectedRelationshipId === relationship.relationshipId ? "is-selected" : ""} ${
+                  isRelationshipHighlighted(relationship) ? "is-highlighted" : "is-dimmed"
+                }`}
+                onClick={() => {
+                  setSelectedRelationshipId(relationship.relationshipId);
+                  props.onSelect(inspectRelationship(relationship));
+                }}
+                onFocus={() => {
+                  setHighlightedGraphId(relationship.source?.graphId ?? relationship.target?.graphId);
+                  setSelectedRelationshipId(relationship.relationshipId);
+                }}
+                style={{ left: `${midpoint.x}%`, top: `${midpoint.y}%` }}
+                type="button"
+              >
+                <strong>{relationship.relationshipType}</strong>
+                <span>
+                  {relationship.source?.graphId ?? "source"} {"->"} {relationship.target?.graphId ?? "target"}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <div className="map-node-layer">
+          {positions.map(({ graph, position }, index) => (
             <button
               key={graph.graphId}
               className={`graph-map-node node-${index % 6} ${highlightedGraphId === graph.graphId ? "is-highlighted" : ""} ${
@@ -294,6 +360,7 @@ function AtlasMapView(props: {
               }}
               onMouseEnter={() => setHighlightedGraphId(graph.graphId)}
               onMouseLeave={() => setHighlightedGraphId(undefined)}
+              style={{ left: `${position.x}%`, top: `${position.y}%` }}
               type="button"
             >
               <span className="node-type">Graph</span>
@@ -312,41 +379,10 @@ function AtlasMapView(props: {
           ))}
         </div>
       </section>
-      <section className="map-lower-grid">
-        <article className="panel legend-panel">
-          <div className="panel-title">
-            <h3>Legend</h3>
-            <span>{relationships.length} graph-level relationships</span>
-          </div>
-          <p>
-            Solid lines represent active DesignRelationship contracts. Labels show relationship type; Inspector shows endpoints,
-            must-preserve, must-avoid, and review questions.
-          </p>
-        </article>
-        <article className="panel relationship-route-list">
-          <div className="panel-title">
-            <h3>Graph relationship routes</h3>
-            <span>{relationships.length}</span>
-          </div>
-          {relationships.length ? (
-            relationships.map((relationship) => (
-              <button
-                key={relationship.relationshipId}
-                className={`relationship-route ${isRelationshipHighlighted(relationship) ? "is-highlighted" : "is-dimmed"}`}
-                onClick={() => props.onSelect(inspectRelationship(relationship))}
-                type="button"
-              >
-                <strong>
-                  {relationship.source?.graphId ?? "source"} {" -> "} {relationship.target?.graphId ?? "target"}
-                </strong>
-                <span>{relationship.relationshipType}</span>
-                <small>{relationship.summary}</small>
-              </button>
-            ))
-          ) : (
-            <p className="muted">Graph boards remain clickable; internal graph structure is still available.</p>
-          )}
-        </article>
+      <section className="map-legend-strip" aria-label="Atlas map legend">
+        <span>{relationships.length} graph-level relationships</span>
+        <span>Click a graph to drill into Graph Explorer.</span>
+        <span>Click a route label to inspect endpoints and design-language contract.</span>
       </section>
     </div>
   );
@@ -407,6 +443,10 @@ function GraphExplorerView(props: {
                 <SpeciesCard key={node.nodeId} graph={graph} node={node} onSelect={props.onSelect} />
               ))}
             </div>
+            <div className="lane-review-strip" aria-label={`${group.name} relationship and phenotype summary`}>
+              <span>{(group.relationshipIds ?? []).length || "No"} bound relationships</span>
+              <span>{phenotypeStatusCounts(graph.phenotypeOverlay.filter((phenotype) => (group.phenotypeIds ?? []).includes(phenotype.phenotypeId))).join(" · ")}</span>
+            </div>
           </article>
         ))}
         {ungrouped.length ? (
@@ -423,6 +463,29 @@ function GraphExplorerView(props: {
             </div>
           </article>
         ) : null}
+      </section>
+      <section className="relationship-matrix" aria-label="Graph relationship matrix">
+        <div className="panel-title">
+          <h3>Relationship Overlay</h3>
+          <span>{graph.relationships.length}</span>
+        </div>
+        {graph.relationships.length ? (
+          graph.relationships.map((relationship) => (
+            <button
+              key={relationship.relationshipId}
+              className="relationship-matrix-row"
+              onClick={() => props.onSelect(inspectRelationship(relationship))}
+              type="button"
+            >
+              <span>{endpointLabel(relationship.source)}</span>
+              <strong>{relationship.relationshipType}</strong>
+              <span>{endpointLabel(relationship.target)}</span>
+              <small>{relationship.summary}</small>
+            </button>
+          ))
+        ) : (
+          <p className="muted">No internal DesignRelationship records in this graph.</p>
+        )}
       </section>
       <section className="graph-support-grid">
         <ObjectPanel
@@ -456,7 +519,7 @@ function GraphExplorerView(props: {
           items={graph.phenotypeOverlay.map((phenotype) => ({
             id: phenotype.phenotypeId,
             title: phenotype.name,
-            detail: `${phenotype.phenotypeType} · ${phenotype.versions.length} versions`,
+            detail: `${phenotype.phenotypeType} · ${phenotypeOverlaySummary(phenotype)}`,
             status: phenotype.currentAcceptedVersionId ? "accepted" : phenotype.status,
             raw: phenotype,
             inspect: inspectPhenotypeOverlay(phenotype, props.snapshot)
@@ -488,6 +551,7 @@ function SpeciesCard(props: {
   const phenotypes = props.graph.phenotypeOverlay.filter((phenotype) => phenotype.nodeId === props.node.nodeId);
   const candidateCount = phenotypes.reduce((count, phenotype) => count + phenotype.versions.filter((version) => version.status === "candidate").length, 0);
   const acceptedCount = phenotypes.filter((phenotype) => Boolean(phenotype.currentAcceptedVersionId)).length;
+  const missingCount = phenotypes.length ? 0 : 1;
   return (
     <button className="species-card" onClick={() => props.onSelect(inspectSpecies(props.node, props.graph))} type="button">
       <span className="node-type">SpeciesNode</span>
@@ -500,15 +564,22 @@ function SpeciesCard(props: {
       </div>
       <div className="phenotype-badges">
         <span>{phenotypes.length ? `${phenotypes.length} planned` : "missing phenotype"}</span>
-        <span>{acceptedCount} accepted</span>
-        <span>{candidateCount} candidate</span>
+        {acceptedCount ? <span>{acceptedCount} accepted</span> : null}
+        {candidateCount ? <span>{candidateCount} candidate</span> : null}
+        {missingCount ? <span>{missingCount} missing</span> : null}
       </div>
     </button>
   );
 }
 
 function GenerationBoardView(props: { snapshot: WorkbenchSnapshot; onSelect: (detail: InspectorDetail) => void }) {
-  const results = props.snapshot.libraries.flatMap((library) => library.results);
+  const planRows = buildGenerationRows(props.snapshot);
+  const totals = {
+    plans: props.snapshot.generation.plans.length,
+    tasks: props.snapshot.generation.tasks.length,
+    jobs: props.snapshot.generation.jobs.length,
+    results: props.snapshot.libraries.reduce((count, library) => count + library.results.length, 0)
+  };
   return (
     <div className="module-content generation-board">
       <SectionHeader title="Generation Board" subtitle="Read-only production board for plans, tasks, jobs, compile artifacts, versions, and results." />
@@ -520,59 +591,85 @@ function GenerationBoardView(props: { snapshot: WorkbenchSnapshot; onSelect: (de
         <span>Tool preference</span>
       </div>
       <section className="trace-path-banner">{traceLegend}</section>
-      <div className="board-columns">
-        <GenerationColumn
-          title="Plans"
-          items={props.snapshot.generation.plans.map((plan) => ({
-            key: plan.planId,
-            node: <PlanCard plan={plan} onSelect={props.onSelect} />
-          }))}
-        />
-        <GenerationColumn
-          title="Tasks"
-          items={props.snapshot.generation.tasks.map((task) => ({
-            key: task.taskId,
-            node: <TaskCard task={task} onSelect={props.onSelect} />
-          }))}
-        />
-        <GenerationColumn
-          title="Generation jobs"
-          items={props.snapshot.generation.jobs.map((job) => ({
-            key: job.generationJobId,
-            node: <JobCard job={job} onSelect={props.onSelect} />
-          }))}
-        />
-        <GenerationColumn
-          title="Versions / Results"
-          items={results.map((result) => ({
-            key: result.versionId,
-            node: (
-              <button
-                className="board-card"
-                onClick={() => props.onSelect(inspectLibraryResult(result))}
-                type="button"
-              >
-                <strong>{result.phenotypeName}</strong>
-                <span>{result.phenotypeType}</span>
-                <StatusChip status={result.versionStatus} />
-                <small>{result.referenceCount} output references · {result.assetCount} assets</small>
-              </button>
-            )
-          }))}
-        />
+      <div className="board-summary-row" aria-label="Generation board summary">
+        <StatusPill label="Plans" value={totals.plans} />
+        <StatusPill label="Tasks" value={totals.tasks} />
+        <StatusPill label="Jobs" value={totals.jobs} />
+        <StatusPill label="Results" value={totals.results} />
       </div>
+      <section className="board-plan-stack" aria-label="Plan to result trace rows">
+        {planRows.length ? (
+          planRows.map((row) => <GenerationPlanRow key={row.id} row={row} onSelect={props.onSelect} />)
+        ) : (
+          <EmptyPanel title="No generation plans, tasks, jobs, or results in this scope" />
+        )}
+      </section>
     </div>
   );
 }
 
-function GenerationColumn(props: { title: string; items: Array<{ key: string; node: React.ReactNode }> }) {
+interface GenerationRow {
+  id: string;
+  plan?: WorkbenchGenerationPlan;
+  title: string;
+  scope: string;
+  status: string;
+  tasks: WorkbenchGenerationTask[];
+  jobs: WorkbenchGenerationJob[];
+  results: WorkbenchLibrarySummary["results"];
+}
+
+function GenerationPlanRow(props: { row: GenerationRow; onSelect: (detail: InspectorDetail) => void }) {
+  const blockedTasks = props.row.tasks.filter((task) => task.status === "blocked").length;
+  const failedJobs = props.row.jobs.filter((job) => job.status === "failed").length;
   return (
-    <section className="board-column">
+    <article className="plan-trace-row">
+      <div className="panel-title">
+        <button className="plan-row-title" onClick={() => (props.row.plan ? props.onSelect(inspectPlan(props.row.plan)) : undefined)} type="button">
+          <span className="node-type">{props.row.plan ? "GenerationPlan" : "Standalone generation"}</span>
+          <strong>{props.row.title}</strong>
+          <small>{props.row.scope}</small>
+        </button>
+        <div className="row-status-cluster">
+          <StatusChip status={props.row.status} />
+          {blockedTasks ? <StatusChip status="blocked" /> : null}
+          {failedJobs ? <StatusChip status="failed" /> : null}
+        </div>
+      </div>
+      <div className="board-trace-grid">
+        <TraceLane title="Tasks" count={props.row.tasks.length}>
+          {props.row.tasks.map((task) => (
+            <TaskCard key={task.taskId} task={task} onSelect={props.onSelect} compact />
+          ))}
+        </TraceLane>
+        <TraceLane title="Jobs / Executions" count={props.row.jobs.length}>
+          {props.row.jobs.map((job) => (
+            <JobCard key={job.generationJobId} job={job} onSelect={props.onSelect} />
+          ))}
+        </TraceLane>
+        <TraceLane title="Versions / Results" count={props.row.results.length}>
+          {props.row.results.map((result) => (
+            <button className="board-card result-card" key={result.versionId} onClick={() => props.onSelect(inspectLibraryResult(result))} type="button">
+              <strong>{result.phenotypeName}</strong>
+              <span>{result.phenotypeType}</span>
+              <StatusChip status={result.versionStatus} />
+              <small>{result.referenceCount} output references · {result.assetCount} assets</small>
+            </button>
+          ))}
+        </TraceLane>
+      </div>
+    </article>
+  );
+}
+
+function TraceLane(props: { title: string; count: number; children: React.ReactNode }) {
+  return (
+    <section className="trace-lane">
       <div className="panel-title">
         <h3>{props.title}</h3>
-        <span>{props.items.length}</span>
+        <span>{props.count}</span>
       </div>
-      {props.items.length ? props.items.map((item) => <React.Fragment key={item.key}>{item.node}</React.Fragment>) : <p className="muted">No records in this lane.</p>}
+      {props.count ? props.children : <p className="muted">None</p>}
     </section>
   );
 }
@@ -588,9 +685,9 @@ function PlanCard(props: { plan: WorkbenchGenerationPlan; onSelect: (detail: Ins
   );
 }
 
-function TaskCard(props: { task: WorkbenchGenerationTask; onSelect: (detail: InspectorDetail) => void }) {
+function TaskCard(props: { task: WorkbenchGenerationTask; onSelect: (detail: InspectorDetail) => void; compact?: boolean }) {
   return (
-    <button className="board-card task-card" onClick={() => props.onSelect(inspectTask(props.task))} type="button">
+    <button className={`board-card task-card ${props.compact ? "is-compact" : ""}`} onClick={() => props.onSelect(inspectTask(props.task))} type="button">
       <strong>{props.task.taskBrief || props.task.taskId}</strong>
       <span>{props.task.phenotypeType} · {props.task.planId ? `from ${props.task.planId}` : "standalone task"}</span>
       <StatusChip status={props.task.status} />
@@ -611,8 +708,7 @@ function JobCard(props: { job: WorkbenchGenerationJob; onSelect: (detail: Inspec
 }
 
 function PhenotypeLibraryView(props: { snapshot: WorkbenchSnapshot; onSelect: (detail: InspectorDetail) => void }) {
-  const gallery = props.snapshot.libraries.flatMap((library) => library.gallery);
-  const previews = gallery.length ? gallery : props.snapshot.resultPreviews;
+  const previews = collectGalleryPreviews(props.snapshot);
   return (
     <div className="module-content library-view">
       <SectionHeader title="Phenotype Library" subtitle="Gallery-first read-only view of phenotype results, output references, asset pointers, and trace links." />
@@ -651,6 +747,32 @@ function GalleryCard(props: { preview: WorkbenchResultPreview; onSelect: (detail
         <StatusChip status={props.preview.status} />
         <span>{props.preview.objectType}</span>
       </div>
+      <dl className="gallery-trace">
+        <div>
+          <dt>Graph</dt>
+          <dd>{props.preview.graphId ?? "Not linked"}</dd>
+        </div>
+        <div>
+          <dt>Species</dt>
+          <dd>{props.preview.nodeName ?? props.preview.nodeId ?? "Not linked"}</dd>
+        </div>
+        <div>
+          <dt>Phenotype</dt>
+          <dd>{props.preview.phenotypeId ?? "Not linked"}</dd>
+        </div>
+        <div>
+          <dt>Pointer</dt>
+          <dd>{props.preview.objectId}</dd>
+        </div>
+        <div>
+          <dt>Storage</dt>
+          <dd>{props.preview.storageType ?? props.preview.storageMountId ?? "Not linked"}</dd>
+        </div>
+        <div>
+          <dt>Reason</dt>
+          <dd>{props.preview.preview.kind === "image" ? "preview available" : props.preview.preview.reason ?? "Preview unavailable"}</dd>
+        </div>
+      </dl>
     </button>
   );
 }
@@ -702,23 +824,27 @@ function PreviewFrame(props: { preview: WorkbenchPreview; title?: string }) {
   );
 }
 
-function Inspector(props: { detail: InspectorDetail }) {
+function Inspector(props: { detail: InspectorDetail; expanded: boolean; onToggle: () => void }) {
   const detail = props.detail;
   return (
-    <aside className="inspector detail-drawer" aria-label="Inspector">
+    <aside className={`inspector detail-drawer ${props.expanded ? "is-expanded" : "is-collapsed"}`} aria-label="Inspector">
+      <button className="drawer-handle" onClick={props.onToggle} type="button" aria-expanded={props.expanded} aria-label="Toggle Inspector details">
+        <span>{detail.type}</span>
+        <strong>{detail.id}</strong>
+      </button>
       <div className="panel-title">
         <h2>Inspector</h2>
         <StatusChip status={detail.status ?? "read-only"} />
       </div>
       <TraceSection title="Identity" values={[detail.type, detail.id]} />
-      <TraceSection title="Summary" values={detail.summary ?? ["Select a graph, relationship, group, species, task, job, version, or asset."]} />
-      <TraceSection title="Bound Semantics" values={detail.boundSemantics ?? ["Context, facts, principles, motifs, facets, and rubrics appear when present."]} />
-      <TraceSection title="Relationships" values={detail.relationships ?? ["Incoming and outgoing endpoints appear when present."]} />
-      <TraceSection title="Generation Links" values={detail.generationLinks ?? ["Plans, tasks, jobs, and compile artifacts appear when present."]} />
-      <TraceSection title="Phenotype / Assets" values={detail.phenotypeAssets ?? ["Phenotype versions, output references, and asset previews appear when present."]} />
-      <TraceSection title="Provenance" values={detail.provenance ?? ["Created/updated timestamps, dependency vectors, and compile traces appear when present."]} />
-      <TraceSection title="Governance" values={detail.governance ?? ["Status, feedback, review readiness, stale, and missing signals appear when present."]} />
-      <TraceSection title="External pointers" values={detail.externalPointers ?? ["External pointers are redacted and never expose credentials."]} />
+      <TraceSection title="Summary" values={detail.summary ?? ["None"]} />
+      <TraceSection title="Bound Semantics" values={detail.boundSemantics ?? ["No bound semantics"]} emptyLabel="No bound semantics" />
+      <TraceSection title="Relationships" values={detail.relationships ?? ["Not linked"]} emptyLabel="Not linked" />
+      <TraceSection title="Generation Links" values={detail.generationLinks ?? ["Not linked"]} emptyLabel="Not linked" />
+      <TraceSection title="Phenotype / Assets" values={detail.phenotypeAssets ?? ["Not linked"]} emptyLabel="Not linked" />
+      <TraceSection title="Provenance" values={detail.provenance ?? ["None"]} emptyLabel="None" />
+      <TraceSection title="Governance" values={detail.governance ?? ["None"]} emptyLabel="None" />
+      <TraceSection title="External pointers" values={detail.externalPointers ?? ["Not linked"]} emptyLabel="Not linked" />
       <details>
         <summary>Raw JSON</summary>
         <pre>{JSON.stringify(detail.raw ?? {}, null, 2)}</pre>
@@ -727,11 +853,11 @@ function Inspector(props: { detail: InspectorDetail }) {
   );
 }
 
-function TraceSection(props: { title: string; values: string[] }) {
+function TraceSection(props: { title: string; values: string[]; emptyLabel?: string }) {
   return (
     <section className="trace-section">
       <h3>{props.title}</h3>
-      {props.values.length ? props.values.map((value) => <p key={value}>{value}</p>) : <p>none</p>}
+      {props.values.length ? props.values.map((value) => <p key={value}>{value}</p>) : <p>{props.emptyLabel ?? "None"}</p>}
     </section>
   );
 }
@@ -888,7 +1014,7 @@ function inspectSpecies(node: WorkbenchGraphDetail["nodes"][number], graph: Work
     boundSemantics: [...(node.motifs ?? []).map((motif) => `motif: ${motif}`), `constraints: ${JSON.stringify(node.constraintSummary ?? {})}`],
     relationships: (node.relationshipIds ?? []).map((id) => `relationship ${id}`),
     generationLinks: [node.latestCompileArtifactId ? `species compile artifact ${node.latestCompileArtifactId}` : "species compile artifact missing"],
-    phenotypeAssets: phenotypes.map((phenotype) => `${phenotype.name}: ${phenotype.versions.length} versions`),
+    phenotypeAssets: phenotypes.map((phenotype) => `${phenotype.name}: ${phenotypeOverlaySummary(phenotype)}`),
     raw: { graphId: graph.graphId, ...node }
   };
 }
@@ -986,8 +1112,17 @@ function inspectGalleryPreview(preview: WorkbenchResultPreview): InspectorDetail
     id: preview.objectId,
     status: preview.status,
     summary: [preview.phenotypeName ?? preview.label, preview.label],
-    phenotypeAssets: [preview.phenotypeVersionId ? `version ${preview.phenotypeVersionId}` : "no linked version"],
-    externalPointers: [preview.libraryId ? `library ${preview.libraryId}` : "library n/a", preview.storageMountId ? `mount ${preview.storageMountId}` : "mount n/a"],
+    relationships: [preview.graphId ? `graph ${preview.graphId}` : "Not linked", preview.nodeId ? `species ${preview.nodeId}` : "Not linked"],
+    phenotypeAssets: [
+      preview.phenotypeId ? `phenotype ${preview.phenotypeId}` : "Not linked",
+      preview.phenotypeVersionId ? `version ${preview.phenotypeVersionId}` : "Not linked"
+    ],
+    provenance: [preview.preview.kind === "image" ? "preview available" : preview.preview.reason ?? "Preview unavailable"],
+    externalPointers: [
+      preview.libraryId ? `library ${preview.libraryId}` : "Not linked",
+      preview.storageMountId ? `mount ${preview.storageMountId}` : "Not linked",
+      preview.storageType ? `storage ${preview.storageType}` : "Not linked"
+    ],
     raw: preview
   };
 }
@@ -1028,12 +1163,119 @@ function getGraphLevelRelationships(snapshot: WorkbenchSnapshot): RelationshipLi
     });
 }
 
+function graphMapPosition(index: number, total: number) {
+  if (total <= 1) return { x: 50, y: 50 };
+  const presets = [
+    { x: 24, y: 34 },
+    { x: 76, y: 60 },
+    { x: 70, y: 28 },
+    { x: 28, y: 72 },
+    { x: 50, y: 48 },
+    { x: 82, y: 78 }
+  ];
+  if (index < presets.length) return presets[index];
+  const angle = (Math.PI * 2 * index) / total - Math.PI / 2;
+  return {
+    x: Math.round((50 + Math.cos(angle) * 34) * 10) / 10,
+    y: Math.round((52 + Math.sin(angle) * 30) * 10) / 10
+  };
+}
+
+function routeMidpoint(source: { x: number; y: number }, target: { x: number; y: number }) {
+  return {
+    x: (source.x + target.x) / 2,
+    y: (source.y + target.y) / 2
+  };
+}
+
+function phenotypeOverlaySummary(phenotype: WorkbenchGraphDetail["phenotypeOverlay"][number]) {
+  if (phenotype.currentAcceptedVersionId) return "accepted";
+  const candidateCount = phenotype.versions.filter((version) => version.status === "candidate").length;
+  if (candidateCount) return `${candidateCount} candidate`;
+  if (!phenotype.versions.length) return "planned";
+  const statuses = [...new Set(phenotype.versions.map((version) => version.status))];
+  return statuses.join(" / ");
+}
+
+function phenotypeStatusCounts(phenotypes: WorkbenchGraphDetail["phenotypeOverlay"]) {
+  if (!phenotypes.length) return ["missing"];
+  const accepted = phenotypes.filter((phenotype) => Boolean(phenotype.currentAcceptedVersionId)).length;
+  const candidate = phenotypes.reduce((count, phenotype) => count + phenotype.versions.filter((version) => version.status === "candidate").length, 0);
+  const planned = phenotypes.filter((phenotype) => !phenotype.versions.length).length;
+  return [
+    accepted ? `${accepted} accepted` : undefined,
+    candidate ? `${candidate} candidate` : undefined,
+    planned ? `${planned} planned` : undefined
+  ].filter((value): value is string => Boolean(value));
+}
+
+function buildGenerationRows(snapshot: WorkbenchSnapshot): GenerationRow[] {
+  const results = snapshot.libraries.flatMap((library) => library.results);
+  const rows: GenerationRow[] = snapshot.generation.plans.map((plan) => {
+    const tasks = snapshot.generation.tasks.filter((task) => task.planId === plan.planId);
+    const taskJobIds = new Set(tasks.flatMap((task) => task.links.generationJobIds));
+    const taskVersionIds = new Set(tasks.flatMap((task) => task.links.phenotypeVersionIds));
+    const jobs = snapshot.generation.jobs.filter((job) => taskJobIds.has(job.generationJobId) || (job.graphId === plan.graphId && tasks.some((task) => task.phenotypeId === job.phenotypeId)));
+    const rowResults = results.filter((result) => taskVersionIds.has(result.versionId) || tasks.some((task) => task.phenotypeId === result.phenotypeId));
+    return {
+      id: plan.planId,
+      plan,
+      title: plan.description || plan.planId,
+      scope: `${plan.scopeType}:${plan.scopeId}`,
+      status: plan.status,
+      tasks,
+      jobs,
+      results: rowResults
+    };
+  });
+  const plannedTaskIds = new Set(rows.flatMap((row) => row.tasks.map((task) => task.taskId)));
+  const standaloneTasks = snapshot.generation.tasks.filter((task) => !plannedTaskIds.has(task.taskId));
+  if (standaloneTasks.length) {
+    const jobIds = new Set(standaloneTasks.flatMap((task) => task.links.generationJobIds));
+    const versionIds = new Set(standaloneTasks.flatMap((task) => task.links.phenotypeVersionIds));
+    rows.push({
+      id: "standalone-generation",
+      title: "Standalone tasks",
+      scope: "manual generation",
+      status: standaloneTasks.some((task) => task.status === "blocked") ? "blocked" : "active",
+      tasks: standaloneTasks,
+      jobs: snapshot.generation.jobs.filter((job) => jobIds.has(job.generationJobId)),
+      results: results.filter((result) => versionIds.has(result.versionId))
+    });
+  }
+  const linkedVersionIds = new Set(rows.flatMap((row) => row.results.map((result) => result.versionId)));
+  const unlinkedResults = results.filter((result) => !linkedVersionIds.has(result.versionId));
+  if (unlinkedResults.length) {
+    rows.push({
+      id: "library-results",
+      title: "Library results without linked task",
+      scope: "result trace",
+      status: "read-only",
+      tasks: [],
+      jobs: [],
+      results: unlinkedResults
+    });
+  }
+  return rows;
+}
+
+function collectGalleryPreviews(snapshot: WorkbenchSnapshot) {
+  const previews = [...snapshot.resultPreviews, ...snapshot.libraries.flatMap((library) => library.gallery)];
+  const seen = new Set<string>();
+  return previews.filter((preview) => {
+    const key = `${preview.objectType}:${preview.objectId}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function endpointLabel(endpoint: RelationshipLike["source"] | undefined) {
   if (!endpoint || typeof endpoint !== "object") return "unknown";
   const record = endpoint as Record<string, unknown>;
   if (record.type === "graph") return `graph:${String(record.graphId)}`;
-  if (record.type === "species-group") return `group:${String(record.groupId)}`;
-  if (record.type === "species-node") return `species:${String(record.nodeId)}`;
+  if (record.type === "species-group") return `group:${String(record.groupId ?? record.id)}`;
+  if (record.type === "species-node") return `species:${String(record.nodeId ?? record.id)}`;
   return JSON.stringify(endpoint);
 }
 
@@ -1071,27 +1313,29 @@ function semanticItems(graph: WorkbenchGraphDetail) {
   ];
 }
 
-function filterSnapshot(snapshot: WorkbenchSnapshot, query: string, statusFilter: string): WorkbenchSnapshot {
+function filterSnapshot(snapshot: WorkbenchSnapshot, query: string, statusFilter: string, graphScopeId?: string): WorkbenchSnapshot {
   const normalizedQuery = query.trim().toLowerCase();
   const matchesText = (value: unknown) => !normalizedQuery || JSON.stringify(value).toLowerCase().includes(normalizedQuery);
   const matchesStatus = (value: { status?: string; versionStatus?: string }) =>
     statusFilter === "all" || value.status === statusFilter || value.versionStatus === statusFilter;
+  const matchesGraphScope = (value: { graphId?: string; graphIds?: string[] }) =>
+    !graphScopeId || value.graphId === graphScopeId || (value.graphIds ?? []).includes(graphScopeId);
   return {
     ...snapshot,
     graphs: snapshot.graphs.filter((graph) => matchesText(graph) && matchesStatus(graph)),
     generation: {
-      plans: snapshot.generation.plans.filter((plan) => matchesText(plan) && matchesStatus(plan)),
-      tasks: snapshot.generation.tasks.filter((task) => matchesText(task) && matchesStatus(task)),
-      jobs: snapshot.generation.jobs.filter((job) => matchesText(job) && matchesStatus(job))
+      plans: snapshot.generation.plans.filter((plan) => matchesGraphScope(plan) && matchesText(plan) && matchesStatus(plan)),
+      tasks: snapshot.generation.tasks.filter((task) => matchesGraphScope(task) && matchesText(task) && matchesStatus(task)),
+      jobs: snapshot.generation.jobs.filter((job) => matchesGraphScope(job) && matchesText(job) && matchesStatus(job))
     },
     libraries: snapshot.libraries
-      .filter((library) => matchesText(library) && matchesStatus(library))
       .map((library) => ({
         ...library,
-        results: library.results.filter((result) => matchesText(result) && matchesStatus(result)),
-        gallery: library.gallery.filter((preview) => matchesText(preview) && matchesStatus(preview))
-      })),
-    resultPreviews: snapshot.resultPreviews.filter((preview) => matchesText(preview) && matchesStatus(preview))
+        results: library.results.filter((result) => matchesGraphScope(result) && matchesText(result) && matchesStatus(result)),
+        gallery: library.gallery.filter((preview) => matchesGraphScope(preview) && matchesText(preview) && matchesStatus(preview))
+      }))
+      .filter((library) => matchesGraphScope(library) || library.results.length > 0 || library.gallery.length > 0 || (matchesText(library) && matchesStatus(library))),
+    resultPreviews: snapshot.resultPreviews.filter((preview) => matchesGraphScope(preview) && matchesText(preview) && matchesStatus(preview))
   };
 }
 

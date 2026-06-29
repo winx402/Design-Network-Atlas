@@ -342,14 +342,19 @@ describe("Phase 28 PRD-21 read-only workbench information architecture API", () 
       routingPolicies: [expect.objectContaining({ routingPolicyId: "route-web" })],
       results: expect.arrayContaining([expect.objectContaining({ phenotypeId: "ph-web", versionId: "pv-web-accepted" })]),
       gallery: expect.arrayContaining([
-        expect.objectContaining({ preview: expect.objectContaining({ kind: "image", url: "https://cdn.example.invalid/public/icon.png" }) })
+        expect.objectContaining({
+          nodeId: "node-web",
+          nodeName: "Workbench Species",
+          storageType: "object-storage",
+          preview: expect.objectContaining({ kind: "image", url: "https://cdn.example.invalid/public/icon.png" })
+        })
       ])
     });
     expect(snapshot.resultPreviews).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ objectId: "oref-web-safe", preview: expect.objectContaining({ kind: "image" }) }),
-        expect.objectContaining({ objectId: "oref-web-private", preview: expect.objectContaining({ kind: "placeholder" }) }),
-        expect.objectContaining({ objectId: "asset-web-private", preview: expect.objectContaining({ kind: "placeholder" }) })
+        expect.objectContaining({ objectId: "oref-web-safe", nodeId: "node-web", storageType: "object-storage", preview: expect.objectContaining({ kind: "image" }) }),
+        expect.objectContaining({ objectId: "oref-web-private", storageType: "object-storage", preview: expect.objectContaining({ kind: "placeholder" }) }),
+        expect.objectContaining({ objectId: "asset-web-private", storageType: "local", preview: expect.objectContaining({ kind: "placeholder" }) })
       ])
     );
     expect(snapshot.resultPreviews.map((preview: { objectId: string }) => preview.objectId)).not.toContain("asset-web-archived");
@@ -401,6 +406,9 @@ describe("Phase 28 PRD-21 read-only workbench information architecture API", () 
         expect.objectContaining({
           id: "oref-web-safe",
           title: "Workbench Icon",
+          speciesId: "node-web",
+          speciesName: "Workbench Species",
+          storageType: "object-storage",
           preview: expect.objectContaining({ kind: "image", url: "https://cdn.example.invalid/public/icon.png" }),
           trace: expect.objectContaining({ outputReferenceId: "oref-web-safe" })
         }),

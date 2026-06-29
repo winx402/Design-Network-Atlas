@@ -170,9 +170,10 @@ h3 {
 .mobile-bottom-nav button,
 .graph-map-node,
 .group-lane,
-.board-column,
+.trace-lane,
+.plan-trace-row,
 .graph-intro,
-.relationship-route,
+.atlas-route-button,
 .board-card,
 .gallery-card,
 .mount-row,
@@ -219,6 +220,11 @@ h3 {
   border-color: #1e766c;
   color: #103f39;
   background: #dff1ed;
+}
+
+.desktop-module-nav button[aria-current="page"],
+.mobile-bottom-nav button[aria-current="page"] {
+  box-shadow: inset 3px 0 0 #1e766c;
 }
 
 .desktop-module-nav button {
@@ -349,7 +355,7 @@ h3 {
 
 .graph-relationship-map {
   position: relative;
-  min-height: 430px;
+  min-height: 500px;
   overflow: hidden;
   border: 1px solid #c7d5d0;
   border-radius: 8px;
@@ -367,10 +373,14 @@ h3 {
   pointer-events: none;
 }
 
+.map-lines marker path {
+  fill: #2c8276;
+}
+
 .map-line {
   stroke: #2c8276;
   stroke-width: 1.8;
-  marker-end: none;
+  marker-end: url("#map-arrow");
   transition: opacity 160ms ease, stroke-width 160ms ease;
 }
 
@@ -378,14 +388,20 @@ h3 {
   stroke-width: 2.8;
 }
 
+.map-line.is-selected {
+  stroke: #9a6a10;
+  stroke-width: 3.4;
+}
+
 .map-line.is-dimmed,
 .graph-map-node.is-dimmed,
-.relationship-route.is-dimmed {
+.atlas-route-button.is-dimmed {
   opacity: 0.36;
 }
 
 .graph-map-node.is-highlighted,
-.relationship-route.is-highlighted {
+.atlas-route-button.is-highlighted,
+.atlas-route-button.is-selected {
   border-color: #1e766c;
   background: #eef8f5;
 }
@@ -396,29 +412,61 @@ h3 {
   font-weight: 760;
 }
 
-.map-node-grid {
-  position: relative;
+.map-node-layer,
+.map-route-layer {
+  position: absolute;
+  inset: 0;
   z-index: 1;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(210px, 1fr));
-  gap: 20px;
-  padding: 44px;
+}
+
+.map-route-layer {
+  z-index: 2;
+  pointer-events: none;
 }
 
 .graph-map-node {
+  position: absolute;
   display: grid;
   gap: 8px;
+  width: min(265px, 28vw);
   min-width: 0;
-  min-height: 180px;
+  min-height: 170px;
   padding: 16px;
   color: inherit;
   text-align: left;
+  transform: translate(-50%, -50%);
   box-shadow: 0 18px 42px rgb(35 54 49 / 10%);
+}
+
+.atlas-route-button {
+  position: absolute;
+  display: grid;
+  gap: 3px;
+  min-width: 150px;
+  max-width: 220px;
+  padding: 8px 10px;
+  color: #1b3e39;
+  text-align: center;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+  box-shadow: 0 12px 26px rgb(35 54 49 / 14%);
+}
+
+.atlas-route-button strong {
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.atlas-route-button span {
+  color: #60716f;
+  font-size: 11px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
 }
 
 .graph-map-node:hover,
 .graph-map-node:focus,
-.relationship-route:hover,
+.atlas-route-button:hover,
 .board-card:hover,
 .gallery-card:hover,
 .object-card:hover,
@@ -431,9 +479,8 @@ h3 {
 
 .graph-map-node strong,
 .graph-map-node span,
-.relationship-route strong,
-.relationship-route span,
-.relationship-route small,
+.atlas-route-button strong,
+.atlas-route-button span,
 .board-card strong,
 .board-card span,
 .board-card small,
@@ -452,7 +499,6 @@ h3 {
 }
 
 .graph-map-node > span:not(.node-type),
-.relationship-route small,
 .board-card small,
 .gallery-card span,
 .object-card span,
@@ -479,12 +525,25 @@ h3 {
   font-weight: 760;
 }
 
-.map-lower-grid,
+.map-legend-strip,
 .graph-support-grid,
 .library-detail-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+}
+
+.map-legend-strip {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.map-legend-strip span {
+  border: 1px solid #cfd8d5;
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: #435753;
+  background: #ffffff;
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 .panel,
@@ -509,16 +568,6 @@ h3 {
   color: #435753;
   font-size: 13px;
   line-height: 1.45;
-}
-
-.relationship-route {
-  width: 100%;
-  display: grid;
-  gap: 5px;
-  min-height: 58px;
-  padding: 11px;
-  color: inherit;
-  text-align: left;
 }
 
 .graph-intro {
@@ -570,6 +619,21 @@ h3 {
   gap: 7px;
 }
 
+.lane-review-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.lane-review-strip span {
+  border-radius: 7px;
+  padding: 6px 8px;
+  color: #314642;
+  background: #edf4f1;
+  font-size: 12px;
+  font-weight: 760;
+}
+
 .lane-semantics span {
   border-left: 3px solid #b48b36;
   padding: 5px 8px;
@@ -604,19 +668,45 @@ h3 {
   align-content: start;
 }
 
-.board-columns {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(160px, 1fr));
-  gap: 10px;
-  align-items: start;
-}
-
-.board-column {
+.relationship-matrix,
+.plan-trace-row,
+.trace-lane {
   display: grid;
   gap: 9px;
   min-width: 0;
   padding: 12px;
   background: #fbfcfa;
+}
+
+.relationship-matrix-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(110px, 0.55fr) minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  border: 1px solid #d8e0dd;
+  border-radius: 8px;
+  padding: 9px;
+  color: inherit;
+  text-align: left;
+  background: #ffffff;
+}
+
+.relationship-matrix-row small {
+  grid-column: 1 / -1;
+  color: #60716f;
+  line-height: 1.35;
+}
+
+.board-summary-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.board-plan-stack {
+  display: grid;
+  gap: 12px;
 }
 
 .trace-path-banner {
@@ -641,6 +731,47 @@ h3 {
   text-align: left;
 }
 
+.board-card.is-compact {
+  min-height: auto;
+}
+
+.task-card strong {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.plan-row-title {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+}
+
+.plan-row-title small {
+  color: #60716f;
+  font-size: 12px;
+}
+
+.row-status-cluster {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.board-trace-grid {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr 0.95fr;
+  gap: 10px;
+  align-items: start;
+}
+
 .gallery-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
@@ -654,6 +785,36 @@ h3 {
   padding: 10px;
   color: inherit;
   text-align: left;
+}
+
+.gallery-trace {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+}
+
+.gallery-trace div {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 6px;
+  align-items: baseline;
+}
+
+.gallery-trace dt,
+.gallery-trace dd {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.gallery-trace dt {
+  color: #6a7975;
+  font-weight: 780;
+}
+
+.gallery-trace dd {
+  color: #33423f;
+  overflow-wrap: anywhere;
 }
 
 .preview-image,
@@ -712,6 +873,10 @@ h3 {
   top: 14px;
   max-height: calc(100vh - 28px);
   overflow: auto;
+}
+
+.drawer-handle {
+  display: none;
 }
 
 .trace-section {
@@ -831,13 +996,14 @@ pre {
   .scope-bar,
   .workspace-grid,
   .graph-intro,
-  .map-lower-grid,
+  .map-legend-strip,
   .graph-support-grid,
-  .library-detail-grid {
+  .library-detail-grid,
+  .board-trace-grid {
     grid-template-columns: 1fr;
   }
 
-  .board-columns {
+  .board-summary-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -851,7 +1017,7 @@ pre {
   .explorer-shell {
     width: min(100vw - 18px, 720px);
     grid-template-columns: 1fr;
-    padding: 10px 0 430px;
+    padding: 10px 0 118px;
   }
 
   .desktop-side-nav {
@@ -874,8 +1040,7 @@ pre {
 
   .snapshot-status,
   .filter-fields,
-  .map-node-grid,
-  .board-columns {
+  .board-summary-row {
     grid-template-columns: 1fr;
   }
 
@@ -946,20 +1111,23 @@ pre {
   }
 
   .graph-relationship-map {
-    min-height: 0;
+    min-height: 520px;
   }
 
   .map-lines {
     opacity: 0.28;
   }
 
-  .map-node-grid {
-    gap: 10px;
+  .graph-map-node {
+    width: min(210px, 68vw);
+    min-height: 138px;
     padding: 12px;
   }
 
-  .graph-map-node {
-    min-height: 150px;
+  .atlas-route-button {
+    min-width: 128px;
+    max-width: 160px;
+    padding: 7px;
   }
 
   .species-card-row {
@@ -978,10 +1146,39 @@ pre {
     bottom: 74px;
     left: 9px;
     z-index: 18;
-    max-height: 24vh;
-    overflow: auto;
+    overflow: hidden;
     border-radius: 10px 10px 0 0;
     box-shadow: 0 -10px 28px rgb(29 45 58 / 16%);
+  }
+
+  .inspector.detail-drawer.is-collapsed {
+    max-height: 34px;
+    padding: 4px 12px;
+  }
+
+  .inspector.detail-drawer.is-expanded {
+    max-height: min(72vh, 620px);
+    overflow: auto;
+  }
+
+  .drawer-handle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    min-height: 24px;
+    border: 0;
+    padding: 0;
+    color: inherit;
+    text-align: left;
+    background: transparent;
+  }
+
+  .drawer-handle span,
+  .drawer-handle strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .panel-title {
