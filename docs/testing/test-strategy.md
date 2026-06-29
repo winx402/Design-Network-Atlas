@@ -12,7 +12,7 @@
 - 阶段测试通过只代表该阶段完成，不代表完整系统完成。
 - 基础完整系统只有在 Phase 11 全量验收通过后才能宣布完成。
 - Phase 12-16 属于本地优先系统的增强能力，必须单独声明、单独测试，不能反向修改 Phase 11 的完成口径。
-- 当前本地优先能力已按公开阶段验收口径覆盖到 Phase 16，并补充场景 skill、只读 Web、provider 安全和 exchange manifest 验收；post-v1 能力必须单独声明，不能混入当前完成声明。
+- 当前本地优先能力已按公开阶段验收口径覆盖到 Phase 28，并补充场景 skill、DNA Read-only Workbench、provider 安全和 exchange manifest 验收；post-v1 能力必须单独声明，不能混入当前完成声明。
 
 ## 2. 测试分层
 
@@ -23,7 +23,7 @@
 | integration tests | SQLite、CLI、import/export、adapter | `pnpm vitest run packages/sqlite apps/cli` |
 | golden tests | prompt、brief、review summary、Git export | `pnpm vitest run **/*.golden.test.ts` |
 | E2E tests | PRD 13 条端到端场景 | `pnpm e2e` |
-| UI tests | 资产工作台前端状态流与浏览器 QA | `pnpm vitest run apps/web` |
+| UI tests | DNA Read-only Workbench 前端状态流与浏览器 QA | `pnpm vitest run apps/web` |
 | security tests | 敏感信息不入库、不导出、不进日志 | `pnpm security:test` |
 | docs tests | 文档链接和阶段覆盖 | `pnpm docs:check` |
 
@@ -51,6 +51,7 @@
 | Phase 24 | modeling intake quality + facet closure + planned phenotype CLI E2E | `context create --version` 不被 root version 截获；facet definition/schema/assignment 有 service/change-set 写入路径；`dna.modeling-batch.v1` 支持 facets 与 `phenotypePlans`；import report 紧凑且显式 review stage；`modeling check` 对 batch/graph/proposal 输出稳定 findings |
 | Phase 26 | generation planning orchestration | `PhenotypeGenerationPlan`/`PhenotypeGenerationTask` schema、service expansion、CLI preview/apply、task-linked generation、export/import、read-only API/workbench 和 secret redaction |
 | Phase 27 | phenotype version lifecycle | `PhenotypeVersion` candidate/accepted/replaced/rolled-back lifecycle、feedback metadata、single accepted invariant、task/job provenance projection、export/import 和 secret redaction |
+| Phase 28 | Web read-only information architecture | `/api/workbench/snapshot` server-side view model；Overview/Graphs/Generation/Libraries 四模块；Libraries Results/Gallery 安全预览；trace/detail panel；empty/error/missing 状态；移动端无宽表和文本溢出 |
 
 ## 4. 关键测试数据
 
@@ -168,7 +169,7 @@
 
 - 资产工作台可以搜索表型、标签、状态。
 - 表型详情展示版本列表、素材组、review records。
-- `dna serve --web` 暴露从 `/api/workbench/phenotypes` 读取数据的只读本地工作台。
+- `dna serve --web` 暴露只读本地工作台。
 - 空 SQLite store 显示空状态，API 失败显示非破坏性错误状态。
 - Web MVP 不显示 accept / reject / archive 等持久写按钮。
 - outdated phenotype version 显示明确提示。
@@ -248,6 +249,15 @@
 - `dna modeling check` 可检查 batch、persisted graph 和 proposal package，输出 stable JSON + text，并覆盖 species phenotype readiness、graph split quality、group quality、relationship contract quality、context/facet coverage 和 review readiness。
 - invalid modeling batch 必须 all-or-nothing 失败，不留下 proposal、change-set 或正式对象。
 - `dna graph tree --include-groups` 在默认 tree 之外展示 `Groups:`、`Ungrouped nodes:` 和 `Group relations:`；默认 text/json 输出保持兼容。
+
+### 5.17 Phase 28 Web Read-only IA Cases
+
+- `GET /api/workbench/snapshot` 返回 server-side view model，包含 Overview、Graphs、Generation、Libraries、results/gallery preview 和 trace/detail 所需摘要。
+- Web 一级导航包含 Overview、Graphs、Generation、Libraries，且不展示写入按钮，不调用 mutating endpoint。
+- Libraries 不只是 metadata，必须展示 Results/Gallery；安全图片 preview 可显示缩略图，不可访问、不可支持或敏感 URI 展示明确占位。
+- Snapshot 和页面源数据不得包含 API key、provider credentials、runtime credentials、raw provider payload、完整私密链接或不必要的本机绝对路径。
+- API failure、empty store、missing graph、missing linked object 均有明确只读错误或空状态。
+- 桌面和移动浏览器 QA 必须验证无文本重叠和水平溢出；移动端使用紧凑导航、列表到详情、filter sheet/detail drawer 和单/双列 gallery，而不是桌面宽表压窄。
 
 ## 6. Golden 输出规则
 

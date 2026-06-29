@@ -114,9 +114,9 @@ describe("Phase 15 local HTTP API baseline", () => {
     expect(webEnabled.headers.get("content-type")).toContain("text/html");
     const html = await webEnabled.text();
     expect(html).toContain("DNA: Design Network Atlas");
-    expect(html).toContain("/api/workbench/phenotypes");
-    expect(html).toContain("Loading phenotype workbench");
-    expect(html).toContain("No phenotypes found in this local store.");
+    expect(html).toContain("/api/workbench/snapshot");
+    expect(html).toContain("Loading read-only workbench snapshot");
+    expect(html).toContain("No DNA records found in this local store.");
     expect(html).toContain("Unable to load workbench data.");
     expect(html).not.toMatch(/\bAccept\b|\bReject\b|\bArchive\b/);
     store.close();
@@ -140,7 +140,7 @@ describe("Phase 15 local HTTP API baseline", () => {
       const web = await fetch(`${withWeb.url}/`);
       expect(web.status).toBe(200);
       const html = await web.text();
-      expect(html).toContain("/api/workbench/phenotypes");
+      expect(html).toContain("/api/workbench/snapshot");
       expect(html).not.toMatch(/\bAccept\b|\bReject\b|\bArchive\b/);
     } finally {
       await withWeb.close();

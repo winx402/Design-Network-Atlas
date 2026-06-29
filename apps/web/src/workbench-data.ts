@@ -93,7 +93,131 @@ export interface WorkbenchGenerationTask {
   };
 }
 
+export interface WorkbenchOverview {
+  counts: Record<string, number>;
+  anomalies: Array<{ type: string; severity: "info" | "warning"; count?: number; message: string }>;
+  latest?: Record<string, unknown>;
+}
+
+export interface WorkbenchGraphDetail {
+  graphId: string;
+  name: string;
+  purpose?: string;
+  status: string;
+  currentVersion?: string;
+  counts: Record<string, number>;
+  groups: Array<{ groupId: string; name: string; status: string; memberNodeIds: string[]; phenotypeIds?: string[] }>;
+  nodes: Array<{ nodeId: string; name: string; status: string; currentVersion?: string; groupIds: string[]; phenotypeIds: string[] }>;
+  relationships: Array<{ relationshipId: string; relationshipType: string; status: string; summary: string; source?: unknown; target?: unknown }>;
+  semantics?: Record<string, unknown>;
+  phenotypeOverlay: Array<{
+    phenotypeId: string;
+    name: string;
+    nodeId: string;
+    phenotypeType: string;
+    status: string;
+    currentAcceptedVersionId?: string;
+    versions: Array<{ phenotypeVersionId: string; status: WorkbenchVersionStatus; speciesCompileArtifactId?: string; phenotypeCompileArtifactId?: string }>;
+  }>;
+  compileTrace?: {
+    entityArtifacts: number;
+    speciesArtifacts: number;
+    phenotypeArtifacts: number;
+    artifacts: Array<Record<string, unknown>>;
+  };
+  rawJsonSummary?: unknown;
+}
+
+export interface WorkbenchGenerationJob {
+  generationJobId: string;
+  graphId: string;
+  nodeId: string;
+  phenotypeId?: string;
+  phenotypeVersionId?: string;
+  phenotypeType: string;
+  taskBrief?: string;
+  status: string;
+  tool?: string;
+  errorSummary?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface WorkbenchPreview {
+  kind: "image" | "placeholder";
+  url?: string;
+  displayUri?: string;
+  reason?: string;
+}
+
+export interface WorkbenchResultPreview {
+  objectType: "output-reference" | "asset";
+  objectId: string;
+  graphId?: string;
+  phenotypeId?: string;
+  phenotypeName?: string;
+  phenotypeVersionId?: string;
+  libraryId?: string;
+  storageMountId?: string;
+  label: string;
+  status: string;
+  tags: string[];
+  preview: WorkbenchPreview;
+}
+
+export interface WorkbenchLibrarySummary {
+  libraryId: string;
+  name: string;
+  purpose: string;
+  profile: string;
+  status: string;
+  graphIds: string[];
+  boundGraphCount: number;
+  mountCount: number;
+  routingPolicyCount: number;
+  outputReferenceCount: number;
+  mounts: Array<{
+    mountId: string;
+    displayName: string;
+    storageType: string;
+    adapterKind: string;
+    status: string;
+    capabilities: string[];
+    credentialStatus: "configured" | "not configured";
+    displayLocation?: string;
+  }>;
+  routingPolicies: unknown[];
+  results: Array<{
+    phenotypeId: string;
+    phenotypeName: string;
+    versionId: string;
+    versionStatus: WorkbenchVersionStatus;
+    graphId: string;
+    nodeId: string;
+    nodeName?: string;
+    phenotypeType: string;
+    outputRoles: string[];
+    referenceCount: number;
+    assetCount: number;
+    latestStatus: string;
+    preview: WorkbenchPreview;
+  }>;
+  gallery: WorkbenchResultPreview[];
+  rawJsonSummary?: unknown;
+}
+
 export interface WorkbenchSnapshot {
+  overview: WorkbenchOverview;
+  graphs: WorkbenchGraphDetail[];
+  generation: {
+    plans: WorkbenchGenerationPlan[];
+    tasks: WorkbenchGenerationTask[];
+    jobs: WorkbenchGenerationJob[];
+  };
+  libraries: WorkbenchLibrarySummary[];
+  outputReferences: unknown[];
+  assets: unknown[];
+  resultPreviews: WorkbenchResultPreview[];
   phenotypes: WorkbenchPhenotype[];
   generationPlans: WorkbenchGenerationPlan[];
   generationTasks: WorkbenchGenerationTask[];
@@ -117,9 +241,51 @@ export interface WorkbenchAppLoadOptions extends WorkbenchLoadOptions {
 }
 
 export type WorkbenchAppLoadState =
-  | { status: "loading"; phenotypes: []; generationPlans: []; generationTasks: [] }
-  | { status: "ready"; phenotypes: WorkbenchPhenotype[]; generationPlans: WorkbenchGenerationPlan[]; generationTasks: WorkbenchGenerationTask[] }
-  | { status: "error"; phenotypes: []; generationPlans: []; generationTasks: []; error: string };
+  | { status: "loading"; snapshot: WorkbenchSnapshot; phenotypes: []; generationPlans: []; generationTasks: [] }
+  | {
+      status: "ready";
+      snapshot: WorkbenchSnapshot;
+      phenotypes: WorkbenchPhenotype[];
+      generationPlans: WorkbenchGenerationPlan[];
+      generationTasks: WorkbenchGenerationTask[];
+    }
+  | { status: "error"; snapshot: WorkbenchSnapshot; phenotypes: []; generationPlans: []; generationTasks: []; error: string };
+
+export function createEmptyWorkbenchSnapshot(): WorkbenchSnapshot {
+  return {
+    overview: {
+      counts: {
+        graphs: 0,
+        activeGraphs: 0,
+        speciesGroups: 0,
+        speciesNodes: 0,
+        designRelationships: 0,
+        phenotypes: 0,
+        phenotypeVersions: 0,
+        candidateVersions: 0,
+        acceptedVersions: 0,
+        generationPlans: 0,
+        generationTasks: 0,
+        generationJobs: 0,
+        failedGenerationJobs: 0,
+        libraries: 0,
+        mounts: 0,
+        outputReferences: 0,
+        missingOrStaleOutputReferences: 0
+      },
+      anomalies: [{ type: "empty-store", severity: "info", message: "No DNA records found in the current read-only workbench scope." }]
+    },
+    graphs: [],
+    generation: { plans: [], tasks: [], jobs: [] },
+    libraries: [],
+    outputReferences: [],
+    assets: [],
+    resultPreviews: [],
+    phenotypes: [],
+    generationPlans: [],
+    generationTasks: []
+  };
+}
 
 export const samplePhenotypes: WorkbenchPhenotype[] = [
   {
@@ -273,6 +439,267 @@ export const samplePhenotypes: WorkbenchPhenotype[] = [
   }
 ];
 
+export const sampleWorkbenchSnapshot: WorkbenchSnapshot = {
+  overview: {
+    counts: {
+      graphs: 1,
+      activeGraphs: 1,
+      speciesGroups: 1,
+      speciesNodes: 2,
+      designRelationships: 1,
+      phenotypes: samplePhenotypes.length,
+      phenotypeVersions: samplePhenotypes.reduce((count, phenotype) => count + phenotype.versions.length, 0),
+      candidateVersions: 1,
+      acceptedVersions: 1,
+      deprecatedOrReplacedVersions: 1,
+      generationPlans: 1,
+      generationTasks: 2,
+      generationJobs: 1,
+      failedGenerationJobs: 0,
+      outputReferences: 2,
+      missingOrStaleOutputReferences: 1,
+      libraries: 1,
+      mounts: 2
+    },
+    anomalies: [{ type: "missing-or-stale-output-references", severity: "warning", count: 1, message: "Some output references need review." }]
+  },
+  graphs: [
+    {
+      graphId: "graph-demo",
+      name: "Demo Design Graph",
+      purpose: "Read-only workbench sample",
+      status: "active",
+      currentVersion: "1.0.0",
+      counts: { groups: 1, nodes: 2, relationships: 1, phenotypes: 2, candidateVersions: 1, acceptedVersions: 1 },
+      groups: [{ groupId: "group-ui", name: "UI Icon Family", status: "active", memberNodeIds: ["node-warning", "node-emblem"], phenotypeIds: ["ph-warning-icon", "ph-faction-emblem"] }],
+      nodes: [
+        { nodeId: "node-warning", name: "Warning Icon", status: "active", currentVersion: "1.1.0", groupIds: ["group-ui"], phenotypeIds: ["ph-warning-icon"] },
+        { nodeId: "node-emblem", name: "Moon Faction Emblem", status: "active", currentVersion: "2.0.0", groupIds: ["group-ui"], phenotypeIds: ["ph-faction-emblem"] }
+      ],
+      relationships: [
+        {
+          relationshipId: "rel-ui-icons",
+          relationshipType: "constrains",
+          status: "active",
+          summary: "Group readability constrains the icon output."
+        }
+      ],
+      phenotypeOverlay: samplePhenotypes.map((phenotype) => ({
+        phenotypeId: phenotype.id,
+        name: phenotype.name,
+        nodeId: phenotype.id === "ph-warning-icon" ? "node-warning" : "node-emblem",
+        phenotypeType: phenotype.phenotypeType,
+        status: "generated",
+        currentAcceptedVersionId: phenotype.currentAcceptedVersionId,
+        versions: phenotype.versions.map((version) => ({
+          phenotypeVersionId: version.id,
+          status: version.status,
+          speciesCompileArtifactId: "sca-demo",
+          phenotypeCompileArtifactId: "pca-demo"
+        }))
+      })),
+      compileTrace: {
+        entityArtifacts: 1,
+        speciesArtifacts: 2,
+        phenotypeArtifacts: 2,
+        artifacts: [{ artifactId: "pca-demo", targetLevel: "phenotype", dependencyCount: 4, feedbackCount: 0, openQuestionCount: 0 }]
+      }
+    }
+  ],
+  generation: {
+    plans: [
+      {
+        planId: "plan-demo",
+        graphId: "graph-demo",
+        scopeType: "graph",
+        scopeId: "graph-demo",
+        priority: 1,
+        description: "Generate icon review set",
+        status: "expanded",
+        taskCount: 2,
+        toolPreference: "mock"
+      }
+    ],
+    tasks: [
+      {
+        taskId: "task-warning",
+        planId: "plan-demo",
+        graphId: "graph-demo",
+        nodeId: "node-warning",
+        phenotypeId: "ph-warning-icon",
+        phenotypeType: "image-prompt",
+        taskBrief: "warning icon preview",
+        priority: 1,
+        status: "blocked",
+        blockingReason: "style review pending",
+        links: {
+          planId: "plan-demo",
+          speciesCompileArtifactId: "sca-warning",
+          phenotypeCompileArtifactId: "pca-warning",
+          generationJobIds: ["job-warning"],
+          phenotypeVersionIds: ["pv-warning-2"]
+        }
+      },
+      {
+        taskId: "task-emblem",
+        planId: "plan-demo",
+        graphId: "graph-demo",
+        nodeId: "node-emblem",
+        phenotypeId: "ph-faction-emblem",
+        phenotypeType: "art-brief",
+        taskBrief: "accepted emblem brief",
+        priority: 2,
+        status: "completed",
+        links: { planId: "plan-demo", generationJobIds: [], phenotypeVersionIds: ["pv-emblem-2"] }
+      }
+    ],
+    jobs: [
+      {
+        generationJobId: "job-warning",
+        graphId: "graph-demo",
+        nodeId: "node-warning",
+        phenotypeId: "ph-warning-icon",
+        phenotypeVersionId: "pv-warning-2",
+        phenotypeType: "image-prompt",
+        status: "generated",
+        tool: "mock"
+      }
+    ]
+  },
+  libraries: [
+    {
+      libraryId: "library-demo",
+      name: "Demo Result Library",
+      purpose: "Read-only generated result preview",
+      profile: "media-asset",
+      status: "active",
+      graphIds: ["graph-demo"],
+      boundGraphCount: 1,
+      mountCount: 2,
+      routingPolicyCount: 1,
+      outputReferenceCount: 2,
+      mounts: [
+        {
+          mountId: "mount-preview",
+          displayName: "Preview URLs",
+          storageType: "url",
+          adapterKind: "pointer-only",
+          status: "read-only",
+          capabilities: ["thumbnail"],
+          credentialStatus: "not configured",
+          displayLocation: "https://assets.example.invalid/public"
+        },
+        {
+          mountId: "mount-source",
+          displayName: "Source Git",
+          storageType: "git",
+          adapterKind: "git",
+          status: "active",
+          capabilities: ["source"],
+          credentialStatus: "configured",
+          displayLocation: "[redacted]"
+        }
+      ],
+      routingPolicies: [{ routingPolicyId: "route-preview", name: "Preview route" }],
+      results: [
+        {
+          phenotypeId: "ph-faction-emblem",
+          phenotypeName: "Faction Emblem Brief",
+          versionId: "pv-emblem-2",
+          versionStatus: "accepted",
+          graphId: "graph-demo",
+          nodeId: "node-emblem",
+          nodeName: "Moon Faction Emblem",
+          phenotypeType: "art-brief",
+          outputRoles: ["primary-output"],
+          referenceCount: 1,
+          assetCount: 1,
+          latestStatus: "accepted",
+          preview: { kind: "placeholder", reason: "unsupported-type", displayUri: "[redacted-or-unavailable]" }
+        },
+        {
+          phenotypeId: "ph-warning-icon",
+          phenotypeName: "Warning Toolbar Icon",
+          versionId: "pv-warning-2",
+          versionStatus: "candidate",
+          graphId: "graph-demo",
+          nodeId: "node-warning",
+          nodeName: "Warning Icon",
+          phenotypeType: "image-prompt",
+          outputRoles: ["preview"],
+          referenceCount: 1,
+          assetCount: 2,
+          latestStatus: "needs-review",
+          preview: { kind: "image", url: "https://assets.example.invalid/public/warning.png", displayUri: "https://assets.example.invalid/public/warning.png" }
+        }
+      ],
+      gallery: [
+        {
+          objectType: "output-reference",
+          objectId: "oref-warning-preview",
+          graphId: "graph-demo",
+          phenotypeId: "ph-warning-icon",
+          phenotypeName: "Warning Toolbar Icon",
+          phenotypeVersionId: "pv-warning-2",
+          libraryId: "library-demo",
+          storageMountId: "mount-preview",
+          label: "preview url",
+          status: "active",
+          tags: ["preview"],
+          preview: { kind: "image", url: "https://assets.example.invalid/public/warning.png", displayUri: "https://assets.example.invalid/public/warning.png" }
+        },
+        {
+          objectType: "asset",
+          objectId: "asset-warning-source",
+          graphId: "graph-demo",
+          phenotypeId: "ph-warning-icon",
+          phenotypeName: "Warning Toolbar Icon",
+          phenotypeVersionId: "pv-warning-2",
+          label: "Source file",
+          status: "pending",
+          tags: ["source"],
+          preview: { kind: "placeholder", reason: "redacted-or-unavailable", displayUri: "[redacted-or-unavailable]" }
+        }
+      ]
+    }
+  ],
+  outputReferences: [],
+  assets: [],
+  resultPreviews: [
+    {
+      objectType: "output-reference",
+      objectId: "oref-warning-preview",
+      graphId: "graph-demo",
+      phenotypeId: "ph-warning-icon",
+      phenotypeName: "Warning Toolbar Icon",
+      phenotypeVersionId: "pv-warning-2",
+      libraryId: "library-demo",
+      storageMountId: "mount-preview",
+      label: "preview url",
+      status: "active",
+      tags: ["preview"],
+      preview: { kind: "image", url: "https://assets.example.invalid/public/warning.png", displayUri: "https://assets.example.invalid/public/warning.png" }
+    },
+    {
+      objectType: "asset",
+      objectId: "asset-warning-source",
+      graphId: "graph-demo",
+      phenotypeId: "ph-warning-icon",
+      phenotypeName: "Warning Toolbar Icon",
+      phenotypeVersionId: "pv-warning-2",
+      label: "Source file",
+      status: "pending",
+      tags: ["source"],
+      preview: { kind: "placeholder", reason: "redacted-or-unavailable", displayUri: "[redacted-or-unavailable]" }
+    }
+  ],
+  phenotypes: samplePhenotypes,
+  generationPlans: [],
+  generationTasks: []
+};
+sampleWorkbenchSnapshot.generationPlans = sampleWorkbenchSnapshot.generation.plans;
+sampleWorkbenchSnapshot.generationTasks = sampleWorkbenchSnapshot.generation.tasks;
+
 export function filterPhenotypes(phenotypes: WorkbenchPhenotype[], filter: PhenotypeFilter): WorkbenchPhenotype[] {
   const query = filter.query.trim().toLowerCase();
   return phenotypes.filter((phenotype) => {
@@ -315,33 +742,74 @@ export async function loadWorkbenchPhenotypes(options: WorkbenchLoadOptions): Pr
 
 export async function loadWorkbenchSnapshot(options: WorkbenchLoadOptions): Promise<WorkbenchSnapshot> {
   const fetcher = options.fetcher ?? fetch;
-  const url = new URL("/api/workbench/phenotypes", options.baseUrl);
+  const url = new URL("/api/workbench/snapshot", options.baseUrl);
   if (options.graphId) url.searchParams.set("graphId", options.graphId);
   const response = await fetcher(url.toString());
-  if (response.ok === false) throw new Error(`failed to load workbench phenotypes: ${response.status ?? "unknown"}`);
+  if (response.ok === false) throw new Error(`failed to load workbench snapshot: ${response.status ?? "unknown"}`);
   const body = (await response.json()) as Partial<WorkbenchSnapshot>;
+  return normalizeWorkbenchSnapshot(body);
+}
+
+function normalizeWorkbenchSnapshot(body: Partial<WorkbenchSnapshot>): WorkbenchSnapshot {
+  const empty = createEmptyWorkbenchSnapshot();
+  const generationPlans = body.generationPlans ?? body.generation?.plans ?? [];
+  const generationTasks = body.generationTasks ?? body.generation?.tasks ?? [];
   return {
+    overview: body.overview ?? {
+      counts: {
+        ...empty.overview.counts,
+        phenotypes: body.phenotypes?.length ?? 0,
+        generationPlans: generationPlans.length,
+        generationTasks: generationTasks.length
+      },
+      anomalies: body.phenotypes?.length ? [] : empty.overview.anomalies
+    },
+    graphs: body.graphs ?? [],
+    generation: {
+      plans: generationPlans,
+      tasks: generationTasks,
+      jobs: body.generation?.jobs ?? []
+    },
+    libraries: body.libraries ?? [],
+    outputReferences: body.outputReferences ?? [],
+    assets: body.assets ?? [],
+    resultPreviews: body.resultPreviews ?? [],
     phenotypes: body.phenotypes ?? [],
-    generationPlans: body.generationPlans ?? [],
-    generationTasks: body.generationTasks ?? []
+    generationPlans,
+    generationTasks
   };
 }
 
-export async function loadWorkbenchPhenotypesForApp(options: WorkbenchAppLoadOptions): Promise<WorkbenchAppLoadState> {
-  if (options.demo === true) return { status: "ready", phenotypes: samplePhenotypes, generationPlans: [], generationTasks: [] };
+export async function loadWorkbenchForApp(options: WorkbenchAppLoadOptions): Promise<WorkbenchAppLoadState> {
+  if (options.demo === true) {
+    return {
+      status: "ready",
+      snapshot: sampleWorkbenchSnapshot,
+      phenotypes: sampleWorkbenchSnapshot.phenotypes,
+      generationPlans: sampleWorkbenchSnapshot.generationPlans,
+      generationTasks: sampleWorkbenchSnapshot.generationTasks
+    };
+  }
   try {
     const snapshot = await loadWorkbenchSnapshot(options);
     return {
       status: "ready",
+      snapshot,
       ...snapshot
     };
   } catch (error) {
+    const snapshot = createEmptyWorkbenchSnapshot();
     return {
       status: "error",
+      snapshot,
       phenotypes: [],
       generationPlans: [],
       generationTasks: [],
       error: error instanceof Error ? error.message : String(error)
     };
   }
+}
+
+export async function loadWorkbenchPhenotypesForApp(options: WorkbenchAppLoadOptions): Promise<WorkbenchAppLoadState> {
+  return loadWorkbenchForApp(options);
 }

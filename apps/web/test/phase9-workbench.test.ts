@@ -146,7 +146,7 @@ describe("Phase 9 asset workbench state model", () => {
     expect(result).toMatchObject({
       status: "error",
       phenotypes: [],
-      error: "failed to load workbench phenotypes: 503"
+      error: "failed to load workbench snapshot: 503"
     });
   });
 });
