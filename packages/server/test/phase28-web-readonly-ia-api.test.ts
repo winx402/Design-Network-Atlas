@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import {
+  compileEntityArtifact,
   compilePhenotypeGeneration,
   compileSpeciesSnapshot,
   createDefaultAsset,
@@ -21,7 +22,8 @@ import {
   createDefaultSpeciesGroupMembership,
   createDefaultSpeciesNode,
   createDefaultStorageMount,
-  createGenerationJob
+  createGenerationJob,
+  summarizePhenotypeUsageGuideForCompile
 } from "@dna/core";
 import { createDnaHttpHandler } from "@dna/server";
 import { SqliteDnaStore } from "@dna/sqlite";
@@ -119,6 +121,12 @@ describe("Phase 28 PRD-21 read-only workbench information architecture API", () 
       speciesGroups: [group],
       designRelationships: [relationship]
     });
+    const graphArtifact = compileEntityArtifact({
+      artifactId: "eca-web",
+      targetLevel: "graph",
+      graph,
+      designRelationships: [graphRelationship]
+    });
     const phenotypeArtifact = compilePhenotypeGeneration({
       artifactId: "pca-web",
       graph,
@@ -126,7 +134,8 @@ describe("Phase 28 PRD-21 read-only workbench information architecture API", () 
       nodeVersionId: "node-web@1.0.0",
       speciesArtifact,
       phenotypeType: phenotype.phenotypeType,
-      taskBrief: "safe workbench preview"
+      taskBrief: "safe workbench preview",
+      usageGuideSnapshot: summarizePhenotypeUsageGuideForCompile(usageGuide)
     });
     const candidateVersion = createDefaultPhenotypeVersion({
       graphId: graph.graphId,
@@ -236,6 +245,7 @@ describe("Phase 28 PRD-21 read-only workbench information architecture API", () 
     store.designRelationships.create(graphRelationship);
     store.phenotypes.create(phenotype);
     store.phenotypeUsageGuides.create(usageGuide);
+    store.entityCompileArtifacts.create(graphArtifact);
     store.speciesCompileArtifacts.create(speciesArtifact);
     store.phenotypeCompileArtifacts.create(phenotypeArtifact);
     store.phenotypeVersions.create(candidateVersion);
@@ -336,7 +346,14 @@ describe("Phase 28 PRD-21 read-only workbench information architecture API", () 
             expect.objectContaining({ relationshipId: "rel-graph-language", relationshipType: "translates-to" })
           ]),
           phenotypeOverlay: [expect.objectContaining({ phenotypeId: "ph-web", currentAcceptedVersionId: "pv-web-accepted" })],
-          compileTrace: expect.objectContaining({ speciesArtifacts: 1, phenotypeArtifacts: 1 })
+          compileTrace: expect.objectContaining({
+            speciesArtifacts: 1,
+            phenotypeArtifacts: 1,
+            artifacts: expect.arrayContaining([
+              expect.objectContaining({ targetLevel: "species-node", readiness: expect.objectContaining({ targetLevel: "species-node" }) }),
+              expect.objectContaining({ targetLevel: "phenotype", readiness: expect.objectContaining({ targetLevel: "phenotype" }) })
+            ])
+          })
         })
       ])
     );
@@ -348,7 +365,8 @@ describe("Phase 28 PRD-21 read-only workbench information architecture API", () 
         phenotypeCompileArtifactId: "pca-web",
         generationJobIds: ["job-web"],
         phenotypeVersionIds: ["pv-web-accepted"]
-      })
+      }),
+      targetReadiness: expect.objectContaining({ targetLevel: "phenotype" })
     });
     expect(snapshot.generation.jobs[0]).toMatchObject({
       generationJobId: "job-web",
@@ -359,6 +377,12 @@ describe("Phase 28 PRD-21 read-only workbench information architecture API", () 
       usageGuideId: "guide-web",
       revision: 1,
       summary: "Use this icon for read-only workbench warning affordances."
+    });
+    expect(webGraph?.readiness).toMatchObject({ targetLevel: "graph" });
+    expect(webGraph?.nodes[0].readiness).toMatchObject({ targetLevel: "species-node" });
+    expect(webGraph?.phenotypeOverlay[0].readiness).toMatchObject({
+      targetLevel: "phenotype",
+      boundVersionRef: "phenotype-usage-guide:guide-web@1"
     });
     expect(snapshot.usageGuides).toEqual(
       expect.arrayContaining([expect.objectContaining({ usageGuideId: "guide-web", phenotypeId: "ph-web", revision: 1 })])

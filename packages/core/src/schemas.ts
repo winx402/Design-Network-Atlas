@@ -179,6 +179,9 @@ export const CompileDependencyRoleSchema = z.enum([
 ]);
 export const CompileArtifactValidityStateSchema = z.enum(["current", "stale", "historical", "invalid"]);
 export const CompileFeedbackSeveritySchema = z.enum(["info", "warning", "blocking"]);
+export const DesignReadinessPolicySchema = z.enum(["off", "warn", "block"]);
+export const DesignReadinessLevelSchema = z.enum(["ready", "warning", "blocked"]);
+export const DesignReadinessEvaluatorSchema = z.enum(["system", "agent", "human-assisted"]);
 export const CompileDecisionActionSchema = z.enum(["preserve", "weaken", "translate", "exclude", "manual", "suggest-upstream-change"]);
 export const AtlasScopeSchema = z.enum(["none", "direct", "relevant"]);
 export const CompileLayerSchema = z.enum([
@@ -991,6 +994,38 @@ export const CompileDependencyRefSchema = z.object({
   role: CompileDependencyRoleSchema
 });
 
+export const DesignReadinessDimensionSchema = z.object({
+  key: z.string().min(1),
+  label: z.string().min(1),
+  score: z.number().min(0).max(100),
+  reason: z.string().min(1),
+  missing: z.array(z.string()).default([]),
+  suggestedActions: z.array(z.string()).default([])
+});
+
+export const DesignReadinessResultSchema = z.object({
+  enabled: z.boolean(),
+  score: z.number().min(0).max(100),
+  level: DesignReadinessLevelSchema,
+  targetLevel: CompileFrameLevelSchema,
+  targetId: z.string().min(1),
+  boundVersionRef: z.string().optional(),
+  dependencyVector: z.array(CompileDependencyRefSchema).default([]),
+  dimensions: z.array(DesignReadinessDimensionSchema).default([]),
+  warnings: z.array(z.string()).default([]),
+  blockingIssues: z.array(z.string()).default([]),
+  suggestions: z.array(z.string()).default([]),
+  evaluatedAt: IsoDateSchema,
+  evaluator: DesignReadinessEvaluatorSchema
+});
+
+export const DesignReadinessPolicyResultSchema = z.object({
+  policy: DesignReadinessPolicySchema,
+  allowed: z.boolean(),
+  warnings: z.array(z.string()).default([]),
+  blockingIssues: z.array(z.string()).default([])
+});
+
 export const CompileArtifactValiditySchema = z.object({
   state: CompileArtifactValidityStateSchema,
   reasons: z.array(z.string()).default([])
@@ -1010,7 +1045,8 @@ export const CompileFrameSchema = z.object({
   traces: z.array(TraceEntrySchema).default([]),
   conflictReport: z.array(CompileConflictSchema).default([]),
   openQuestions: z.array(z.string()).default([]),
-  feedback: z.array(CompileFeedbackSchema).default([])
+  feedback: z.array(CompileFeedbackSchema).default([]),
+  readiness: DesignReadinessResultSchema.optional()
 });
 
 export const EntityCompileArtifactSchema = z.object({
@@ -1381,6 +1417,31 @@ export const ProposalSchema = z.object({
   updatedAt: IsoDateSchema
 });
 
+export const SelfOptimizationCandidateSchema = z.object({
+  candidateId: z.string().min(1),
+  targetObjectType: z.string().min(1),
+  targetObjectId: z.string().min(1),
+  suggestedWriteLocation: z.string().min(1),
+  operationType: z.string().min(1),
+  evidenceSummary: z.string().min(1),
+  confidence: z.enum(["low", "medium", "high"]),
+  generality: z.enum(["single-output", "phenotype-specific", "species-level", "group-level", "graph-level"]),
+  applicabilityScope: z.string().min(1),
+  conflictRisk: z.enum(["low", "medium", "high"]),
+  downstreamImpact: z.array(z.string()).default([]),
+  requiresUserConfirmation: z.boolean().default(true),
+  previewChangeSetId: z.string().optional(),
+  suggestedActions: z.array(z.string()).default([])
+});
+
+export const SelfOptimizationSuggestionReportSchema = z.object({
+  sourceId: z.string().optional(),
+  targetScope: z.string().optional(),
+  candidates: z.array(SelfOptimizationCandidateSchema).default([]),
+  proposal: ProposalSchema,
+  warnings: z.array(z.string()).default([])
+});
+
 export type Graph = z.infer<typeof GraphSchema>;
 export type FacetDefinition = z.infer<typeof FacetDefinitionSchema>;
 export type FacetSchema = z.infer<typeof FacetSchemaSchema>;
@@ -1422,6 +1483,11 @@ export type CompileFrameLevel = z.infer<typeof CompileFrameLevelSchema>;
 export type CompileEntityRef = z.infer<typeof CompileEntityRefSchema>;
 export type CompileSnapshotEntry = z.infer<typeof CompileSnapshotEntrySchema>;
 export type CompileFeedback = z.infer<typeof CompileFeedbackSchema>;
+export type DesignReadinessPolicy = z.infer<typeof DesignReadinessPolicySchema>;
+export type DesignReadinessLevel = z.infer<typeof DesignReadinessLevelSchema>;
+export type DesignReadinessDimension = z.infer<typeof DesignReadinessDimensionSchema>;
+export type DesignReadinessResult = z.infer<typeof DesignReadinessResultSchema>;
+export type DesignReadinessPolicyResult = z.infer<typeof DesignReadinessPolicyResultSchema>;
 export type CompileDecisionRequest = z.infer<typeof CompileDecisionRequestSchema>;
 export type CompileDecisionPatch = z.infer<typeof CompileDecisionPatchSchema>;
 export type CompileDependencyRef = z.infer<typeof CompileDependencyRefSchema>;
@@ -1447,5 +1513,7 @@ export type ReviewRecord = z.infer<typeof ReviewRecordSchema>;
 export type ImpactRecord = z.infer<typeof ImpactRecordSchema>;
 export type ChangeSet = z.infer<typeof ChangeSetSchema>;
 export type Proposal = z.infer<typeof ProposalSchema>;
+export type SelfOptimizationCandidate = z.infer<typeof SelfOptimizationCandidateSchema>;
+export type SelfOptimizationSuggestionReport = z.infer<typeof SelfOptimizationSuggestionReportSchema>;
 export type CompilePolicy = z.infer<typeof CompilePolicySchema>;
 export type WriteMode = z.infer<typeof WriteModeSchema>;

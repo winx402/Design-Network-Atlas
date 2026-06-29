@@ -33,6 +33,7 @@ import {
   SpeciesNode
 } from "./schemas.js";
 import { isFixedRuleEligibleRelation } from "./populations.js";
+import { evaluateDesignReadinessForFrame } from "./design-readiness.js";
 
 export interface GeneConflict {
   key: string;
@@ -446,8 +447,9 @@ function createFrame(input: {
   conflictReport?: CompileConflict[];
   openQuestions?: string[];
   feedback?: CompileFeedback[];
+  readinessEvaluatedAt?: string;
 }): CompileFrame {
-  return {
+  const frame = {
     frameId: `${input.artifactId}:${input.level}:${input.target.objectId}`,
     level: input.level,
     target: input.target,
@@ -462,6 +464,10 @@ function createFrame(input: {
     conflictReport: input.conflictReport ?? [],
     openQuestions: input.openQuestions ?? [],
     feedback: input.feedback ?? []
+  };
+  return {
+    ...frame,
+    readiness: evaluateDesignReadinessForFrame(frame, { evaluatedAt: input.readinessEvaluatedAt })
   };
 }
 
@@ -588,6 +594,7 @@ function dependencyVectorForEntity(input: CompileEntityArtifactInput, target: Co
 
 export function compileEntityArtifact(input: CompileEntityArtifactInput): EntityCompileArtifact {
   const compileScope = defaultCompileScope(input.compileScope);
+  const createdAt = new Date().toISOString();
   const target = targetRefFor({ atlas: input.atlas, graph: input.graph, group: input.group });
   if (input.targetLevel === "atlas" && !input.atlas) throw new Error("atlas compile requires atlas");
   if (input.targetLevel === "graph" && !input.graph) throw new Error("graph compile requires graph");
@@ -656,7 +663,8 @@ export function compileEntityArtifact(input: CompileEntityArtifactInput): Entity
     contextSnapshot: frameContextSnapshot,
     facetSnapshot: frameFacetSnapshot,
     templateSnapshot: frameTemplateSnapshot,
-    resolvedSnapshot
+    resolvedSnapshot,
+    readinessEvaluatedAt: createdAt
   });
   const metadata = compileMetadata({
     compileMode: input.compileMode,
@@ -681,7 +689,7 @@ export function compileEntityArtifact(input: CompileEntityArtifactInput): Entity
     decisionRequests: [],
     decisionPatches: input.decisionPatches ?? [],
     feedback: [],
-    createdAt: new Date().toISOString()
+    createdAt
   };
 }
 
@@ -760,7 +768,10 @@ function dependencyVectorForSpecies(input: CompileSpeciesSnapshotInput): Compile
   return uniqueDependencies(refs);
 }
 
-function buildSpeciesFrames(input: CompileSpeciesSnapshotInput, artifact: Omit<SpeciesCompileArtifact, "frames" | "dependencyVector" | "validity" | "feedback" | "decisionRequests" | "decisionPatches">) {
+function buildSpeciesFrames(
+  input: CompileSpeciesSnapshotInput,
+  artifact: Omit<SpeciesCompileArtifact, "frames" | "dependencyVector" | "validity" | "feedback" | "decisionRequests" | "decisionPatches">
+) {
   const upstreamFrames = uniqueFrames((input.upstreamArtifacts ?? []).flatMap((upstream) => upstream.frames));
   const frames: CompileFrame[] = [...upstreamFrames];
   if (!frames.some((frame) => frame.level === "graph" && frame.target.objectId === input.graph.graphId)) {
@@ -783,7 +794,8 @@ function buildSpeciesFrames(input: CompileSpeciesSnapshotInput, artifact: Omit<S
         contextSnapshot: contextSnapshot(input.designContexts, input.contextAttachments, graphTarget),
         facetSnapshot: facetSnapshot(input.facetDefinitions, input.facetSchemas, input.facetAssignments, graphTarget),
         templateSnapshot: templateSnapshot(input.geneTemplates),
-        resolvedSnapshot: { graphId: input.graph.graphId, purpose: input.graph.purpose }
+        resolvedSnapshot: { graphId: input.graph.graphId, purpose: input.graph.purpose },
+        readinessEvaluatedAt: artifact.createdAt
       })
     );
   }
@@ -813,7 +825,8 @@ function buildSpeciesFrames(input: CompileSpeciesSnapshotInput, artifact: Omit<S
         contextSnapshot: contextSnapshot(input.designContexts, input.contextAttachments, groupTarget),
         facetSnapshot: facetSnapshot(input.facetDefinitions, input.facetSchemas, input.facetAssignments, groupTarget),
         templateSnapshot: templateSnapshot(input.geneTemplates),
-        resolvedSnapshot: { groupId: group.groupId, sharedFacts: group.sharedFacts }
+        resolvedSnapshot: { groupId: group.groupId, sharedFacts: group.sharedFacts },
+        readinessEvaluatedAt: artifact.createdAt
       })
     );
   }
@@ -846,7 +859,8 @@ function buildSpeciesFrames(input: CompileSpeciesSnapshotInput, artifact: Omit<S
       traces: [...artifact.sourceTrace, ...artifact.contextTrace, ...artifact.referenceTrace],
       conflictReport: artifact.conflictReport,
       openQuestions: artifact.openQuestions,
-      feedback
+      feedback,
+      readinessEvaluatedAt: artifact.createdAt
     })
   );
   return { frames, feedback };
@@ -877,6 +891,17 @@ function dependencyVectorForPhenotype(input: CompilePhenotypeGenerationInput, ar
     );
   }
   refs.push(entityDependency({ objectType: "task-brief", objectId: artifactId, role: "source", contentHash: contentHash(input.taskBrief) }));
+  if (input.usageGuideSnapshot) {
+    refs.push(
+      entityDependency({
+        objectType: "phenotype-usage-guide",
+        objectId: input.usageGuideSnapshot.usageGuideId,
+        versionId: String(input.usageGuideSnapshot.usageGuideRevision),
+        role: "context",
+        value: input.usageGuideSnapshot
+      })
+    );
+  }
   return uniqueDependencies(refs);
 }
 
@@ -1338,7 +1363,7 @@ export function compilePhenotypeGeneration(input: CompilePhenotypeGenerationInpu
   const inheritedFrames = uniqueFrames(input.speciesArtifact?.frames ?? []);
   const phenotypeTarget: CompileEntityRef = {
     objectType: "phenotype",
-    objectId: `${input.node.nodeId}:${input.phenotypeType}`,
+    objectId: input.usageGuideSnapshot?.phenotypeId ?? `${input.node.nodeId}:${input.phenotypeType}`,
     graphId: input.graph.graphId,
     label: input.phenotypeType
   };
@@ -1365,6 +1390,7 @@ export function compilePhenotypeGeneration(input: CompilePhenotypeGenerationInpu
     suggestedAction: "provide a compile decision patch or adjust the task brief",
     sourceObjectIds: request.sourceObjectIds
   }));
+  const createdAt = new Date().toISOString();
   const phenotypeFrame = createFrame({
     artifactId: input.artifactId,
     level: "phenotype",
@@ -1377,19 +1403,33 @@ export function compilePhenotypeGeneration(input: CompilePhenotypeGenerationInpu
         fieldPath: "taskBrief",
         summary: input.taskBrief,
         value: { phenotypeType: input.phenotypeType, taskBrief: input.taskBrief }
-      })
+      }),
+      ...(input.usageGuideSnapshot
+        ? [
+            snapshotEntry({
+              objectType: "phenotype-usage-guide",
+              objectId: input.usageGuideSnapshot.usageGuideId,
+              fieldPath: "usageGuideSnapshot",
+              summary: `${input.usageGuideSnapshot.title} @ revision ${input.usageGuideSnapshot.usageGuideRevision}`,
+              value: input.usageGuideSnapshot,
+              role: "context"
+            })
+          ]
+        : [])
     ],
     contextSnapshot: [],
     resolvedSnapshot: {
       phenotypeType: input.phenotypeType,
       taskBrief: input.taskBrief,
       prompt,
-      negativePrompt: [...new Set(negativeParts)].join(", ")
+      negativePrompt: [...new Set(negativeParts)].join(", "),
+      usageGuideSnapshot: input.usageGuideSnapshot
     },
     traces: [...sourceTrace, ...contextTrace, ...referenceTrace, ...rubricTrace],
     conflictReport: input.speciesArtifact?.conflictReport ?? [],
     openQuestions: [...(input.speciesArtifact?.openQuestions ?? []), ...decisionRequests.map((request) => request.reason)],
-    feedback: [...(input.speciesArtifact?.feedback ?? []), ...usageGuideFeedback, ...phenotypeFeedback]
+    feedback: [...(input.speciesArtifact?.feedback ?? []), ...usageGuideFeedback, ...phenotypeFeedback],
+    readinessEvaluatedAt: createdAt
   });
 
   return {
@@ -1432,7 +1472,7 @@ export function compilePhenotypeGeneration(input: CompilePhenotypeGenerationInpu
     reviewChecklist,
     generationConstraints: input.generationConstraints ?? {},
     openQuestions: [...(input.speciesArtifact?.openQuestions ?? []), ...decisionRequests.map((request) => request.reason)],
-    createdAt: new Date().toISOString()
+    createdAt
   };
 }
 

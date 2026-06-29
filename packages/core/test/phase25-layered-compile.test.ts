@@ -21,7 +21,7 @@ import {
 } from "../src/index.js";
 
 function normalize(value: unknown) {
-  return JSON.parse(JSON.stringify(value, (key, inner) => (key === "createdAt" || key === "frameId" ? "<stable>" : inner)));
+  return JSON.parse(JSON.stringify(value, (key, inner) => (key === "createdAt" || key === "evaluatedAt" || key === "frameId" ? "<stable>" : inner)));
 }
 
 describe("Phase 25 PRD-16 layered compile pipeline", () => {

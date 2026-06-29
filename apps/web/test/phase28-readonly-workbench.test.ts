@@ -36,9 +36,31 @@ describe("Phase 28 PRD-21 DNA read-only workbench", () => {
   });
 
   test("renders Atlas Map as the default module with explorer, board, and library routes", () => {
+    const snapshot = JSON.parse(JSON.stringify(sampleWorkbenchSnapshot));
+    const readiness = {
+      score: 82,
+      level: "ready",
+      targetLevel: "graph",
+      targetId: "graph-explorer",
+      missing: [],
+      suggestions: ["Keep current design language coverage."],
+      dimensions: [{ key: "graph-purpose", label: "Purpose and design direction", score: 100 }],
+      evaluatedAt: "2026-06-30T10:00:00.000Z"
+    };
+    snapshot.graphs[0].readiness = { ...readiness, targetId: "graph-language" };
+    snapshot.graphs[1].readiness = readiness;
+    snapshot.graphs[1].groups[0].readiness = { ...readiness, targetLevel: "species-group", targetId: "group-ui", level: "warning", score: 72 };
+    snapshot.graphs[1].nodes[0].readiness = { ...readiness, targetLevel: "species-node", targetId: "node-warning", level: "warning", score: 68 };
+    snapshot.graphs[1].phenotypeOverlay[0].readiness = {
+      ...readiness,
+      targetLevel: "phenotype",
+      targetId: "ph-warning-icon",
+      boundVersionRef: "phenotype-usage-guide:guide-warning-usage@2"
+    };
+    snapshot.generation.tasks[0].targetReadiness = { ...readiness, targetLevel: "phenotype", targetId: "ph-warning-icon" };
     const html = renderToStaticMarkup(
       React.createElement(ReadonlyWorkbench, {
-        initialState: { status: "ready", snapshot: sampleWorkbenchSnapshot }
+        initialState: { status: "ready", snapshot }
       })
     );
 
@@ -85,6 +107,8 @@ describe("Phase 28 PRD-21 DNA read-only workbench", () => {
     expect(html).toContain("Gallery");
     expect(html).toContain("Usage Guide");
     expect(html).toContain("Guide coverage");
+    expect(html).toContain("readiness ready 82");
+    expect(html).toContain("Design readiness: ready 82");
     expect(html).toContain("must preserve");
     expect(html).toContain("Warning Toolbar Icon usage");
     expect(html).toContain("filter-sheet");

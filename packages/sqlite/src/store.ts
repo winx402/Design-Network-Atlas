@@ -2429,7 +2429,8 @@ export function exportProject(store: SqliteDnaStore, outDir: string, options: Ex
       ? {
           stage: "reviewed" as const,
           cleanCurrentState: true,
-          usageGuideCoverage: createUsageGuideCoverage(store)
+          usageGuideCoverage: createUsageGuideCoverage(store),
+          designReadiness: createDesignReadinessReviewSummary(store)
         }
       : undefined;
   mkdirSync(outDir, { recursive: true });
@@ -2558,6 +2559,95 @@ function createUsageGuideCoverage(store: SqliteDnaStore) {
     phenotypeCount: phenotypes.length,
     activeGuideCount: phenotypes.length - missingGuidePhenotypeIds.length,
     missingGuidePhenotypeIds
+  };
+}
+
+function summarizeReadinessForExport(input: {
+  targetType: string;
+  targetId: string;
+  artifactId?: string;
+  validity?: { state: string; reasons?: string[] };
+  readiness?: {
+    score: number;
+    level: string;
+    blockingIssues?: string[];
+    suggestions?: string[];
+    dimensions?: Array<{ key: string; missing?: string[] }>;
+  };
+}) {
+  return {
+    targetType: input.targetType,
+    targetId: input.targetId,
+    artifactId: input.artifactId,
+    level: input.readiness?.level ?? "missing",
+    score: input.readiness?.score,
+    stale: Boolean(input.validity && input.validity.state !== "current"),
+    staleReasons: input.validity?.state === "current" ? [] : input.validity?.reasons ?? [],
+    missing: (input.readiness?.dimensions ?? []).flatMap((dimension) => (dimension.missing ?? []).map((item) => `${dimension.key}:${item}`)).slice(0, 8),
+    blockingIssues: (input.readiness?.blockingIssues ?? []).slice(0, 8),
+    suggestions: (input.readiness?.suggestions ?? []).slice(0, 8)
+  };
+}
+
+function createDesignReadinessReviewSummary(store: SqliteDnaStore) {
+  const targets = [];
+  for (const graph of store.graphs.list()) {
+    const graphArtifact = store.entityCompileArtifacts.listByTarget("graph", graph.graphId).at(-1);
+    targets.push(
+      summarizeReadinessForExport({
+        targetType: "graph",
+        targetId: graph.graphId,
+        artifactId: graphArtifact?.artifactId,
+        validity: graphArtifact?.validity,
+        readiness: graphArtifact?.frames.find((frame) => frame.level === "graph")?.readiness
+      })
+    );
+    for (const group of store.speciesGroups.listByGraph(graph.graphId)) {
+      const artifact = store.entityCompileArtifacts.listByTarget("species-group", group.groupId).at(-1);
+      targets.push(
+        summarizeReadinessForExport({
+          targetType: "species-group",
+          targetId: group.groupId,
+          artifactId: artifact?.artifactId,
+          validity: artifact?.validity,
+          readiness: artifact?.frames.find((frame) => frame.level === "species-group")?.readiness
+        })
+      );
+    }
+    for (const node of store.nodes.listByGraph(graph.graphId)) {
+      const artifact = store.speciesCompileArtifacts.listByNode(node.nodeId).at(-1);
+      targets.push(
+        summarizeReadinessForExport({
+          targetType: "species-node",
+          targetId: node.nodeId,
+          artifactId: artifact?.artifactId,
+          validity: artifact?.validity,
+          readiness: artifact?.frames.find((frame) => frame.level === "species-node")?.readiness
+        })
+      );
+    }
+    for (const phenotype of store.phenotypes.listByGraph(graph.graphId)) {
+      const artifact = store.phenotypeCompileArtifacts
+        .listByNode(phenotype.nodeId)
+        .filter((candidate) => candidate.phenotypeType === phenotype.phenotypeType)
+        .at(-1);
+      targets.push(
+        summarizeReadinessForExport({
+          targetType: "phenotype",
+          targetId: phenotype.phenotypeId,
+          artifactId: artifact?.artifactId,
+          validity: artifact?.validity,
+          readiness: artifact?.frames.find((frame) => frame.level === "phenotype")?.readiness
+        })
+      );
+    }
+  }
+  return {
+    targets,
+    blockingCount: targets.filter((target) => target.level === "blocked").length,
+    warningCount: targets.filter((target) => target.level === "warning").length,
+    missingCount: targets.filter((target) => target.level === "missing").length,
+    topSuggestions: targets.flatMap((target) => target.suggestions ?? []).slice(0, 12)
   };
 }
 

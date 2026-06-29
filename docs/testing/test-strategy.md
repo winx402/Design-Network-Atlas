@@ -157,6 +157,8 @@
 - `dna-phenotype-generation` 是正式 MVP 场景 skill，覆盖 missing compile artifact、blocking open questions、generationPlan、planningMode、planOrTaskProposal、versionBinding、registrationPlan 和 writeStrategy。
 - generation orchestration 测试覆盖 plan/task update preview/apply、immutable identity/trace links、batch selector safeguards、referenceGenerationJobIds/referenceAssetIds/contextReferenceIds 只保存 id、graph/group scoped reference generation、reference AssetIndex pointers、external completion preview/apply、atomic `link-asset --mark-generated`、reference asset pointer replacement/migration，以及 export/import/security redaction。
 - Layered compile golden tests 覆盖 atlas、graph、species-group、species-node、phenotype frame 顺序，dependency vector，staleness/current/historical 判断，decision request/patch replay，以及 compile feedback 不改写上游 graph/context/facet/template facts。
+- Design Readiness tests cover atlas、graph、species-group、species-node、phenotype dimensions, score levels, dependency-vector binding, `off | warn | block` policy behavior, artifact-only `readiness assess --apply`, Web/review-current surfacing, and phenotype generation blocking only when policy requires it.
+- Self-Optimization tests cover feedback-to-candidate mapping, confidence/generality/risk fields, proposal/change-set preview boundaries, no silent graph/context/facet writes, low-confidence open questions, and secret-like feedback redaction so credentials, signed URLs, complete private links, and raw provider payloads never enter records or exports.
 - Skill 不建议保存 provider credentials、完整私密链接或 raw Agent host responses。
 - Skill 不把未经确认的 LLM 推断写入正式图谱，也不直接写数据库内部结构、导出目录或外部素材库。
 
