@@ -47,6 +47,7 @@ import {
   createDefaultPhenotypeLibrary,
   createDefaultPhenotypeLibraryGraphBinding,
   createDefaultStorageMount,
+  FacetAssignmentTargetTypeSchema,
   createImpactRecord,
   createImpactRecords,
   createReviewRecord,
@@ -183,6 +184,39 @@ function parseFacetAssignmentValues(values: string[] | undefined) {
     }
   }
   return result;
+}
+
+function parseFacetLiteralValues(values: string[] | undefined) {
+  const result: Record<string, unknown> = {};
+  for (const value of values ?? []) {
+    const [key, ...rest] = value.split("=");
+    if (!key || rest.length === 0) throw new Error(`Expected key=value, got ${value}`);
+    const raw = rest.join("=");
+    try {
+      result[key] = JSON.parse(raw);
+    } catch {
+      result[key] = raw;
+    }
+  }
+  return result;
+}
+
+const facetAssignmentTargetAliases: Record<string, string> = {
+  group: "species-group",
+  node: "species-node",
+  relationship: "design-relationship",
+  version: "phenotype-version"
+};
+
+const canonicalFacetAssignmentTargetTypes = FacetAssignmentTargetTypeSchema.options.join(", ");
+
+function normalizeFacetAssignmentTargetType(value: string) {
+  const normalized = facetAssignmentTargetAliases[value] ?? value;
+  const parsed = FacetAssignmentTargetTypeSchema.safeParse(normalized);
+  if (!parsed.success) {
+    throw new Error(`unknown facet assignment target type: ${value}. Allowed target types: ${canonicalFacetAssignmentTargetTypes}. Aliases: group, node, relationship, version.`);
+  }
+  return parsed.data;
 }
 
 function parseTagMappings(values: string[] | undefined) {
@@ -710,6 +744,33 @@ graph
     store.close();
   });
 graph
+  .command("update")
+  .requiredOption("--id <graphId>", "graph id")
+  .option("--name <name>", "graph name")
+  .option("--purpose <purpose>", "graph purpose")
+  .option("--status <status>", "graph status")
+  .option("--set-facet <key=value>", "set intrinsic graph facet value; JSON literals are accepted", collect, [])
+  .option("--unset-facet <key>", "unset intrinsic graph facet key", collect, [])
+  .option("--apply", "persist graph update")
+  .action((options, command) => {
+    const store = openStore(command);
+    const services = createDnaServices(store);
+    const result = services.graph.updateGraph(
+      {
+        graphId: options.id,
+        name: options.name,
+        purpose: options.purpose,
+        status: options.status,
+        setFacets: parseFacetLiteralValues(options.setFacet),
+        unsetFacets: options.unsetFacet
+      },
+      { ...writeOptions(command), apply: Boolean(options.apply || shouldApply(command)) }
+    );
+    if (result.changeSet.status === "preview") printChangeSet(result.changeSet);
+    else console.log(`updated graph ${result.value.graphId}`);
+    store.close();
+  });
+graph
   .command("list")
   .option("--format <format>", "output format: json or text")
   .action((options, command) => {
@@ -1048,17 +1109,18 @@ const facetAssignment = facet.command("assignment").description("Manage facet as
 facetAssignment
   .command("create")
   .option("--id <assignmentId>", "facet assignment id")
-  .option("--target-type <targetType>", "assignment target type")
+  .option("--target-type <targetType>", `assignment target type: ${canonicalFacetAssignmentTargetTypes}; aliases: group, node, relationship, version`)
   .option("--target <targetId>", "assignment target id")
   .option("--value <facetId=value>", "facet value assignment", collect, [])
   .option("--status <status>", "facet assignment status", "active")
   .action((options, command) => {
     const store = openStore(command);
     const services = createDnaServices(store);
+    const targetTypeInput = requiredUnlessChangeSetApply(options.targetType, "--target-type", command);
     const result = services.facet.createAssignment(
       {
         assignmentId: requiredUnlessChangeSetApply(options.id, "--id", command),
-        targetType: requiredUnlessChangeSetApply(options.targetType, "--target-type", command),
+        targetType: targetTypeInput ? normalizeFacetAssignmentTargetType(targetTypeInput) : targetTypeInput,
         targetId: requiredUnlessChangeSetApply(options.target, "--target", command),
         values: parseFacetAssignmentValues(options.value),
         status: options.status
@@ -1069,9 +1131,10 @@ facetAssignment
     else console.log(`created facet assignment ${result.value.assignmentId}`);
     store.close();
   });
-facetAssignment.command("list").option("--target-type <targetType>", "target type").option("--target <targetId>", "target id").action((options, command) => {
+facetAssignment.command("list").option("--target-type <targetType>", `target type: ${canonicalFacetAssignmentTargetTypes}`).option("--target <targetId>", "target id").action((options, command) => {
   const store = openStore(command);
-  const values = options.targetType && options.target ? store.facetAssignments.listByTarget(options.targetType, options.target) : store.facetAssignments.list();
+  const targetType = options.targetType ? normalizeFacetAssignmentTargetType(options.targetType) : undefined;
+  const values = targetType && options.target ? store.facetAssignments.listByTarget(targetType, options.target) : store.facetAssignments.list();
   console.log(JSON.stringify(values, null, 2));
   store.close();
 });
@@ -1325,6 +1388,64 @@ context
     } else {
       console.log(`created design context ${result.value.contextId}`);
     }
+    store.close();
+  });
+
+context
+  .command("update")
+  .requiredOption("--id <contextId>", "design context id")
+  .option("--name <name>", "design context name")
+  .option("--summary <summary>", "context summary")
+  .option("--status <status>", "context status")
+  .option("--confidence <confidence>", "confirmed, inferred, or draft")
+  .option("--owner <owner>", "owner role")
+  .option("--version <version>", "context version")
+  .option("--append-fact <factId>", "append linked context fact id", collect, [])
+  .option("--remove-fact <factId>", "remove linked context fact id", collect, [])
+  .option("--append-principle <principleId>", "append linked design principle id", collect, [])
+  .option("--remove-principle <principleId>", "remove linked design principle id", collect, [])
+  .option("--append-motif <motifId>", "append linked context motif id", collect, [])
+  .option("--remove-motif <motifId>", "remove linked context motif id", collect, [])
+  .option("--append-reference <referenceId>", "append linked context reference id", collect, [])
+  .option("--remove-reference <referenceId>", "remove linked context reference id", collect, [])
+  .option("--append-rubric <rubricId>", "append linked review rubric id", collect, [])
+  .option("--remove-rubric <rubricId>", "remove linked review rubric id", collect, [])
+  .option("--append-negative-boundary <text>", "append negative boundary", collect, [])
+  .option("--remove-negative-boundary <text>", "remove negative boundary", collect, [])
+  .option("--append-source-ref <text>", "append source reference", collect, [])
+  .option("--remove-source-ref <text>", "remove source reference", collect, [])
+  .option("--apply", "persist context update")
+  .action((options, command) => {
+    const store = openStore(command);
+    const services = createDnaServices(store);
+    const result = services.context.updateContext(
+      {
+        contextId: options.id,
+        name: options.name,
+        summary: options.summary,
+        status: options.status,
+        confidence: options.confidence,
+        owner: options.owner,
+        version: options.version,
+        appendFactIds: options.appendFact,
+        removeFactIds: options.removeFact,
+        appendPrincipleIds: options.appendPrinciple,
+        removePrincipleIds: options.removePrinciple,
+        appendMotifIds: options.appendMotif,
+        removeMotifIds: options.removeMotif,
+        appendReferenceIds: options.appendReference,
+        removeReferenceIds: options.removeReference,
+        appendReviewRubricIds: options.appendRubric,
+        removeReviewRubricIds: options.removeRubric,
+        appendNegativeBoundaries: options.appendNegativeBoundary,
+        removeNegativeBoundaries: options.removeNegativeBoundary,
+        appendSourceRefs: options.appendSourceRef,
+        removeSourceRefs: options.removeSourceRef
+      },
+      { ...writeOptions(command), apply: Boolean(options.apply || shouldApply(command)) }
+    );
+    if (result.changeSet.status === "preview") printChangeSet(result.changeSet);
+    else console.log(`updated design context ${result.value.contextId}`);
     store.close();
   });
 
@@ -2393,6 +2514,56 @@ referenceGeneration
 
 const phenotype = program.command("phenotype").description("Generate and manage phenotypes");
 phenotype
+  .command("create")
+  .requiredOption("--graph <graphId>", "graph id")
+  .requiredOption("--node <nodeId>", "node id")
+  .requiredOption("--type <phenotypeType>", "phenotype type")
+  .requiredOption("--name <name>", "phenotype name")
+  .option("--id <phenotypeId>", "phenotype id")
+  .option("--brief <text>", "object brief for the planned phenotype")
+  .option("--type-source <source>", "phenotype type source: built-in, template, or custom", "custom")
+  .option("--tag <tag>", "phenotype tag", collect, [])
+  .option("--set-facet <key=value>", "set planned phenotype facet value; JSON literals are accepted", collect, [])
+  .option("--expected-asset-type <type>", "expected output asset type", collect, [])
+  .option("--routing-policy <routingPolicyId>", "library routing policy id")
+  .option("--review-rubric <rubricId>", "context review rubric id", collect, [])
+  .option("--notes <text>", "output plan notes")
+  .option("--apply", "persist planned phenotype")
+  .action((options, command) => {
+    const store = openStore(command);
+    const services = createDnaServices(store);
+    const result = services.phenotype.createPlanned(
+      {
+        phenotypeId: options.id ?? makeId("phenotype"),
+        graphId: options.graph,
+        nodeId: options.node,
+        phenotypeType: options.type,
+        phenotypeTypeSource: options.typeSource,
+        name: options.name,
+        objectBrief: options.brief,
+        tags: options.tag,
+        facets: parseFacetLiteralValues(options.setFacet),
+        outputPlan: {
+          expectedAssetTypes: options.expectedAssetType,
+          routingPolicyId: options.routingPolicy,
+          reviewRubricIds: options.reviewRubric,
+          notes: options.notes
+        }
+      },
+      { ...writeOptions(command), apply: Boolean(options.apply || shouldApply(command)) }
+    );
+    if (result.changeSet.status === "preview") printChangeSet(result.changeSet);
+    else console.log(`created planned phenotype ${result.value.phenotypeId}`);
+    store.close();
+  });
+phenotype.command("show").requiredOption("--id <phenotypeId>", "phenotype id").action((options, command) => {
+  const store = openStore(command);
+  const value = store.phenotypes.get(options.id);
+  if (!value) throw new Error(`phenotype not found: ${options.id}`);
+  console.log(JSON.stringify(value, null, 2));
+  store.close();
+});
+phenotype
   .command("generate")
   .option("--task <taskId>", "generation task id")
   .option("--graph <graphId>", "graph id")
@@ -2406,6 +2577,8 @@ phenotype
   .option("--replay-historical", "allow stale compile artifacts for deterministic historical replay")
   .option("--tool <tool>", "tool", "manual")
   .option("--apply", "persist generated artifacts, phenotype version, and generation job")
+  .option("--format <format>", "output format: json")
+  .option("--json", "alias for --format json")
   .action((options, command) => {
     const store = openStore(command);
     const prepared = options.task
@@ -2429,12 +2602,50 @@ phenotype
           ? `Create a generation task to track orchestration for planned phenotype ${prepared.phenotype.phenotypeId}.`
           : undefined
     };
-    if (!options.apply && !shouldApply(command)) {
+    const format = options.json ? "json" : parseOutputFormat(options.format);
+    const apply = Boolean(options.apply || shouldApply(command));
+    const mode = (command as Command).optsWithGlobals<CommandOptions>().mode ?? "preview-confirm";
+    if (format && format !== "json") throw new Error(`unknown phenotype generate format: ${format}`);
+    if (!apply) {
       store.close();
+      if (format === "json") {
+        console.log(
+          JSON.stringify(
+            {
+              mode,
+              operation: "phenotype.generate",
+              summary: `generate phenotype ${prepared.phenotype.phenotypeId}`,
+              persisted: false,
+              payload: response,
+              nextAction: "Re-run with --apply or --yes to persist."
+            },
+            null,
+            2
+          )
+        );
+        return;
+      }
       return preview(command, `generate phenotype ${prepared.phenotype.phenotypeId}`, response);
     }
     persistPhenotypeGeneration(store, prepared, { taskId: options.task });
-    console.log(JSON.stringify(response, null, 2));
+    if (format === "json") {
+      console.log(
+        JSON.stringify(
+          {
+            mode,
+            operation: "phenotype.generate",
+            summary: `generate phenotype ${prepared.phenotype.phenotypeId}`,
+            persisted: true,
+            payload: response,
+            nextAction: null
+          },
+          null,
+          2
+        )
+      );
+    } else {
+      console.log(JSON.stringify(response, null, 2));
+    }
     store.close();
   });
 

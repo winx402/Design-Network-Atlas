@@ -40,6 +40,7 @@ import {
   FacetDefinition,
   FacetSchema,
   Graph,
+  GraphSchema,
   LibraryRoutingPolicy,
   markChangeSetApplied,
   markChangeSetDiscarded,
@@ -47,6 +48,7 @@ import {
   ModelingBatchSchema,
   nowIso,
   Phenotype,
+  PhenotypeSchema,
   PhenotypeLibrary,
   PhenotypeLibraryGraphBinding,
   Proposal,
@@ -55,6 +57,9 @@ import {
   SpeciesGroupMembership,
   SpeciesNode,
   StorageMount,
+  DesignContextSchema,
+  sanitizePlanningJson,
+  sanitizePlanningText,
   validateDesignRelationshipSet,
   WriteMode
 } from "@dna/core";
@@ -93,6 +98,15 @@ export interface CreateGraphInput {
   purpose: string;
   status?: Graph["status"];
   templateIds?: string[];
+}
+
+export interface UpdateGraphInput {
+  graphId: string;
+  name?: string;
+  purpose?: string;
+  status?: Graph["status"];
+  setFacets?: Record<string, unknown>;
+  unsetFacets?: string[];
 }
 
 export interface CreateNodeInput {
@@ -208,6 +222,30 @@ export interface CreateDesignContextInput {
   extensions?: Record<string, unknown>;
 }
 
+export interface UpdateDesignContextInput {
+  contextId: string;
+  name?: string;
+  summary?: string;
+  status?: DesignContext["status"];
+  confidence?: DesignContext["confidence"];
+  owner?: string;
+  version?: string;
+  appendFactIds?: string[];
+  removeFactIds?: string[];
+  appendPrincipleIds?: string[];
+  removePrincipleIds?: string[];
+  appendMotifIds?: string[];
+  removeMotifIds?: string[];
+  appendReferenceIds?: string[];
+  removeReferenceIds?: string[];
+  appendReviewRubricIds?: string[];
+  removeReviewRubricIds?: string[];
+  appendNegativeBoundaries?: string[];
+  removeNegativeBoundaries?: string[];
+  appendSourceRefs?: string[];
+  removeSourceRefs?: string[];
+}
+
 export interface CreateContextAttachmentInput {
   attachmentId: string;
   contextId: string;
@@ -275,6 +313,19 @@ export interface CreateContextReviewRubricInput {
   failSignal?: string;
   severity?: ContextReviewRubric["severity"];
   status?: ContextReviewRubric["status"];
+}
+
+export interface CreatePlannedPhenotypeInput {
+  phenotypeId: string;
+  graphId: string;
+  nodeId: string;
+  phenotypeType: string;
+  name: string;
+  objectBrief?: string;
+  phenotypeTypeSource?: Phenotype["phenotypeTypeSource"];
+  tags?: string[];
+  facets?: Record<string, unknown>;
+  outputPlan?: Phenotype["outputPlan"];
 }
 
 export interface CreateProposalInput {
@@ -354,6 +405,49 @@ export function createDnaServices(store: DnaServiceStore) {
           return applyGraphChangeSet(store, changeSet);
         }
         return { value: graph, changeSet };
+      },
+      updateGraph(input: UpdateGraphInput, options: WriteOptions): ServiceResult<Graph> {
+        if (options.mode === "changeset-apply") {
+          const existing = requireExistingChangeSet(store, options.changeSetId);
+          return applyGraphUpdateChangeSet(store, existing);
+        }
+        const current = store.graphs.get(input.graphId);
+        if (!current) throw new Error(`graph not found: ${input.graphId}`);
+        const facets = { ...current.facets, ...sanitizePlanningJson(input.setFacets) };
+        for (const key of input.unsetFacets ?? []) delete facets[key];
+        const next = GraphSchema.parse({
+          ...current,
+          ...(input.name !== undefined ? { name: sanitizePlanningText(input.name) ?? "" } : {}),
+          ...(input.purpose !== undefined ? { purpose: sanitizePlanningText(input.purpose) ?? "" } : {}),
+          ...(input.status !== undefined ? { status: input.status } : {}),
+          facets,
+          updatedAt: nowIso()
+        });
+        const changeSet = createChangeSet({
+          mode: options.mode,
+          objectType: "graph",
+          operation: "update",
+          summary: `update graph ${next.graphId}`,
+          diff: {
+            graphId: next.graphId,
+            before: {
+              name: current.name,
+              purpose: current.purpose,
+              status: current.status,
+              facets: current.facets
+            },
+            after: {
+              name: next.name,
+              purpose: next.purpose,
+              status: next.status,
+              facets: next.facets
+            }
+          },
+          payload: { graph: next }
+        });
+        store.changeSets.create(changeSet);
+        if (shouldApply(options)) return applyGraphUpdateChangeSet(store, changeSet);
+        return { value: next, changeSet };
       },
       previewReset(graphId: string) {
         return store.previewGraphReset(graphId);
@@ -616,6 +710,51 @@ export function createDnaServices(store: DnaServiceStore) {
         }
         return { value: context, changeSet };
       },
+      updateContext(input: UpdateDesignContextInput, options: WriteOptions): ServiceResult<DesignContext> {
+        if (options.mode === "changeset-apply") {
+          const existing = requireExistingChangeSet(store, options.changeSetId);
+          return applyDesignContextUpdateChangeSet(store, existing);
+        }
+        const current = store.designContexts.get(input.contextId);
+        if (!current) throw new Error(`design context not found: ${input.contextId}`);
+        validateContextUpdateReferences(store, input);
+        const next = DesignContextSchema.parse({
+          ...current,
+          ...(input.name !== undefined ? { name: sanitizePlanningText(input.name) ?? "" } : {}),
+          ...(input.summary !== undefined ? { summary: sanitizePlanningText(input.summary) ?? "" } : {}),
+          ...(input.status !== undefined ? { status: input.status } : {}),
+          ...(input.confidence !== undefined ? { confidence: input.confidence } : {}),
+          ...(input.owner !== undefined ? { owner: sanitizePlanningText(input.owner) } : {}),
+          ...(input.version !== undefined ? { version: input.version } : {}),
+          factIds: updateUniqueArray(current.factIds, input.appendFactIds, input.removeFactIds),
+          principleIds: updateUniqueArray(current.principleIds, input.appendPrincipleIds, input.removePrincipleIds),
+          motifIds: updateUniqueArray(current.motifIds, input.appendMotifIds, input.removeMotifIds),
+          referenceIds: updateUniqueArray(current.referenceIds, input.appendReferenceIds, input.removeReferenceIds),
+          reviewRubricIds: updateUniqueArray(current.reviewRubricIds, input.appendReviewRubricIds, input.removeReviewRubricIds),
+          negativeBoundaries: updateUniqueArray(
+            current.negativeBoundaries,
+            normalizeTextArray(input.appendNegativeBoundaries, "append-negative-boundary"),
+            normalizeTextArray(input.removeNegativeBoundaries, "remove-negative-boundary")
+          ),
+          sourceRefs: updateUniqueArray(current.sourceRefs, normalizeTextArray(input.appendSourceRefs, "append-source-ref"), normalizeTextArray(input.removeSourceRefs, "remove-source-ref")),
+          updatedAt: nowIso()
+        });
+        const changeSet = createChangeSet({
+          mode: options.mode,
+          objectType: "design-context",
+          operation: "update",
+          summary: `update design context ${next.contextId}`,
+          diff: {
+            contextId: next.contextId,
+            before: contextDiffSnapshot(current),
+            after: contextDiffSnapshot(next)
+          },
+          payload: { context: next }
+        });
+        store.changeSets.create(changeSet);
+        if (shouldApply(options)) return applyDesignContextUpdateChangeSet(store, changeSet);
+        return { value: next, changeSet };
+      },
       attachContext(input: CreateContextAttachmentInput, options: WriteOptions): ServiceResult<ContextAttachment> {
         if (options.mode === "changeset-apply") {
           const existing = requireExistingChangeSet(store, options.changeSetId);
@@ -741,6 +880,48 @@ export function createDnaServices(store: DnaServiceStore) {
           return applyContextReviewRubricChangeSet(store, changeSet);
         }
         return { value: rubric, changeSet };
+      }
+    },
+    phenotype: {
+      createPlanned(input: CreatePlannedPhenotypeInput, options: WriteOptions): ServiceResult<Phenotype> {
+        if (options.mode === "changeset-apply") {
+          const existing = requireExistingChangeSet(store, options.changeSetId);
+          return applyPhenotypeChangeSet(store, existing);
+        }
+        const phenotype = PhenotypeSchema.parse(
+          createDefaultPhenotype({
+            phenotypeId: input.phenotypeId,
+            graphId: input.graphId,
+            nodeId: input.nodeId,
+            phenotypeType: input.phenotypeType,
+            phenotypeTypeSource: input.phenotypeTypeSource ?? "custom",
+            name: sanitizePlanningText(input.name) ?? input.name,
+            objectBrief: sanitizePlanningText(input.objectBrief) ?? "",
+            tags: input.tags ?? [],
+            status: "planned",
+            facets: sanitizePlanningJson(input.facets),
+            outputPlan: input.outputPlan ?? { expectedAssetTypes: [], reviewRubricIds: [] }
+          })
+        );
+        const errors = validatePlannedPhenotype(store, phenotype);
+        if (errors.length > 0) throw new Error(errors.join("; "));
+        const changeSet = createChangeSet({
+          mode: options.mode,
+          objectType: "phenotype",
+          operation: "create",
+          summary: `create planned phenotype ${phenotype.phenotypeId}`,
+          diff: {
+            phenotypeId: phenotype.phenotypeId,
+            graphId: phenotype.graphId,
+            nodeId: phenotype.nodeId,
+            phenotypeType: phenotype.phenotypeType,
+            status: phenotype.status
+          },
+          payload: { phenotype }
+        });
+        store.changeSets.create(changeSet);
+        if (shouldApply(options)) return applyPhenotypeChangeSet(store, changeSet);
+        return { value: phenotype, changeSet };
       }
     },
     proposal: {
@@ -1361,6 +1542,71 @@ function shouldApply(options: WriteOptions): boolean {
   return options.apply === true || options.mode === "draft-write";
 }
 
+function updateUniqueArray(current: string[], append: string[] | undefined, remove: string[] | undefined) {
+  const removeSet = new Set(remove ?? []);
+  const next = current.filter((value) => !removeSet.has(value));
+  for (const value of append ?? []) {
+    if (!next.includes(value)) next.push(value);
+  }
+  return next;
+}
+
+function normalizeTextArray(values: string[] | undefined, optionName: string) {
+  if (!values) return undefined;
+  return values.map((value) => {
+    const sanitized = sanitizePlanningText(value)?.trim();
+    if (!sanitized) throw new Error(`${optionName} cannot be empty`);
+    return sanitized;
+  });
+}
+
+function contextDiffSnapshot(context: DesignContext) {
+  return {
+    name: context.name,
+    summary: context.summary,
+    status: context.status,
+    confidence: context.confidence,
+    owner: context.owner,
+    version: context.version,
+    factIds: context.factIds,
+    principleIds: context.principleIds,
+    motifIds: context.motifIds,
+    referenceIds: context.referenceIds,
+    reviewRubricIds: context.reviewRubricIds,
+    negativeBoundaries: context.negativeBoundaries,
+    sourceRefs: context.sourceRefs
+  };
+}
+
+function validateContextUpdateReferences(store: DnaServiceStore, input: UpdateDesignContextInput) {
+  for (const factId of input.appendFactIds ?? []) {
+    if (!store.contextFacts.get(factId)) throw new Error(`context fact not found: ${factId}`);
+  }
+  for (const principleId of input.appendPrincipleIds ?? []) {
+    if (!store.designPrinciples.get(principleId)) throw new Error(`design principle not found: ${principleId}`);
+  }
+  for (const motifId of input.appendMotifIds ?? []) {
+    if (!store.contextMotifs.get(motifId)) throw new Error(`context motif not found: ${motifId}`);
+  }
+  for (const referenceId of input.appendReferenceIds ?? []) {
+    if (!store.contextReferences.get(referenceId)) throw new Error(`context reference not found: ${referenceId}`);
+  }
+  for (const rubricId of input.appendReviewRubricIds ?? []) {
+    if (!store.contextReviewRubrics.get(rubricId)) throw new Error(`context review rubric not found: ${rubricId}`);
+  }
+}
+
+function validateContextReferencesForApply(store: DnaServiceStore, context: DesignContext) {
+  validateContextUpdateReferences(store, {
+    contextId: context.contextId,
+    appendFactIds: context.factIds,
+    appendPrincipleIds: context.principleIds,
+    appendMotifIds: context.motifIds,
+    appendReferenceIds: context.referenceIds,
+    appendReviewRubricIds: context.reviewRubricIds
+  });
+}
+
 function requireExistingChangeSet(store: DnaServiceStore, changeSetId: string | undefined): ChangeSet {
   if (!changeSetId) throw new Error("change-set id is required for changeset-apply");
   const existing = requireChangeSet(store, changeSetId);
@@ -1657,13 +1903,13 @@ function validatePlannedPhenotype(store: DnaServiceStore, phenotype: Phenotype):
 }
 
 function applyChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ServiceResult<unknown> {
-  if (changeSet.objectType === "graph") return applyGraphChangeSet(store, changeSet);
+  if (changeSet.objectType === "graph") return changeSet.operation === "update" ? applyGraphUpdateChangeSet(store, changeSet) : applyGraphChangeSet(store, changeSet);
   if (changeSet.objectType === "node") return applyNodeChangeSet(store, changeSet);
   if (changeSet.objectType === "design-relationship") return applyDesignRelationshipChangeSet(store, changeSet);
   if (changeSet.objectType === "species-group") return changeSet.operation === "update" ? applySpeciesGroupUpdateChangeSet(store, changeSet) : applySpeciesGroupChangeSet(store, changeSet);
   if (changeSet.objectType === "species-group-membership") return applySpeciesGroupMembershipChangeSet(store, changeSet);
   if (changeSet.objectType === "atlas") return changeSet.operation === "update" ? applyAtlasUpdateChangeSet(store, changeSet) : applyAtlasChangeSet(store, changeSet);
-  if (changeSet.objectType === "design-context") return applyDesignContextChangeSet(store, changeSet);
+  if (changeSet.objectType === "design-context") return changeSet.operation === "update" ? applyDesignContextUpdateChangeSet(store, changeSet) : applyDesignContextChangeSet(store, changeSet);
   if (changeSet.objectType === "context-attachment") return applyContextAttachmentChangeSet(store, changeSet);
   if (changeSet.objectType === "context-fact") return applyContextFactChangeSet(store, changeSet);
   if (changeSet.objectType === "design-principle") return applyDesignPrincipleChangeSet(store, changeSet);
@@ -1840,6 +2086,21 @@ function applyGraphChangeSet(store: DnaServiceStore, changeSet: ChangeSet): Serv
   return { value: graph, changeSet: applied };
 }
 
+function applyGraphUpdateChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ServiceResult<Graph> {
+  requireChangeSetObjectType(changeSet, "graph");
+  const graph = changeSet.payload.graph as Graph | undefined;
+  if (!graph) throw new Error("change-set payload missing graph");
+  const parsed = GraphSchema.parse(graph);
+  const applied = store.transaction(() => {
+    if (!store.graphs.get(parsed.graphId)) throw new Error(`graph not found: ${parsed.graphId}`);
+    store.graphs.update(parsed);
+    const next = markChangeSetApplied(changeSet);
+    store.changeSets.update(next);
+    return next;
+  });
+  return { value: parsed, changeSet: applied };
+}
+
 function applyNodeChangeSet(
   store: DnaServiceStore,
   changeSet: ChangeSet
@@ -2011,6 +2272,22 @@ function applyDesignContextChangeSet(store: DnaServiceStore, changeSet: ChangeSe
     return next;
   });
   return { value: context, changeSet: applied };
+}
+
+function applyDesignContextUpdateChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ServiceResult<DesignContext> {
+  requireChangeSetObjectType(changeSet, "design-context");
+  const context = changeSet.payload.context as DesignContext | undefined;
+  if (!context) throw new Error("change-set payload missing design context");
+  const parsed = DesignContextSchema.parse(context);
+  const applied = store.transaction(() => {
+    if (!store.designContexts.get(parsed.contextId)) throw new Error(`design context not found: ${parsed.contextId}`);
+    validateContextReferencesForApply(store, parsed);
+    store.designContexts.update(parsed);
+    const next = markChangeSetApplied(changeSet);
+    store.changeSets.update(next);
+    return next;
+  });
+  return { value: parsed, changeSet: applied };
 }
 
 function applyContextAttachmentChangeSet(store: DnaServiceStore, changeSet: ChangeSet): ServiceResult<ContextAttachment> {
