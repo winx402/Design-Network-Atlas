@@ -12,7 +12,7 @@
 - 阶段测试通过只代表该阶段完成，不代表完整系统完成。
 - 基础完整系统只有在 Phase 11 全量验收通过后才能宣布完成。
 - Phase 12-16 属于本地优先系统的增强能力，必须单独声明、单独测试，不能反向修改 Phase 11 的完成口径。
-- 当前本地优先能力已按公开阶段验收口径覆盖到 Phase 28，并补充场景 skill、DNA Read-only Workbench、provider 安全和 exchange manifest 验收；post-v1 能力必须单独声明，不能混入当前完成声明。
+- 当前本地优先能力已按公开阶段验收口径覆盖到 Phase 28，并补充场景 skill、DNA Read-only Explorer、provider 安全和 exchange manifest 验收；post-v1 能力必须单独声明，不能混入当前完成声明。
 
 ## 2. 测试分层
 
@@ -23,7 +23,7 @@
 | integration tests | SQLite、CLI、import/export、adapter | `pnpm vitest run packages/sqlite apps/cli` |
 | golden tests | prompt、brief、review summary、Git export | `pnpm vitest run **/*.golden.test.ts` |
 | E2E tests | PRD 13 条端到端场景 | `pnpm e2e` |
-| UI tests | DNA Read-only Workbench 前端状态流与浏览器 QA | `pnpm vitest run apps/web` |
+| UI tests | DNA Read-only Explorer 前端状态流与浏览器 QA | `pnpm vitest run apps/web` |
 | security tests | 敏感信息不入库、不导出、不进日志 | `pnpm security:test` |
 | docs tests | 文档链接和阶段覆盖 | `pnpm docs:check` |
 
@@ -51,7 +51,7 @@
 | Phase 24 | modeling intake quality + facet closure + planned phenotype CLI E2E | `context create --version` 不被 root version 截获；facet definition/schema/assignment 有 service/change-set 写入路径；`dna.modeling-batch.v1` 支持 facets 与 `phenotypePlans`；import report 紧凑且显式 review stage；`modeling check` 对 batch/graph/proposal 输出稳定 findings |
 | Phase 26 | generation planning orchestration | `PhenotypeGenerationPlan`/`PhenotypeGenerationTask` schema、service expansion、CLI preview/apply、task-linked generation、export/import、read-only API/workbench 和 secret redaction |
 | Phase 27 | phenotype version lifecycle | `PhenotypeVersion` candidate/accepted/replaced/rolled-back lifecycle、feedback metadata、single accepted invariant、task/job provenance projection、export/import 和 secret redaction |
-| Phase 28 | Web read-only information architecture | `/api/workbench/snapshot` server-side view model；Overview/Graphs/Generation/Libraries 四模块；Libraries Results/Gallery 安全预览；trace/detail panel；empty/error/missing 状态；移动端无宽表和文本溢出 |
+| Phase 28 | Web read-only information architecture | `/api/workbench/snapshot` server-side view model；Atlas Map、Graph Explorer、Generation Board、Phenotype Library、Inspector；安全图库预览；empty/error/missing 状态；移动端无宽表和文本溢出 |
 | Phase 29 | generation update + scoped reference generation | `generation-plan update` / `generation-task update` 默认 preview、apply 后只改 mutable orchestration metadata；批量 task selector 防止 update-all 并跳过已有执行链接；graph/group scoped `reference-generation` 不创建 synthetic phenotype records；reference jobs/assets export/import round-trip 且脱敏私密链接和 provider credentials |
 
 ## 4. 关键测试数据
@@ -254,12 +254,14 @@
 
 ### 5.17 Phase 28 Web Read-only IA Cases
 
-- `GET /api/workbench/snapshot` 返回 server-side view model，包含 Overview、Graphs、Generation、Libraries、results/gallery preview 和 trace/detail 所需摘要。
-- Web 一级导航包含 Overview、Graphs、Generation、Libraries，且不展示写入按钮，不调用 mutating endpoint。
-- Libraries 不只是 metadata，必须展示 Results/Gallery；安全图片 preview 可显示缩略图，不可访问、不可支持或敏感 URI 展示明确占位。
+- `GET /api/workbench/snapshot` 返回 server-side view model，包含 Atlas Map、Graph Explorer、Generation Board、Phenotype Library、results/gallery preview 和 Inspector 所需摘要。
+- `GET /api/workbench/graph-map`、`GET /api/workbench/graphs/:graphId`、`GET /api/workbench/generation` 和 `GET /api/workbench/library` 提供只读 view model，前端不直接拼大量底层 repository 数据。
+- Web 默认首页是 Atlas Map，一级导航包含 Atlas Map、Graph Explorer、Generation Board、Phenotype Library，且不展示写入按钮，不调用 mutating endpoint。
+- Graph Explorer 必须展示 group lanes、species cards、DesignRelationship、bound semantics、phenotype overlay 和 compile trace；不能只展示数量或默认 Raw JSON。
+- Generation Board 必须展示 plan/task/job/version/result trace path；Phenotype Library 默认展示 gallery，安全图片 preview 可显示缩略图，不可访问、不可支持或敏感 URI 展示明确占位。
 - Snapshot 和页面源数据不得包含 API key、provider credentials、runtime credentials、raw provider payload、完整私密链接或不必要的本机绝对路径。
 - API failure、empty store、missing graph、missing linked object 均有明确只读错误或空状态。
-- 桌面和移动浏览器 QA 必须验证无文本重叠和水平溢出；移动端使用紧凑导航、列表到详情、filter sheet/detail drawer 和单/双列 gallery，而不是桌面宽表压窄。
+- 桌面和移动浏览器 QA 必须验证无文本重叠和水平溢出；移动端使用紧凑导航、Map/Graph drill-down、filter sheet/detail drawer 和单/双列 gallery，而不是桌面宽表压窄。
 
 ## 6. Golden 输出规则
 

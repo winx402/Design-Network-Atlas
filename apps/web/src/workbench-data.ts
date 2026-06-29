@@ -70,7 +70,10 @@ export interface WorkbenchGenerationPlan {
   description: string;
   status: string;
   taskCount: number;
+  versionBinding?: unknown;
   toolPreference?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface WorkbenchGenerationTask {
@@ -84,6 +87,8 @@ export interface WorkbenchGenerationTask {
   priority: number;
   status: string;
   blockingReason?: string;
+  versionBinding?: unknown;
+  toolPreference?: string;
   links: {
     planId?: string;
     speciesCompileArtifactId?: string;
@@ -91,6 +96,8 @@ export interface WorkbenchGenerationTask {
     generationJobIds: string[];
     phenotypeVersionIds: string[];
   };
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface WorkbenchOverview {
@@ -99,6 +106,11 @@ export interface WorkbenchOverview {
   latest?: Record<string, unknown>;
 }
 
+export type WorkbenchRelationshipEndpoint =
+  | { type: "graph"; graphId: string }
+  | { type: "species-group"; graphId: string; groupId: string }
+  | { type: "species-node"; graphId: string; nodeId: string };
+
 export interface WorkbenchGraphDetail {
   graphId: string;
   name: string;
@@ -106,9 +118,49 @@ export interface WorkbenchGraphDetail {
   status: string;
   currentVersion?: string;
   counts: Record<string, number>;
-  groups: Array<{ groupId: string; name: string; status: string; memberNodeIds: string[]; phenotypeIds?: string[] }>;
-  nodes: Array<{ nodeId: string; name: string; status: string; currentVersion?: string; groupIds: string[]; phenotypeIds: string[] }>;
-  relationships: Array<{ relationshipId: string; relationshipType: string; status: string; summary: string; source?: unknown; target?: unknown }>;
+  groups: Array<{
+    groupId: string;
+    name: string;
+    groupType?: string;
+    status: string;
+    memberNodeIds: string[];
+    sharedFacts?: string[];
+    phenotypeTypeSuggestions?: string[];
+    relationshipIds?: string[];
+    phenotypeIds?: string[];
+  }>;
+  nodes: Array<{
+    nodeId: string;
+    name: string;
+    category?: string;
+    level?: string;
+    status: string;
+    lineageStatus?: string;
+    currentVersion?: string;
+    groupIds: string[];
+    parentNodes?: string[];
+    motifs?: string[];
+    constraintSummary?: unknown;
+    relationshipIds?: string[];
+    phenotypeIds: string[];
+    latestCompileArtifactId?: string;
+  }>;
+  relationships: Array<{
+    relationshipId: string;
+    relationshipType: string;
+    direction?: string;
+    status: string;
+    summary: string;
+    source?: WorkbenchRelationshipEndpoint;
+    target?: WorkbenchRelationshipEndpoint;
+    designContract?: {
+      transferRule?: string;
+      mustPreserve?: string[];
+      mustAvoid?: string[];
+      divergenceRule?: string;
+      reviewQuestions?: string[];
+    };
+  }>;
   semantics?: Record<string, unknown>;
   phenotypeOverlay: Array<{
     phenotypeId: string;
@@ -442,11 +494,11 @@ export const samplePhenotypes: WorkbenchPhenotype[] = [
 export const sampleWorkbenchSnapshot: WorkbenchSnapshot = {
   overview: {
     counts: {
-      graphs: 1,
-      activeGraphs: 1,
+      graphs: 2,
+      activeGraphs: 2,
       speciesGroups: 1,
       speciesNodes: 2,
-      designRelationships: 1,
+      designRelationships: 2,
       phenotypes: samplePhenotypes.length,
       phenotypeVersions: samplePhenotypes.reduce((count, phenotype) => count + phenotype.versions.length, 0),
       candidateVersions: 1,
@@ -465,25 +517,125 @@ export const sampleWorkbenchSnapshot: WorkbenchSnapshot = {
   },
   graphs: [
     {
+      graphId: "graph-language",
+      name: "Reference Language Graph",
+      purpose: "Shared visual language and review semantics for generated UI assets",
+      status: "active",
+      currentVersion: "1.0.0",
+      counts: { groups: 0, nodes: 0, relationships: 1, phenotypes: 0, candidateVersions: 0, acceptedVersions: 0 },
+      groups: [],
+      nodes: [],
+      relationships: [
+        {
+          relationshipId: "rel-graph-language",
+          relationshipType: "translates-to",
+          direction: "source-to-target",
+          status: "active",
+          summary: "Reference graph translates motif and review language into the demo graph.",
+          source: { type: "graph", graphId: "graph-language" },
+          target: { type: "graph", graphId: "graph-demo" },
+          designContract: {
+            transferRule: "Carry bounded visual-language tokens into phenotype briefs.",
+            mustPreserve: ["warning semantics", "readable silhouette"],
+            mustAvoid: ["fake inheritance", "credential leakage"],
+            reviewQuestions: ["Can reviewers inspect the translated motif?"]
+          }
+        }
+      ],
+      phenotypeOverlay: [],
+      compileTrace: {
+        entityArtifacts: 0,
+        speciesArtifacts: 0,
+        phenotypeArtifacts: 0,
+        artifacts: []
+      }
+    },
+    {
       graphId: "graph-demo",
       name: "Demo Design Graph",
       purpose: "Read-only workbench sample",
       status: "active",
       currentVersion: "1.0.0",
-      counts: { groups: 1, nodes: 2, relationships: 1, phenotypes: 2, candidateVersions: 1, acceptedVersions: 1 },
-      groups: [{ groupId: "group-ui", name: "UI Icon Family", status: "active", memberNodeIds: ["node-warning", "node-emblem"], phenotypeIds: ["ph-warning-icon", "ph-faction-emblem"] }],
+      counts: { groups: 1, nodes: 2, relationships: 2, phenotypes: 2, candidateVersions: 1, acceptedVersions: 1 },
+      groups: [
+        {
+          groupId: "group-ui",
+          name: "UI Icon Family",
+          groupType: "product-surface",
+          status: "active",
+          memberNodeIds: ["node-warning", "node-emblem"],
+          sharedFacts: ["small UI assets must preserve sharp silhouettes"],
+          phenotypeTypeSuggestions: ["image-prompt", "art-brief"],
+          relationshipIds: ["rel-ui-icons"],
+          phenotypeIds: ["ph-warning-icon", "ph-faction-emblem"]
+        }
+      ],
       nodes: [
-        { nodeId: "node-warning", name: "Warning Icon", status: "active", currentVersion: "1.1.0", groupIds: ["group-ui"], phenotypeIds: ["ph-warning-icon"] },
-        { nodeId: "node-emblem", name: "Moon Faction Emblem", status: "active", currentVersion: "2.0.0", groupIds: ["group-ui"], phenotypeIds: ["ph-faction-emblem"] }
+        {
+          nodeId: "node-warning",
+          name: "Warning Icon",
+          category: "ui-asset",
+          level: "species",
+          status: "active",
+          currentVersion: "1.1.0",
+          groupIds: ["group-ui"],
+          motifs: ["broken amber ring", "sharp caution notch"],
+          constraintSummary: { readability: "32px", palette: "amber on dark surface" },
+          relationshipIds: ["rel-ui-icons"],
+          phenotypeIds: ["ph-warning-icon"],
+          latestCompileArtifactId: "sca-warning"
+        },
+        {
+          nodeId: "node-emblem",
+          name: "Moon Faction Emblem",
+          category: "game-art",
+          level: "species",
+          status: "active",
+          currentVersion: "2.0.0",
+          groupIds: ["group-ui"],
+          motifs: ["silver crescent", "battle-worn rim"],
+          constraintSummary: { texture: "restrained", palette: "silver blue" },
+          relationshipIds: ["rel-ui-icons"],
+          phenotypeIds: ["ph-faction-emblem"],
+          latestCompileArtifactId: "sca-emblem"
+        }
       ],
       relationships: [
         {
+          relationshipId: "rel-graph-language",
+          relationshipType: "translates-to",
+          direction: "source-to-target",
+          status: "active",
+          summary: "Reference graph translates motif and review language into the demo graph.",
+          source: { type: "graph", graphId: "graph-language" },
+          target: { type: "graph", graphId: "graph-demo" },
+          designContract: {
+            transferRule: "Carry bounded visual-language tokens into phenotype briefs.",
+            mustPreserve: ["warning semantics", "readable silhouette"],
+            mustAvoid: ["fake inheritance", "credential leakage"],
+            reviewQuestions: ["Can reviewers inspect the translated motif?"]
+          }
+        },
+        {
           relationshipId: "rel-ui-icons",
           relationshipType: "constrains",
+          direction: "source-to-target",
           status: "active",
-          summary: "Group readability constrains the icon output."
+          summary: "Group readability constrains the icon output.",
+          source: { type: "species-group", graphId: "graph-demo", groupId: "group-ui" },
+          target: { type: "species-node", graphId: "graph-demo", nodeId: "node-warning" },
+          designContract: {
+            transferRule: "Apply shared readability constraints to compact icon phenotypes.",
+            mustPreserve: ["high-contrast warning motif"],
+            mustAvoid: ["soft rounded warning shape"],
+            reviewQuestions: ["Does the icon still read at toolbar size?"]
+          }
         }
       ],
+      semantics: {
+        contextAttachments: [{ attachmentId: "attach-ui-context", contextId: "ctx-ui-safety", targetType: "species-group", targetId: "group-ui", status: "active" }],
+        facetAssignments: [{ assignmentId: "facet-warning-tone", targetType: "species-node", targetId: "node-warning", status: "active", values: { tone: "urgent" } }]
+      },
       phenotypeOverlay: samplePhenotypes.map((phenotype) => ({
         phenotypeId: phenotype.id,
         name: phenotype.name,

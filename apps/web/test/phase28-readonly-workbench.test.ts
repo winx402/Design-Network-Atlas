@@ -35,25 +35,35 @@ describe("Phase 28 PRD-21 DNA read-only workbench", () => {
     expect(snapshot.overview.counts.graphs).toBe(1);
   });
 
-  test("renders Overview, Graphs, Generation, and Libraries as read-only first-level modules", () => {
+  test("renders Atlas Map as the default module with explorer, board, and library routes", () => {
     const html = renderToStaticMarkup(
       React.createElement(ReadonlyWorkbench, {
         initialState: { status: "ready", snapshot: sampleWorkbenchSnapshot }
       })
     );
 
-    for (const label of ["Overview", "Graphs", "Generation", "Libraries"]) {
+    for (const label of ["Atlas Map", "Graph Explorer", "Generation Board", "Phenotype Library"]) {
       expect(html).toContain(label);
     }
-    expect(html).toContain("DNA Read-only Workbench");
-    expect(html).toContain("Trace Panel");
+    expect(html).toContain("DNA Read-only Explorer");
+    expect(html).toContain("Graph relationship map");
+    expect(html).toContain("Reference Language Graph");
+    expect(html).toContain("translates-to");
+    expect(html).toContain("group-lane");
+    expect(html).toContain("species-card");
+    expect(html).toContain("Plan -&gt; Task -&gt; Compile Artifact -&gt; Generation Job -&gt; Phenotype Version -&gt; Output Reference / Asset");
+    expect(html).toContain("Preview unavailable");
+    expect(html).toContain("Inspector");
     expect(html).toContain("Identity");
+    expect(html).toContain("Bound Semantics");
     expect(html).toContain("Relationships");
     expect(html).toContain("Provenance");
     expect(html).toContain("Governance");
     expect(html).toContain("External pointers");
-    expect(html).toContain("Raw JSON summary");
-    expect(html).toContain("Results");
+    expect(html).toContain("<summary>Raw JSON</summary>");
+    expect(html).not.toContain('aria-label="Workbench metrics"');
+    expect(html).not.toContain("Anomaly entry points");
+    expect(html).not.toContain("Overview");
     expect(html).toContain("Gallery");
     expect(html).toContain("mobile-tabbar");
     expect(html).toContain("filter-sheet");

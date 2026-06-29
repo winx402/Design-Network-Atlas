@@ -115,9 +115,14 @@ describe("Phase 15 local HTTP API baseline", () => {
     const html = await webEnabled.text();
     expect(html).toContain("DNA: Design Network Atlas");
     expect(html).toContain("/api/workbench/snapshot");
-    expect(html).toContain("Loading read-only workbench snapshot");
+    expect(html).toContain("DNA Read-only Explorer");
+    expect(html).toContain("Atlas Map");
+    expect(html).toContain("Graph Explorer");
+    expect(html).toContain("Generation Board");
+    expect(html).toContain("Phenotype Library");
+    expect(html).toContain("Loading read-only explorer snapshot");
     expect(html).toContain("No DNA records found in this local store.");
-    expect(html).toContain("Unable to load workbench data.");
+    expect(html).toContain("Unable to load explorer data.");
     expect(html).not.toMatch(/\bAccept\b|\bReject\b|\bArchive\b/);
     store.close();
   });

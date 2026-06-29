@@ -40,6 +40,12 @@ describe("Phase 28 PRD-21 read-only workbench information architecture API", () 
       purpose: "read-only information architecture",
       rootNodes: ["node-web"]
     });
+    const referenceGraph = createDefaultGraph({
+      graphId: "graph-reference",
+      name: "Reference Language Graph",
+      purpose: "shared design-language source",
+      rootNodes: []
+    });
     const group = createDefaultSpeciesGroup({
       graphId: graph.graphId,
       groupId: "group-web",
@@ -60,6 +66,22 @@ describe("Phase 28 PRD-21 read-only workbench information architecture API", () 
       target: { type: "species-node", graphId: graph.graphId, nodeId: node.nodeId },
       relationshipType: "constrains",
       description: "Group readability constrains the species output.",
+      status: "active"
+    });
+    const graphRelationship = createDefaultDesignRelationship({
+      relationshipId: "rel-graph-language",
+      source: { type: "graph", graphId: referenceGraph.graphId },
+      target: { type: "graph", graphId: graph.graphId },
+      relationshipType: "translates-to",
+      direction: "source-to-target",
+      description: "Reference graph translates shared visual language into workbench outputs.",
+      designContract: {
+        transferRule: "Carry only bounded design-language tokens into the output graph.",
+        mustPreserve: ["silhouette clarity", "semantic warning color"],
+        mustAvoid: ["credential leakage", "raw provider payloads"],
+        divergenceRule: "Allow product-specific layout differences.",
+        reviewQuestions: ["Is the translated motif still inspectable?"]
+      },
       status: "active"
     });
     const phenotype = createDefaultPhenotype({
@@ -182,6 +204,7 @@ describe("Phase 28 PRD-21 read-only workbench information architecture API", () 
     });
 
     store.graphs.create(graph);
+    store.graphs.create(referenceGraph);
     store.speciesGroups.create(group);
     store.speciesGroupMemberships.create(
       createDefaultSpeciesGroupMembership({
@@ -193,6 +216,7 @@ describe("Phase 28 PRD-21 read-only workbench information architecture API", () 
     );
     store.nodes.create(node);
     store.designRelationships.create(relationship);
+    store.designRelationships.create(graphRelationship);
     store.phenotypes.create(phenotype);
     store.speciesCompileArtifacts.create(speciesArtifact);
     store.phenotypeCompileArtifacts.create(phenotypeArtifact);
@@ -256,12 +280,12 @@ describe("Phase 28 PRD-21 read-only workbench information architecture API", () 
     );
 
     const handler = createDnaHttpHandler(store);
-    const response = await handler(new Request("http://dna.local/api/workbench/snapshot?graphId=graph-web"));
+    const response = await handler(new Request("http://dna.local/api/workbench/snapshot"));
     expect(response.status).toBe(200);
     const snapshot = await response.json();
 
     expect(snapshot.overview.counts).toMatchObject({
-      graphs: 1,
+      graphs: 2,
       speciesGroups: 1,
       speciesNodes: 1,
       phenotypes: 1,
@@ -273,14 +297,21 @@ describe("Phase 28 PRD-21 read-only workbench information architecture API", () 
       libraries: 1,
       mounts: 1
     });
-    expect(snapshot.graphs[0]).toMatchObject({
-      graphId: "graph-web",
-      groups: [expect.objectContaining({ groupId: "group-web", memberNodeIds: ["node-web"] })],
-      nodes: [expect.objectContaining({ nodeId: "node-web", phenotypeIds: ["ph-web"] })],
-      relationships: [expect.objectContaining({ relationshipId: "rel-web", relationshipType: "constrains" })],
-      phenotypeOverlay: [expect.objectContaining({ phenotypeId: "ph-web", currentAcceptedVersionId: "pv-web-accepted" })],
-      compileTrace: expect.objectContaining({ speciesArtifacts: 1, phenotypeArtifacts: 1 })
-    });
+    expect(snapshot.graphs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          graphId: "graph-web",
+          groups: [expect.objectContaining({ groupId: "group-web", memberNodeIds: ["node-web"] })],
+          nodes: [expect.objectContaining({ nodeId: "node-web", phenotypeIds: ["ph-web"] })],
+          relationships: expect.arrayContaining([
+            expect.objectContaining({ relationshipId: "rel-web", relationshipType: "constrains" }),
+            expect.objectContaining({ relationshipId: "rel-graph-language", relationshipType: "translates-to" })
+          ]),
+          phenotypeOverlay: [expect.objectContaining({ phenotypeId: "ph-web", currentAcceptedVersionId: "pv-web-accepted" })],
+          compileTrace: expect.objectContaining({ speciesArtifacts: 1, phenotypeArtifacts: 1 })
+        })
+      ])
+    );
     expect(snapshot.generation.tasks[0]).toMatchObject({
       taskId: "task-web",
       trace: expect.objectContaining({
@@ -316,6 +347,55 @@ describe("Phase 28 PRD-21 read-only workbench information architecture API", () 
     expect(serialized).not.toMatch(/sk-test|OPENAI_API_KEY|password|secret|private_key|Bearer|X-Amz-Signature|\/Users\/bot/);
     expect(serialized).not.toContain("configured-runtime-ref");
     expect(serialized.length).toBeLessThan(60000);
+
+    const graphMap = await (await handler(new Request("http://dna.local/api/workbench/graph-map"))).json();
+    expect(graphMap).toMatchObject({
+      graphs: expect.arrayContaining([
+        expect.objectContaining({ graphId: "graph-web", name: "Web Workbench Graph" }),
+        expect.objectContaining({ graphId: "graph-reference", name: "Reference Language Graph" })
+      ]),
+      relationships: [
+        expect.objectContaining({
+          relationshipId: "rel-graph-language",
+          sourceGraphId: "graph-reference",
+          targetGraphId: "graph-web",
+          relationshipType: "translates-to",
+          summary: "Reference graph translates shared visual language into workbench outputs."
+        })
+      ]
+    });
+
+    const graphDetail = await (await handler(new Request("http://dna.local/api/workbench/graphs/graph-web"))).json();
+    expect(graphDetail).toMatchObject({
+      graph: expect.objectContaining({ graphId: "graph-web", purpose: "read-only information architecture" }),
+      groups: [expect.objectContaining({ groupId: "group-web", sharedFacts: ["small UI assets must preserve sharp silhouettes"] })],
+      species: [expect.objectContaining({ nodeId: "node-web", motifs: ["split diamond"] })],
+      relationships: expect.arrayContaining([expect.objectContaining({ relationshipId: "rel-web" })]),
+      phenotypes: [expect.objectContaining({ phenotypeId: "ph-web", currentAcceptedVersionId: "pv-web-accepted" })],
+      generationLinks: expect.arrayContaining([expect.objectContaining({ objectType: "task", objectId: "task-web" })]),
+      assetLinks: expect.arrayContaining([expect.objectContaining({ objectId: "asset-web-preview" })])
+    });
+
+    const generation = await (await handler(new Request("http://dna.local/api/workbench/generation"))).json();
+    expect(generation.tasks[0]).toMatchObject({
+      taskId: "task-web",
+      tracePath: expect.arrayContaining(["Plan: plan-web", "Generation Job: job-web", "Phenotype Version: pv-web-accepted"])
+    });
+    expect(generation.traceLegend).toContain("Plan -> Task -> Compile Artifact -> Generation Job -> Phenotype Version -> Output Reference / Asset");
+
+    const libraryView = await (await handler(new Request("http://dna.local/api/workbench/library"))).json();
+    expect(libraryView.gallery).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "oref-web-safe",
+          title: "Workbench Icon",
+          preview: expect.objectContaining({ kind: "image", url: "https://cdn.example.invalid/public/icon.png" }),
+          trace: expect.objectContaining({ outputReferenceId: "oref-web-safe" })
+        }),
+        expect.objectContaining({ id: "asset-web-private", preview: expect.objectContaining({ kind: "missing" }) })
+      ])
+    );
+
     store.close();
   });
 

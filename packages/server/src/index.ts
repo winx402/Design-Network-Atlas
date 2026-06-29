@@ -100,16 +100,30 @@ export function createDnaHttpHandler(store: SqliteDnaStore, options: DnaHttpHand
     if (url.pathname === "/api/workbench/snapshot") {
       const graphId = url.searchParams.get("graphId") ?? undefined;
       if (graphId && !store.graphs.get(graphId)) {
-        return jsonResponse(
-          {
-            error: `graph not found: ${graphId}`,
-            readOnly: true,
-            recoveryHint: "Use the CLI/service boundary to create or inspect graphs; the Web workbench did not modify the DNA store."
-          },
-          404
-        );
+        return missingWorkbenchGraphResponse(graphId);
       }
       return jsonResponse(createReadonlyWorkbenchSnapshot(store, graphId));
+    }
+    if (url.pathname === "/api/workbench/graph-map") {
+      const graphId = url.searchParams.get("graphId") ?? undefined;
+      if (graphId && !store.graphs.get(graphId)) return missingWorkbenchGraphResponse(graphId);
+      return jsonResponse(createWorkbenchGraphMap(store, graphId));
+    }
+    const workbenchGraphMatch = url.pathname.match(/^\/api\/workbench\/graphs\/([^/]+)$/);
+    if (workbenchGraphMatch) {
+      const graphId = decodeURIComponent(workbenchGraphMatch[1]);
+      if (!store.graphs.get(graphId)) return missingWorkbenchGraphResponse(graphId);
+      return jsonResponse(createWorkbenchGraphExplorerView(store, graphId));
+    }
+    if (url.pathname === "/api/workbench/generation") {
+      const graphId = url.searchParams.get("graphId") ?? undefined;
+      if (graphId && !store.graphs.get(graphId)) return missingWorkbenchGraphResponse(graphId);
+      return jsonResponse(createWorkbenchGenerationBoard(store, graphId));
+    }
+    if (url.pathname === "/api/workbench/library") {
+      const graphId = url.searchParams.get("graphId") ?? undefined;
+      if (graphId && !store.graphs.get(graphId)) return missingWorkbenchGraphResponse(graphId);
+      return jsonResponse(createWorkbenchLibraryView(store, graphId));
     }
     if (url.pathname === "/api/workbench/phenotypes") {
       return jsonResponse(createLegacyWorkbenchSnapshot(store, url.searchParams.get("graphId") ?? undefined));
@@ -233,6 +247,7 @@ function createReadonlyWorkbenchSnapshot(store: SqliteDnaStore, graphId: string 
   const graphs = getScopedGraphs(store, graphId);
   const graphIds = new Set(graphs.map((graph) => graph.graphId));
   const graphPhenotypes = graphs.flatMap((graph) => store.phenotypes.listByGraph(graph.graphId));
+  const designRelationships = uniqueById(graphs.flatMap((graph) => store.designRelationships.listByGraph(graph.graphId)), (relationship) => relationship.relationshipId);
   const phenotypeVersions = graphPhenotypes.flatMap((phenotype) => store.phenotypeVersions.listByPhenotype(phenotype.phenotypeId));
   const generationPlans = graphs.flatMap((graph) => store.generationPlans.listByGraph(graph.graphId));
   const generationTasks = graphs.flatMap((graph) => store.generationTasks.listByGraph(graph.graphId));
@@ -253,7 +268,7 @@ function createReadonlyWorkbenchSnapshot(store: SqliteDnaStore, graphId: string 
         activeGraphs: graphs.filter((graph) => graph.status === "active").length,
         speciesGroups: graphs.reduce((count, graph) => count + store.speciesGroups.listByGraph(graph.graphId).length, 0),
         speciesNodes: graphs.reduce((count, graph) => count + store.nodes.listByGraph(graph.graphId).length, 0),
-        designRelationships: graphs.reduce((count, graph) => count + store.designRelationships.listByGraph(graph.graphId).length, 0),
+        designRelationships: designRelationships.length,
         phenotypes: graphPhenotypes.length,
         phenotypeVersions: phenotypeVersions.length,
         candidateVersions: phenotypeVersions.filter((version) => version.status === "candidate").length,
@@ -337,6 +352,229 @@ function createReadonlyWorkbenchSnapshot(store: SqliteDnaStore, graphId: string 
     outputReferences: outputReferences.map((reference) => createOutputReferenceSummary(store, reference)),
     assets: assets.map((asset) => createAssetSummary(store, asset)),
     resultPreviews
+  };
+}
+
+function createWorkbenchGraphMap(store: SqliteDnaStore, graphId: string | undefined) {
+  const graphs = getScopedGraphs(store, graphId);
+  const graphIds = new Set(graphs.map((graph) => graph.graphId));
+  const graphRelationships = store.designRelationships
+    .list()
+    .filter((relationship) => relationship.source.type === "graph" && relationship.target.type === "graph")
+    .filter((relationship) => !graphId || graphIds.has(relationship.source.graphId) || graphIds.has(relationship.target.graphId));
+
+  return {
+    graphs: graphs.map((graph) => {
+      const detail = createGraphWorkbenchDetail(store, graph);
+      return {
+        id: graph.graphId,
+        graphId: graph.graphId,
+        name: graph.name,
+        purpose: graph.purpose,
+        status: graph.status,
+        tags: [graph.currentVersion ? `v${graph.currentVersion}` : undefined, graph.status].filter((value): value is string => Boolean(value)),
+        counts: {
+          groups: detail.counts.groups,
+          species: detail.counts.nodes,
+          phenotypes: detail.counts.phenotypes,
+          relationships: detail.counts.relationships,
+          assets: store.assets.search({ graphId: graph.graphId }).length,
+          openTasks: store.generationTasks.listByGraph(graph.graphId).filter((task) => !["completed", "cancelled"].includes(task.status)).length
+        }
+      };
+    }),
+    relationships: graphRelationships.map((relationship) => ({
+      id: relationship.relationshipId,
+      relationshipId: relationship.relationshipId,
+      sourceGraphId: relationship.source.graphId,
+      targetGraphId: relationship.target.graphId,
+      relationshipType: relationship.relationshipType,
+      direction: relationship.direction,
+      status: relationship.status,
+      summary: relationship.description || relationship.designContract.transferRule || relationship.relationshipType,
+      designContract: sanitizeForWorkbench(relationship.designContract)
+    })),
+    legend: {
+      node: "Graph board",
+      edge: "Graph-level DesignRelationship",
+      readOnly: true
+    }
+  };
+}
+
+function createWorkbenchGraphExplorerView(store: SqliteDnaStore, graphId: string) {
+  const graph = store.graphs.get(graphId);
+  if (!graph) throw new Error(`graph not found: ${graphId}`);
+  const detail = createGraphWorkbenchDetail(store, graph);
+  const generationLinks = [
+    ...store.generationPlans.listByGraph(graphId).map((plan) => ({
+      objectType: "plan",
+      objectId: plan.planId,
+      status: plan.status,
+      summary: plan.description,
+      scopeType: plan.scopeType,
+      scopeId: plan.scopeId
+    })),
+    ...store.generationTasks.listByGraph(graphId).map((task) => ({
+      objectType: "task",
+      objectId: task.taskId,
+      status: task.status,
+      summary: task.taskBrief,
+      planId: task.planId,
+      phenotypeId: task.phenotypeId
+    })),
+    ...store.generationJobs.listByGraph(graphId).map((job) => ({
+      objectType: "job",
+      objectId: job.generationJobId,
+      status: job.status,
+      summary: job.taskBrief,
+      phenotypeId: job.phenotypeId,
+      phenotypeVersionId: job.phenotypeVersionId
+    }))
+  ];
+  const assetLinks = createReadonlyWorkbenchSnapshot(store, graphId).resultPreviews.map((preview) => ({
+    objectType: preview.objectType,
+    objectId: preview.objectId,
+    status: preview.status,
+    phenotypeId: preview.phenotypeId,
+    phenotypeVersionId: preview.phenotypeVersionId,
+    preview: preview.preview
+  }));
+
+  return {
+    graph: {
+      graphId: detail.graphId,
+      id: detail.graphId,
+      name: detail.name,
+      purpose: detail.purpose,
+      status: detail.status,
+      currentVersion: detail.currentVersion,
+      counts: detail.counts
+    },
+    groups: detail.groups,
+    species: detail.nodes,
+    relationships: detail.relationships,
+    boundSemantics: detail.semantics,
+    phenotypes: detail.phenotypeOverlay,
+    generationLinks,
+    assetLinks,
+    compileArtifacts: detail.compileTrace.artifacts,
+    rawJsonSummary: detail.rawJsonSummary
+  };
+}
+
+function createWorkbenchGenerationBoard(store: SqliteDnaStore, graphId: string | undefined) {
+  const snapshot = createReadonlyWorkbenchSnapshot(store, graphId);
+  return {
+    traceLegend: "Plan -> Task -> Compile Artifact -> Generation Job -> Phenotype Version -> Output Reference / Asset",
+    plans: snapshot.generation.plans,
+    tasks: snapshot.generation.tasks.map((task) => ({
+      ...task,
+      tracePath: createGenerationTaskTracePath(task)
+    })),
+    jobs: snapshot.generation.jobs,
+    results: snapshot.libraries.flatMap((library) =>
+      library.results.map((result) => ({
+        ...result,
+        libraryId: library.libraryId,
+        libraryName: library.name
+      }))
+    )
+  };
+}
+
+function createWorkbenchLibraryView(store: SqliteDnaStore, graphId: string | undefined) {
+  const snapshot = createReadonlyWorkbenchSnapshot(store, graphId);
+  return {
+    libraries: snapshot.libraries.map((library) => ({
+      libraryId: library.libraryId,
+      name: library.name,
+      purpose: library.purpose,
+      profile: library.profile,
+      status: library.status,
+      graphIds: library.graphIds,
+      mountCount: library.mountCount,
+      resultCount: library.results.length,
+      galleryCount: library.gallery.length
+    })),
+    gallery: snapshot.resultPreviews.map((preview) => createLibraryGalleryItem(preview)),
+    results: snapshot.libraries.flatMap((library) =>
+      library.results.map((result) => ({
+        ...result,
+        libraryId: library.libraryId,
+        libraryName: library.name
+      }))
+    ),
+    mounts: snapshot.libraries.flatMap((library) => library.mounts.map((mount) => ({ ...mount, libraryId: library.libraryId })))
+  };
+}
+
+function createGenerationTaskTracePath(task: {
+  taskId: string;
+  planId?: string;
+  trace?: {
+    speciesCompileArtifactId?: string;
+    phenotypeCompileArtifactId?: string;
+    generationJobIds?: string[];
+    phenotypeVersionIds?: string[];
+  };
+  links?: {
+    speciesCompileArtifactId?: string;
+    phenotypeCompileArtifactId?: string;
+    generationJobIds?: string[];
+    phenotypeVersionIds?: string[];
+  };
+}) {
+  const links = task.trace ?? task.links ?? {};
+  return [
+    task.planId ? `Plan: ${task.planId}` : "Standalone Task",
+    `Task: ${task.taskId}`,
+    links.speciesCompileArtifactId ? `Compile Artifact: ${links.speciesCompileArtifactId}` : undefined,
+    links.phenotypeCompileArtifactId ? `Compile Artifact: ${links.phenotypeCompileArtifactId}` : undefined,
+    ...(links.generationJobIds ?? []).map((id) => `Generation Job: ${id}`),
+    ...(links.phenotypeVersionIds ?? []).map((id) => `Phenotype Version: ${id}`)
+  ].filter((value): value is string => Boolean(value));
+}
+
+function createLibraryGalleryItem(preview: ReturnType<typeof createOutputReferencePreview> | ReturnType<typeof createAssetPreview>) {
+  return {
+    id: preview.objectId,
+    title: preview.phenotypeName ?? preview.label,
+    graphId: preview.graphId,
+    speciesId: undefined,
+    phenotypeId: preview.phenotypeId,
+    phenotypeVersionId: preview.phenotypeVersionId,
+    assetType: preview.preview.kind === "image" ? "image" : "unknown",
+    role: preview.label,
+    tags: preview.tags,
+    preview: createLibraryPreview(preview.preview),
+    trace: {
+      taskId: undefined,
+      jobId: undefined,
+      compileArtifactId: undefined,
+      outputReferenceId: preview.objectType === "output-reference" ? preview.objectId : undefined,
+      assetId: preview.objectType === "asset" ? preview.objectId : undefined
+    }
+  };
+}
+
+function createLibraryPreview(preview: { kind: string; url?: string; reason?: string; displayUri?: string }) {
+  if (preview.kind === "image") {
+    return {
+      kind: "image",
+      url: preview.url,
+      reason: undefined
+    };
+  }
+  if (preview.reason === "unsupported-type") {
+    return {
+      kind: "unsupported",
+      reason: "Preview unavailable: unsupported asset type."
+    };
+  }
+  return {
+    kind: "missing",
+    reason: preview.reason === "redacted-or-unavailable" ? "Preview unavailable: redacted or unavailable." : "Preview unavailable."
   };
 }
 
@@ -930,6 +1168,17 @@ function summarizeChecksum(checksum: string | undefined) {
   return checksum.length > 16 ? `${checksum.slice(0, 12)}...` : checksum;
 }
 
+function missingWorkbenchGraphResponse(graphId: string) {
+  return jsonResponse(
+    {
+      error: `graph not found: ${graphId}`,
+      readOnly: true,
+      recoveryHint: "Use the CLI/service boundary to create or inspect graphs; the Web workbench did not modify the DNA store."
+    },
+    404
+  );
+}
+
 function jsonResponse(value: unknown, status = 200) {
   return new Response(JSON.stringify(value), {
     status,
@@ -964,48 +1213,57 @@ function createWorkbenchHtml() {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>DNA: Design Network Atlas</title>
+    <title>DNA Read-only Explorer</title>
     <style>
-      :root {
-        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        color: #17212b;
-        background: #f5f7f8;
-      }
+      :root { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #1b2530; background: #f4f6f3; }
       * { box-sizing: border-box; }
-      body { margin: 0; min-width: 320px; background: #f5f7f8; }
-      main { width: min(1180px, calc(100vw - 32px)); margin: 0 auto; padding: 28px 0 36px; }
-      header { display: flex; justify-content: space-between; align-items: end; gap: 24px; padding-bottom: 18px; border-bottom: 1px solid #d5dde3; }
+      body { margin: 0; min-width: 320px; background: linear-gradient(180deg, #f7f8f4, #edf2f0); }
+      main { width: min(1320px, calc(100vw - 28px)); margin: 0 auto; padding: 22px 0 38px; }
       h1, h2, h3, p { margin-top: 0; }
-      h1 { margin-bottom: 0; font-size: 32px; line-height: 1.15; letter-spacing: 0; }
-      h2 { margin-bottom: 6px; font-size: 24px; line-height: 1.2; letter-spacing: 0; }
-      h3 { margin-bottom: 8px; font-size: 14px; line-height: 1.3; letter-spacing: 0; }
-      .product-name { margin: 0 0 6px; color: #577084; font-size: 13px; line-height: 1.3; }
-      .state { display: grid; gap: 4px; margin-top: 16px; padding: 12px 14px; border: 1px solid #b9c6cf; border-radius: 8px; background: #ffffff; font-size: 14px; line-height: 1.45; }
-      .state.error { border-color: #d58d91; color: #842c31; background: #fff2f2; }
-      .metrics { display: grid; grid-template-columns: repeat(3, minmax(88px, 1fr)); gap: 10px; margin: 0; }
-      .metrics div, .panel, .list { border: 1px solid #d5dde3; border-radius: 8px; background: #ffffff; }
-      .metrics div { padding: 10px 12px; }
-      .metrics dt { color: #657888; font-size: 12px; }
-      .metrics dd { margin: 2px 0 0; font-size: 22px; font-weight: 700; }
-      .workspace { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 16px; align-items: start; margin-top: 18px; }
-      .list { overflow: hidden; }
-      .row { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; min-height: 64px; padding: 12px 14px; border-bottom: 1px solid #e4e9ed; background: #ffffff; }
-      .row:last-child { border-bottom: 0; }
-      .row strong, .row small { display: block; overflow-wrap: anywhere; }
-      .row small, .muted { color: #657888; font-size: 13px; line-height: 1.35; }
-      .panel { display: grid; gap: 14px; min-width: 0; padding: 18px; }
-      .empty { min-height: 240px; align-content: center; justify-items: center; text-align: center; }
-      .chip { display: inline-flex; align-items: center; min-height: 24px; border-radius: 999px; padding: 3px 9px; color: #4f6475; background: #e7edf1; font-size: 12px; font-weight: 700; white-space: nowrap; }
-      .asset-grid { display: grid; gap: 8px; }
-      .asset { display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, 0.45fr); gap: 12px; padding: 10px; border: 1px solid #e4e9ed; border-radius: 7px; font-size: 13px; }
-      code, pre { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
-      code { overflow-wrap: anywhere; color: #415669; }
-      pre { overflow: auto; margin: 0; padding: 12px; border: 1px solid #e4e9ed; border-radius: 7px; background: #f7f9fa; white-space: pre-wrap; }
-      @media (max-width: 820px) {
-        main { width: min(100vw - 20px, 760px); padding-top: 18px; }
-        header, .workspace { display: grid; grid-template-columns: 1fr; align-items: start; }
-        .metrics { grid-template-columns: 1fr; }
-        .asset { grid-template-columns: 1fr; }
+      h1 { margin-bottom: 6px; font-size: 30px; line-height: 1.12; letter-spacing: 0; }
+      h2 { margin-bottom: 6px; font-size: 22px; line-height: 1.2; letter-spacing: 0; }
+      h3 { margin-bottom: 0; font-size: 14px; line-height: 1.3; letter-spacing: 0; }
+      button { font: inherit; cursor: pointer; }
+      .product-name { margin: 0 0 5px; color: #5e6f6a; font-size: 12px; font-weight: 760; text-transform: uppercase; }
+      .muted { color: #60716f; font-size: 13px; line-height: 1.45; }
+      header { display: grid; grid-template-columns: minmax(320px, 1fr) auto; gap: 16px; align-items: end; padding-bottom: 12px; }
+      nav { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 2px 0 12px; }
+      nav button, .panel, .map-node, .route, .card, .state, .inspector { border: 1px solid #cfd8d5; border-radius: 8px; background: #fff; }
+      nav button { min-height: 42px; color: #33423f; font-weight: 780; }
+      nav button.active { border-color: #1e766c; color: #103f39; background: #dff1ed; }
+      .state { display: grid; gap: 4px; margin: 10px 0; padding: 12px 14px; font-size: 14px; line-height: 1.45; }
+      .state.error { border-color: #d29292; color: #842c31; background: #fff2f2; }
+      .grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 14px; align-items: start; }
+      .surface { display: grid; gap: 12px; min-width: 0; }
+      .panel, .inspector { display: grid; gap: 11px; min-width: 0; padding: 14px; }
+      .map { position: relative; min-height: 390px; overflow: hidden; border: 1px solid #c7d5d0; border-radius: 8px; background: linear-gradient(135deg, rgb(255 255 255 / 92%), rgb(238 245 241 / 88%)); }
+      .map svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+      .map line { stroke: #2c8276; stroke-width: 1.8; }
+      .nodes { position: relative; z-index: 1; display: grid; grid-template-columns: repeat(2, minmax(210px, 1fr)); gap: 18px; padding: 36px; }
+      .map-node, .card, .route { width: 100%; display: grid; gap: 7px; min-width: 0; padding: 11px; color: inherit; text-align: left; }
+      .map-node { min-height: 160px; box-shadow: 0 18px 42px rgb(35 54 49 / 10%); }
+      .map-node:hover, .card:hover, .route:hover { border-color: #7caea6; background: #f2f8f6; }
+      .routes, .columns, .gallery, .support { display: grid; gap: 10px; }
+      .support { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .columns { grid-template-columns: repeat(4, minmax(180px, 1fr)); align-items: start; }
+      .gallery { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
+      .preview { display: grid; place-items: center; width: 100%; aspect-ratio: 4 / 3; border: 1px solid #dce4e1; border-radius: 7px; color: #60716f; background: #eef4f1; text-align: center; }
+      .chip { display: inline-flex; width: max-content; min-height: 24px; border-radius: 999px; padding: 3px 9px; color: #146145; background: #ddf3e9; font-size: 12px; font-weight: 780; }
+      .meta { display: flex; flex-wrap: wrap; gap: 7px; }
+      .meta span { min-height: 28px; border: 1px solid #d8e0dd; border-radius: 999px; padding: 5px 9px; color: #435753; background: #f8faf8; font-size: 12px; font-weight: 760; overflow-wrap: anywhere; }
+      .inspector { position: sticky; top: 14px; max-height: calc(100vh - 28px); overflow: auto; }
+      details { border-top: 1px solid #e1e7e4; padding-top: 9px; }
+      summary { min-height: 32px; font-weight: 780; cursor: pointer; }
+      pre { max-height: 200px; overflow: auto; margin: 8px 0 0; padding: 12px; border: 1px solid #e1e7e4; border-radius: 7px; background: #f8faf8; white-space: pre-wrap; overflow-wrap: anywhere; }
+      strong, span, small, code { min-width: 0; overflow-wrap: anywhere; }
+      @media (max-width: 880px) {
+        main { width: min(100vw - 18px, 760px); padding-bottom: 92px; }
+        header, .grid, .support, .columns, .nodes { grid-template-columns: 1fr; }
+        nav { position: fixed; right: 9px; bottom: 9px; left: 9px; z-index: 20; padding: 7px; border: 1px solid #bfcbc7; border-radius: 10px; background: #fff; box-shadow: 0 10px 28px rgb(29 45 58 / 18%); }
+        nav button { min-height: 46px; font-size: 12px; }
+        .nodes { padding: 12px; }
+        .gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .inspector { position: static; max-height: none; border-radius: 10px 10px 0 0; }
       }
     </style>
   </head>
@@ -1014,119 +1272,132 @@ function createWorkbenchHtml() {
       <header>
         <div>
           <p class="product-name">DNA: Design Network Atlas</p>
-          <h1>DNA Read-only Workbench</h1>
+          <h1>DNA Read-only Explorer</h1>
+          <p class="muted">Map-first local view of design graphs, generation traces, and phenotype results. Web remains read-only.</p>
         </div>
-        <dl class="metrics" aria-label="Workbench metrics">
-          <div><dt>Graphs</dt><dd id="metric-graphs">0</dd></div>
-          <div><dt>Phenotypes</dt><dd id="metric-phenotypes">0</dd></div>
-          <div><dt>Tasks</dt><dd id="metric-tasks">0</dd></div>
-        </dl>
+        <p class="muted" id="snapshot-status">Loading /api/workbench/snapshot...</p>
       </header>
-      <section id="state" class="state" aria-live="polite">Loading read-only workbench snapshot from /api/workbench/snapshot...</section>
-      <section class="workspace" aria-label="Read-only DNA workbench">
-        <aside id="list" class="list" aria-label="Graphs"></aside>
-        <section id="detail" class="panel empty" aria-label="Workbench detail">
-          <h2>No object selected</h2>
-          <p class="muted">Workbench data is loaded from the local DNA API. Durable writes stay in CLI/service boundaries.</p>
-        </section>
+      <nav aria-label="Explorer modules">
+        <button class="active" type="button" data-module="map">Atlas Map</button>
+        <button type="button" data-module="graph">Graph Explorer</button>
+        <button type="button" data-module="generation">Generation Board</button>
+        <button type="button" data-module="library">Phenotype Library</button>
+      </nav>
+      <section id="state" class="state" aria-live="polite">Loading read-only explorer snapshot from the local DNA API...</section>
+      <section class="grid">
+        <section id="surface" class="surface" aria-label="Explorer content"></section>
+        <aside id="inspector" class="inspector" aria-label="Inspector"></aside>
       </section>
     </main>
     <script>
       const endpoint = "/api/workbench/snapshot";
       const state = document.getElementById("state");
-      const list = document.getElementById("list");
-      const detail = document.getElementById("detail");
-      const metricGraphs = document.getElementById("metric-graphs");
-      const metricPhenotypes = document.getElementById("metric-phenotypes");
-      const metricTasks = document.getElementById("metric-tasks");
+      const surface = document.getElementById("surface");
+      const inspector = document.getElementById("inspector");
+      const snapshotStatus = document.getElementById("snapshot-status");
+      let snapshot = null;
+      let selectedGraph = null;
+      let activeModule = "map";
 
       function escapeHtml(value) {
-        return String(value ?? "").replace(/[&<>"']/g, (character) => ({
-          "&": "&amp;",
-          "<": "&lt;",
-          ">": "&gt;",
-          '"': "&quot;",
-          "'": "&#39;"
-        })[character]);
+        return String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
       }
-
-      function selectedVersion(phenotype) {
-        if (!phenotype?.versions?.length) return undefined;
-        if (phenotype.currentAcceptedVersionId) {
-          const accepted = phenotype.versions.find((version) => version.id === phenotype.currentAcceptedVersionId);
-          if (accepted) return accepted;
-        }
-        return [...phenotype.versions].sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt)))[0];
+      function chip(value) { return '<span class="chip">' + escapeHtml(value ?? "read-only") + '</span>'; }
+      function inspect(type, id, status, summary, raw) {
+        inspector.innerHTML = '<h2>Inspector</h2>' + chip(status) +
+          '<section><h3>Identity</h3><p>' + escapeHtml(type) + '</p><p>' + escapeHtml(id) + '</p></section>' +
+          '<section><h3>Summary</h3><p>' + escapeHtml(summary ?? "No summary recorded.") + '</p></section>' +
+          '<section><h3>Bound Semantics</h3><p>Context, facts, principles, motifs, facets, and rubrics appear when present.</p></section>' +
+          '<section><h3>Relationships</h3><p>Incoming and outgoing endpoints appear when present.</p></section>' +
+          '<section><h3>Generation Links</h3><p>Plans, tasks, jobs, and compile artifacts appear when present.</p></section>' +
+          '<section><h3>Phenotype / Assets</h3><p>Phenotype versions, output references, and asset previews appear when present.</p></section>' +
+          '<section><h3>External pointers</h3><p>External pointers are redacted and never expose credentials.</p></section>' +
+          '<details><summary>Raw JSON</summary><pre>' + escapeHtml(JSON.stringify(raw ?? {}, null, 2)) + '</pre></details>';
       }
-
-      function renderDetail(phenotype) {
-        const version = selectedVersion(phenotype);
-        const review = version?.reviews?.[0];
-        const assets = version?.assets ?? [];
-        detail.className = "panel";
-        detail.innerHTML =
-          '<div><p class="product-name">' + escapeHtml(phenotype.phenotypeType) + '</p><h2>' + escapeHtml(phenotype.name) + '</h2>' +
-          '<p class="muted">' + escapeHtml(phenotype.nodeName) + ' - ' + escapeHtml(version?.speciesVersion ?? "no version") + '</p></div>' +
-          (phenotype.outdated ? '<div class="state">Current species snapshot is ' + escapeHtml(phenotype.currentSpeciesVersion) + '; latest is ' + escapeHtml(phenotype.latestSpeciesVersion) + '.</div>' : '') +
-          '<section><h3>Assets and output references</h3><div class="asset-grid">' +
-          (assets.length ? assets.map((asset) => '<div class="asset"><strong>' + escapeHtml(asset.label) + '</strong><code>' + escapeHtml(asset.uri) + '</code></div>').join('') : '<p class="muted">No assets or output references are registered for this version.</p>') +
-          '</div></section>' +
-          '<section><h3>Review</h3><p>' + escapeHtml(review?.summary ?? 'No review record yet.') + '</p></section>' +
-          '<section><h3>Prompt Snapshot</h3><pre>' + escapeHtml(version?.promptSnapshot ?? 'No prompt snapshot recorded.') + '</pre></section>';
-      }
-
-      function renderGraphDetail(graph) {
-        detail.className = "panel";
-        detail.innerHTML =
-          '<div><p class="product-name">Graph</p><h2>' + escapeHtml(graph.name) + '</h2>' +
-          '<p class="muted">' + escapeHtml(graph.graphId) + ' - ' + escapeHtml(graph.status) + '</p></div>' +
-          '<section><h3>Structure</h3><p class="muted">' + escapeHtml(graph.counts?.groups ?? 0) + ' groups, ' + escapeHtml(graph.counts?.nodes ?? 0) + ' nodes, ' + escapeHtml(graph.counts?.relationships ?? 0) + ' design relationships.</p></section>' +
-          '<section><h3>Phenotype overlay</h3><p class="muted">' + escapeHtml(graph.counts?.phenotypes ?? 0) + ' phenotype containers in this graph.</p></section>' +
-          '<section><h3>Trace</h3><pre>' + escapeHtml(JSON.stringify(graph.compileTrace ?? {}, null, 2)) + '</pre></section>';
-      }
-
-      function render(body) {
-        const counts = body?.overview?.counts ?? {};
-        const graphs = Array.isArray(body?.graphs) ? body.graphs : [];
-        const phenotypes = Array.isArray(body?.phenotypes) ? body.phenotypes : [];
-        metricGraphs.textContent = String(counts.graphs ?? graphs.length);
-        metricPhenotypes.textContent = String(counts.phenotypes ?? phenotypes.length);
-        metricTasks.textContent = String(counts.generationTasks ?? body?.generationTasks?.length ?? body?.generation?.tasks?.length ?? 0);
-        if (graphs.length === 0 && phenotypes.length === 0) {
-          state.className = "state";
-          state.textContent = "No DNA records found in this local store.";
-          list.innerHTML = '<div class="row"><span><strong>No DNA records found</strong><small>Use the CLI/service boundary, then refresh this read-only workbench.</small></span></div>';
-          detail.className = "panel empty";
-          detail.innerHTML = '<h2>No DNA records found</h2><p class="muted">This read-only page did not modify the DNA store.</p>';
-          return;
-        }
-        state.className = "state";
-        state.textContent = "Loaded read-only DNA workbench snapshot from the local API.";
-        list.innerHTML = graphs.length ? graphs.map((graph, index) =>
-          '<button class="row" type="button" data-index="' + index + '"><span><strong>' + escapeHtml(graph.name) + '</strong><small>' + escapeHtml(graph.graphId) + '</small></span><span class="chip">' + escapeHtml(graph.status ?? 'unknown') + '</span></button>'
-        ).join('') : phenotypes.map((phenotype, index) => {
-          const version = selectedVersion(phenotype);
-          return '<button class="row" type="button" data-index="' + index + '"><span><strong>' + escapeHtml(phenotype.name) + '</strong><small>' + escapeHtml(phenotype.nodeName) + '</small></span><span class="chip">' + escapeHtml(version?.status ?? 'no-version') + '</span></button>';
-        }).join('');
-        for (const row of list.querySelectorAll('button[data-index]')) {
-          row.addEventListener('click', () => graphs.length ? renderGraphDetail(graphs[Number(row.dataset.index)]) : renderDetail(phenotypes[Number(row.dataset.index)]));
-        }
-        graphs.length ? renderGraphDetail(graphs[0]) : renderDetail(phenotypes[0]);
-      }
-
-      fetch(endpoint)
-        .then((response) => {
-          if (!response.ok) throw new Error("HTTP " + response.status);
-          return response.json();
-        })
-        .then((body) => render(body))
-        .catch((error) => {
-          state.className = "state error";
-          state.innerHTML = '<strong>Unable to load workbench data.</strong><span>' + escapeHtml(error.message || error) + '</span>';
-          list.innerHTML = '';
-          detail.className = "panel empty";
-          detail.innerHTML = '<h2>Unable to load workbench data.</h2><p class="muted">No durable DNA records were changed by this read-only page.</p>';
+      function graphRelationships() {
+        const seen = new Set();
+        return (snapshot?.graphs ?? []).flatMap((graph) => graph.relationships ?? []).filter((relationship) => {
+          if (relationship?.source?.type !== "graph" || relationship?.target?.type !== "graph") return false;
+          if (seen.has(relationship.relationshipId)) return false;
+          seen.add(relationship.relationshipId);
+          return true;
         });
+      }
+      function renderMap() {
+        const graphs = snapshot?.graphs ?? [];
+        const relationships = graphRelationships();
+        surface.innerHTML = '<h2>Atlas Map</h2><p class="muted">Graph relationship map for design-language translation, influence, and review navigation.</p>' +
+          '<section class="map" aria-label="Graph relationship map">' +
+          (relationships.length ? '<svg viewBox="0 0 100 100" preserveAspectRatio="none">' + relationships.map((relationship, index) => '<line x1="14" y1="' + (24 + index * 12) + '" x2="82" y2="' + (62 - index * 8) + '"></line>').join('') + '</svg>' : '<p class="muted" style="padding:24px">No graph-level relationships yet</p>') +
+          '<div class="nodes">' + graphs.map((graph, index) =>
+            '<button class="map-node" type="button" data-graph="' + escapeHtml(graph.graphId) + '"><span class="product-name">Graph</span><strong>' + escapeHtml(graph.name) + '</strong><span class="muted">' + escapeHtml(graph.purpose) + '</span><div class="meta"><span>' + escapeHtml(graph.counts?.groups ?? 0) + ' groups</span><span>' + escapeHtml(graph.counts?.nodes ?? 0) + ' species</span><span>' + escapeHtml(graph.counts?.phenotypes ?? 0) + ' phenotypes</span></div>' + chip(graph.status) + '</button>'
+          ).join('') + '</div></section>' +
+          '<section class="support"><div class="panel"><h3>Legend</h3><p class="muted">Solid lines represent graph-level DesignRelationship contracts.</p></div><div class="panel routes"><h3>Graph relationship routes</h3>' +
+          (relationships.length ? relationships.map((relationship) => '<button class="route" type="button" data-rel="' + escapeHtml(relationship.relationshipId) + '"><strong>' + escapeHtml(relationship.source.graphId) + ' -> ' + escapeHtml(relationship.target.graphId) + '</strong><span>' + escapeHtml(relationship.relationshipType) + '</span><small>' + escapeHtml(relationship.summary) + '</small></button>').join('') : '<p class="muted">Graph boards remain clickable; internal graph structure is still available.</p>') + '</div></section>';
+        for (const button of surface.querySelectorAll("[data-graph]")) {
+          button.addEventListener("click", () => { selectedGraph = graphs.find((graph) => graph.graphId === button.getAttribute("data-graph")); activeModule = "graph"; syncNav(); renderGraph(); });
+        }
+        for (const button of surface.querySelectorAll("[data-rel]")) {
+          button.addEventListener("click", () => {
+            const relationship = relationships.find((item) => item.relationshipId === button.getAttribute("data-rel"));
+            inspect("DesignRelationship", relationship?.relationshipId, relationship?.status, relationship?.summary, relationship);
+          });
+        }
+        if (graphs[0]) inspect("Graph", graphs[0].graphId, graphs[0].status, graphs[0].purpose, graphs[0]);
+      }
+      function renderGraph() {
+        const graph = selectedGraph ?? (snapshot?.graphs ?? []).find((item) => (item.groups ?? []).length || (item.nodes ?? []).length) ?? (snapshot?.graphs ?? [])[0];
+        if (!graph) { surface.innerHTML = '<section class="panel"><h2>No graph selected</h2><p class="muted">This read-only page did not modify the DNA store.</p></section>'; return; }
+        selectedGraph = graph;
+        surface.innerHTML = '<h2>Graph Explorer</h2><p class="muted">' + escapeHtml(graph.purpose) + '</p><div class="meta"><span>Groups</span><span>Species</span><span>Relationships</span><span>Semantics</span><span>Phenotypes</span><span>Compile Trace</span></div>' +
+          '<section class="support">' +
+          '<div class="panel"><h3>Groups</h3>' + (graph.groups ?? []).map((group) => '<button class="card" type="button" data-group="' + escapeHtml(group.groupId) + '"><strong>' + escapeHtml(group.name) + '</strong><span>' + escapeHtml((group.memberNodeIds ?? []).length) + ' members</span></button>').join('') + '</div>' +
+          '<div class="panel"><h3>Species</h3>' + (graph.nodes ?? []).map((node) => '<button class="card" type="button" data-node="' + escapeHtml(node.nodeId) + '"><strong>' + escapeHtml(node.name) + '</strong><span>' + escapeHtml((node.phenotypeIds ?? []).length) + ' phenotypes</span></button>').join('') + '</div>' +
+          '<div class="panel"><h3>Design relationships</h3>' + (graph.relationships ?? []).map((relationship) => '<button class="card" type="button" data-rel="' + escapeHtml(relationship.relationshipId) + '"><strong>' + escapeHtml(relationship.relationshipType) + '</strong><span>' + escapeHtml(relationship.summary) + '</span></button>').join('') + '</div>' +
+          '<div class="panel"><h3>Phenotype overlay</h3>' + (graph.phenotypeOverlay ?? []).map((phenotype) => '<button class="card" type="button" data-ph="' + escapeHtml(phenotype.phenotypeId) + '"><strong>' + escapeHtml(phenotype.name) + '</strong><span>' + escapeHtml(phenotype.versions?.length ?? 0) + ' versions</span></button>').join('') + '</div></section>';
+        for (const button of surface.querySelectorAll("button")) {
+          button.addEventListener("click", () => inspect("Graph object", button.textContent, "read-only", "Selected graph object", graph));
+        }
+        inspect("Graph", graph.graphId, graph.status, graph.purpose, graph);
+      }
+      function renderGeneration() {
+        const generation = snapshot?.generation ?? { plans: [], tasks: [], jobs: [] };
+        const results = (snapshot?.libraries ?? []).flatMap((library) => library.results ?? []);
+        surface.innerHTML = '<h2>Generation Board</h2><section class="state">Plan -> Task -> Compile Artifact -> Generation Job -> Phenotype Version -> Output Reference / Asset</section><section class="columns">' +
+          ['plans', 'tasks', 'jobs', 'results'].map((lane) => '<div class="panel"><h3>' + lane + '</h3>' +
+            (lane === 'plans' ? generation.plans : lane === 'tasks' ? generation.tasks : lane === 'jobs' ? generation.jobs : results).map((item) => '<button class="card" type="button"><strong>' + escapeHtml(item.description ?? item.taskBrief ?? item.generationJobId ?? item.phenotypeName ?? item.versionId) + '</strong>' + chip(item.status ?? item.versionStatus ?? 'read-only') + '</button>').join('') + '</div>').join('') + '</section>';
+        inspect("Generation Board", "current", "read-only", "Plans, tasks, jobs, and result traces.", generation);
+      }
+      function renderLibrary() {
+        const previews = (snapshot?.libraries ?? []).flatMap((library) => library.gallery ?? []);
+        surface.innerHTML = '<h2>Phenotype Library</h2><p class="muted">Gallery-first read-only view of phenotype results and asset pointers.</p><section class="gallery">' +
+          previews.map((preview) => '<button class="card" type="button"><div class="preview">' + (preview.preview?.kind === 'image' ? '<img alt="" style="width:100%;height:100%;object-fit:cover" src="' + escapeHtml(preview.preview.url) + '">' : 'Preview unavailable') + '</div><strong>' + escapeHtml(preview.phenotypeName ?? preview.label) + '</strong><span>' + escapeHtml(preview.label) + '</span>' + chip(preview.status) + '</button>').join('') + '</section>';
+        inspect("Phenotype Library", "current", "read-only", "Output references, assets, and library mounts.", snapshot?.libraries ?? []);
+      }
+      function syncNav() {
+        for (const button of document.querySelectorAll("nav button")) button.classList.toggle("active", button.getAttribute("data-module") === activeModule);
+      }
+      function render() {
+        syncNav();
+        if (activeModule === "map") renderMap();
+        if (activeModule === "graph") renderGraph();
+        if (activeModule === "generation") renderGeneration();
+        if (activeModule === "library") renderLibrary();
+      }
+      for (const button of document.querySelectorAll("nav button")) {
+        button.addEventListener("click", () => { activeModule = button.getAttribute("data-module"); render(); });
+      }
+      fetch(endpoint).then((response) => { if (!response.ok) throw new Error("HTTP " + response.status); return response.json(); }).then((body) => {
+        snapshot = body;
+        selectedGraph = (body.graphs ?? []).find((graph) => (graph.groups ?? []).length || (graph.nodes ?? []).length) ?? (body.graphs ?? [])[0];
+        state.textContent = (body.graphs ?? []).length ? "Loaded read-only DNA Explorer snapshot from the local API." : "No DNA records found in this local store.";
+        snapshotStatus.textContent = String(body.overview?.counts?.graphs ?? 0) + " graphs, " + String(body.overview?.counts?.phenotypes ?? 0) + " phenotypes, " + String(body.overview?.counts?.generationTasks ?? 0) + " tasks";
+        render();
+      }).catch((error) => {
+        state.className = "state error";
+        state.innerHTML = '<strong>Unable to load explorer data.</strong><span>' + escapeHtml(error.message || error) + '</span><span>No durable DNA records were changed by this read-only page.</span>';
+        surface.innerHTML = '<section class="panel"><h2>Unable to load explorer data.</h2><p class="muted">No durable DNA records were changed by this read-only page.</p></section>';
+      });
     </script>
   </body>
 </html>`;
