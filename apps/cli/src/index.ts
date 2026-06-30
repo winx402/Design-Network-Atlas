@@ -6,7 +6,6 @@ import {
   acceptPhenotypeVersion,
   addPhenotypeVersionFeedback,
   archivePhenotypeVersion,
-  assessDesignReadiness,
   collectContextImpact,
   collectDesignRelationshipImpact,
   collectGroupImpact,
@@ -23,7 +22,6 @@ import {
   preparePhenotypeGenerationForTask,
   prepareReferenceGeneration,
   prepareSpeciesCompileArtifact,
-  explainDesignReadiness,
   acceptOutputReference,
   archiveOutputReference,
   createGenerationPlan,
@@ -41,8 +39,6 @@ import {
   replaceReferenceAsset,
   replacePhenotypeVersion,
   rollbackPhenotypeVersion,
-  showDesignReadiness,
-  suggestSelfOptimization,
   submitPhenotypeVersionCandidate,
   syncOutputReferencesForPhenotypeVersion,
   updateGenerationPlan,
@@ -61,7 +57,6 @@ import {
   createDefaultPhenotypeLibraryGraphBinding,
   createDefaultStorageMount,
   FacetAssignmentTargetTypeSchema,
-  DesignReadinessPolicySchema,
   createImpactRecord,
   createImpactRecords,
   createReviewRecord,
@@ -697,45 +692,6 @@ function printCompileArtifact(
     return;
   }
   process.stdout.write(formatLayeredCompileText(artifact));
-}
-
-function parseReadinessPolicy(value: string | undefined) {
-  const parsed = DesignReadinessPolicySchema.safeParse(value ?? "warn");
-  if (!parsed.success) throw new Error(`unknown readiness policy: ${value}. Expected off, warn, or block.`);
-  return parsed.data;
-}
-
-function formatReadinessText(result: {
-  artifactId?: string;
-  persisted?: boolean;
-  readiness: {
-    targetLevel: string;
-    targetId: string;
-    score: number;
-    level: string;
-    warnings?: string[];
-    blockingIssues?: string[];
-    suggestions?: string[];
-    dimensions?: Array<{ key: string; score: number; reason: string }>;
-  };
-}) {
-  const lines = [
-    "Design readiness",
-    result.artifactId ? `Artifact: ${result.artifactId}` : undefined,
-    result.persisted === undefined ? undefined : `Persisted: ${result.persisted ? "yes" : "no"}`,
-    `Target: ${result.readiness.targetLevel}:${result.readiness.targetId}`,
-    `Score: ${result.readiness.score}`,
-    `Level: ${result.readiness.level}`,
-    `Warnings: ${result.readiness.warnings?.length ?? 0}`,
-    `Blocking issues: ${result.readiness.blockingIssues?.length ?? 0}`,
-    "Dimensions:",
-    ...(result.readiness.dimensions?.length
-      ? result.readiness.dimensions.map((dimension) => `- ${dimension.key}: ${dimension.score} - ${dimension.reason}`)
-      : ["- none"]),
-    "Suggestions:",
-    ...(result.readiness.suggestions?.length ? result.readiness.suggestions.map((suggestion) => `- ${suggestion}`) : ["- none"])
-  ].filter((line): line is string => Boolean(line));
-  return `${lines.join("\n")}\n`;
 }
 
 function formatModelingQualityReport(report: ModelingQualityReport) {
@@ -2051,149 +2007,6 @@ compilePhenotypeCommand
     store.close();
   });
 
-const readiness = program.command("readiness").description("Assess and inspect design readiness stored in compile artifact frames");
-readiness
-  .command("assess")
-  .requiredOption("--target-type <type>", "target type: atlas|graph|species-group|species-node|phenotype")
-  .requiredOption("--target <id>", "target object id")
-  .option("--graph <graphId>", "graph id when assessing a species-group")
-  .option("--artifact-id <artifactId>", "compile artifact id to create")
-  .option("--policy <policy>", "readiness policy: off|warn|block", "warn")
-  .option("--apply", "persist the new compile artifact")
-  .option("--format <format>", "output format: text|json", "text")
-  .action((options, command) => {
-    const store = openStore(command);
-    const result = assessDesignReadiness(
-      store,
-      {
-        targetType: options.targetType,
-        targetId: options.target,
-        graphId: options.graph,
-        artifactId: options.artifactId,
-        policy: parseReadinessPolicy(options.policy)
-      },
-      { apply: Boolean(options.apply || shouldApply(command)) }
-    );
-    const output = { ...result, artifactId: result.artifact.artifactId };
-    const format = parseOutputFormat(options.format);
-    if (format === "json") console.log(JSON.stringify(output, null, 2));
-    else process.stdout.write(formatReadinessText(output));
-    store.close();
-  });
-
-readiness
-  .command("show")
-  .requiredOption("--target-type <type>", "target type: atlas|graph|species-group|species-node|phenotype")
-  .requiredOption("--target <id>", "target object id")
-  .option("--format <format>", "output format: text|json", "text")
-  .action((options, command) => {
-    const store = openStore(command);
-    const result = showDesignReadiness(store, { targetType: options.targetType, targetId: options.target });
-    if (!result) {
-      store.close();
-      throw new Error(`readiness not found for ${options.targetType}:${options.target}`);
-    }
-    const format = parseOutputFormat(options.format);
-    if (format === "json") console.log(JSON.stringify(result, null, 2));
-    else process.stdout.write(formatReadinessText(result));
-    store.close();
-  });
-
-readiness
-  .command("explain")
-  .requiredOption("--artifact <artifactId>", "compile artifact id")
-  .option("--format <format>", "output format: text|json", "text")
-  .action((options, command) => {
-    const store = openStore(command);
-    const result = explainDesignReadiness(store, options.artifact);
-    const format = parseOutputFormat(options.format);
-    if (format === "json") console.log(JSON.stringify(result, null, 2));
-    else {
-      const readinessItems = result.readiness as Array<{ targetLevel: string; targetId: string; score: number; level: string }>;
-      process.stdout.write(
-        [
-          "Design readiness",
-          `Artifact: ${result.artifactId}`,
-          `Compile target: ${result.compileTarget}`,
-          "Frames:",
-          ...(readinessItems.length
-            ? readinessItems.map((item) => `- ${item.targetLevel}:${item.targetId} ${item.level} ${item.score}`)
-            : ["- none"])
-        ].join("\n") + "\n"
-      );
-    }
-    store.close();
-  });
-
-const selfOptimize = program.command("self-optimize").description("Suggest reviewable design-language maintenance candidates");
-selfOptimize
-  .command("suggest")
-  .requiredOption("--from-feedback <idOrFile>", "feedback id or text file path")
-  .option("--target-scope <scope>", "target scope such as phenotype:<id>, species-node:<id>, graph:<id>")
-  .option("--proposal-id <proposalId>", "preview proposal id")
-  .option("--format <format>", "output format: text|json", "text")
-  .action((options, command) => {
-    const store = openStore(command);
-    let sourceText = options.fromFeedback;
-    try {
-      sourceText = readFileSync(options.fromFeedback, "utf8");
-    } catch {
-      sourceText = options.fromFeedback;
-    }
-    const result = suggestSelfOptimization({
-      sourceId: options.fromFeedback,
-      sourceText,
-      targetScope: options.targetScope,
-      proposalId: options.proposalId
-    });
-    const output = { ...result, persisted: false };
-    const format = parseOutputFormat(options.format);
-    if (format === "json") console.log(JSON.stringify(output, null, 2));
-    else {
-      process.stdout.write(
-        [
-          "Self-optimization suggestion",
-          `Proposal: ${result.proposal.proposalId}`,
-          `Candidates: ${result.candidates.length}`,
-          ...result.candidates.map(
-            (candidate) =>
-              `- ${candidate.operationType} -> ${candidate.suggestedWriteLocation} (${candidate.confidence}, ${candidate.generality})`
-          ),
-          "No graph facts were written. Review candidates before creating change-sets."
-        ].join("\n") + "\n"
-      );
-    }
-    store.close();
-  });
-const selfOptimizeProposal = selfOptimize
-  .command("proposal")
-  .description("Inspect or apply self-optimization proposal packages through the proposal service");
-selfOptimizeProposal
-  .command("show")
-  .requiredOption("--id <proposalId>", "proposal id")
-  .action((options, command) => {
-    const store = openStore(command);
-    const services = createDnaServices(store);
-    const proposal = services.proposal.get(options.id);
-    if (!proposal) {
-      store.close();
-      throw new Error(`proposal not found: ${options.id}`);
-    }
-    console.log(JSON.stringify({ proposal, review: services.proposal.show(options.id) }, null, 2));
-    store.close();
-  });
-selfOptimizeProposal
-  .command("apply")
-  .requiredOption("--id <proposalId>", "proposal id")
-  .action((options, command) => {
-    const globals = (command as Command).optsWithGlobals<CommandOptions>();
-    if (!globals.yes) throw new Error("self-optimize proposal apply requires --yes");
-    const store = openStore(command);
-    const services = createDnaServices(store);
-    console.log(JSON.stringify(services.proposal.apply(options.id), null, 2));
-    store.close();
-  });
-
 const generationPlan = program.command("generation-plan").description("Plan phenotype generation work across graph, group, node, or phenotype scopes");
 generationPlan
   .command("create")
@@ -2963,7 +2776,6 @@ phenotype
   .option("--species-artifact <artifactId>", "existing species compile artifact id")
   .option("--phenotype-artifact <artifactId>", "existing phenotype compile artifact id")
   .option("--replay-historical", "allow stale compile artifacts for deterministic historical replay")
-  .option("--readiness-policy <policy>", "design readiness policy: off|warn|block", "warn")
   .option("--tool <tool>", "tool", "manual")
   .option("--apply", "persist generated artifacts, phenotype version, and generation job")
   .option("--format <format>", "output format: json")
@@ -2971,12 +2783,7 @@ phenotype
   .action((options, command) => {
     const store = openStore(command);
     const prepared = options.task
-      ? preparePhenotypeGenerationForTask(store, {
-          taskId: options.task,
-          tool: options.tool,
-          name: options.name,
-          readinessPolicy: parseReadinessPolicy(options.readinessPolicy)
-        })
+      ? preparePhenotypeGenerationForTask(store, { taskId: options.task, tool: options.tool, name: options.name })
       : preparePhenotypeGeneration(store, {
           graphId: requiredOption(options.graph, "--graph"),
           nodeId: requiredOption(options.node, "--node"),
@@ -2987,7 +2794,6 @@ phenotype
           speciesArtifactId: options.speciesArtifact,
           phenotypeArtifactId: options.phenotypeArtifact,
           replayHistorical: Boolean(options.replayHistorical),
-          readinessPolicy: parseReadinessPolicy(options.readinessPolicy),
           tool: options.tool
         });
     const response = {

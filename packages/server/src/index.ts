@@ -319,7 +319,6 @@ function createReadonlyWorkbenchSnapshot(store: SqliteDnaStore, graphId: string 
       })),
       tasks: generationTasks.map((task) => ({
         ...createGenerationTaskSummary(task),
-        targetReadiness: readinessForGenerationTask(store, task),
         trace: {
           planId: task.planId,
           speciesCompileArtifactId: task.speciesCompileArtifactId,
@@ -381,7 +380,6 @@ function createWorkbenchGraphMap(store: SqliteDnaStore, graphId: string | undefi
         name: graph.name,
         purpose: graph.purpose,
         status: graph.status,
-        readiness: readinessSummary(latestEntityReadiness(store, "graph", graph.graphId)),
         tags: [graph.currentVersion ? `v${graph.currentVersion}` : undefined, graph.status].filter((value): value is string => Boolean(value)),
         counts: {
           groups: detail.counts.groups,
@@ -695,67 +693,6 @@ function createGenerationTaskSummary(task: PhenotypeGenerationTask) {
   };
 }
 
-function readinessSummary(
-  readiness:
-    | {
-        score: number;
-        level: string;
-        targetLevel: string;
-        targetId: string;
-        warnings?: string[];
-        blockingIssues?: string[];
-        suggestions?: string[];
-        dimensions?: Array<{ key: string; label: string; score: number; missing?: string[]; suggestedActions?: string[] }>;
-        boundVersionRef?: string;
-        evaluatedAt?: string;
-      }
-    | undefined
-) {
-  if (!readiness) return undefined;
-  return {
-    score: readiness.score,
-    level: readiness.level,
-    targetLevel: readiness.targetLevel,
-    targetId: readiness.targetId,
-    boundVersionRef: readiness.boundVersionRef,
-    missing: (readiness.dimensions ?? []).flatMap((dimension) => (dimension.missing ?? []).map((item) => `${dimension.key}:${item}`)).slice(0, 8),
-    warnings: (readiness.warnings ?? []).slice(0, 8),
-    blockingIssues: (readiness.blockingIssues ?? []).slice(0, 8),
-    suggestions: (readiness.suggestions ?? []).slice(0, 8),
-    dimensions: (readiness.dimensions ?? []).map((dimension) => ({
-      key: dimension.key,
-      label: dimension.label,
-      score: dimension.score
-    })),
-    evaluatedAt: readiness.evaluatedAt
-  };
-}
-
-function latestEntityReadiness(store: SqliteDnaStore, targetLevel: "atlas" | "graph" | "species-group", objectId: string) {
-  const artifact = store.entityCompileArtifacts.listByTarget(targetLevel, objectId).at(-1);
-  return artifact?.frames.find((frame) => frame.level === targetLevel)?.readiness;
-}
-
-function latestSpeciesReadiness(store: SqliteDnaStore, nodeId: string) {
-  return store.speciesCompileArtifacts.listByNode(nodeId).at(-1)?.frames.find((frame) => frame.level === "species-node")?.readiness;
-}
-
-function latestPhenotypeReadiness(store: SqliteDnaStore, phenotype: Phenotype) {
-  return store.phenotypeCompileArtifacts
-    .listByNode(phenotype.nodeId)
-    .filter((artifact) => artifact.phenotypeType === phenotype.phenotypeType)
-    .at(-1)
-    ?.frames.find((frame) => frame.level === "phenotype")?.readiness;
-}
-
-function readinessForGenerationTask(store: SqliteDnaStore, task: PhenotypeGenerationTask) {
-  if (task.phenotypeId) {
-    const phenotype = store.phenotypes.get(task.phenotypeId);
-    if (phenotype) return readinessSummary(latestPhenotypeReadiness(store, phenotype));
-  }
-  return task.nodeId ? readinessSummary(latestSpeciesReadiness(store, task.nodeId)) : undefined;
-}
-
 function getScopedGraphs(store: SqliteDnaStore, graphId: string | undefined) {
   return graphId ? [store.graphs.get(graphId)].filter((graph): graph is Graph => Boolean(graph)) : store.graphs.list();
 }
@@ -846,7 +783,6 @@ function createGraphWorkbenchDetail(store: SqliteDnaStore, graph: Graph) {
     purpose: graph.purpose,
     status: graph.status,
     currentVersion: graph.currentVersion,
-    readiness: readinessSummary(latestEntityReadiness(store, "graph", graph.graphId)),
     counts: {
       groups: groups.length,
       nodes: nodes.length,
@@ -882,7 +818,6 @@ function createGraphWorkbenchDetail(store: SqliteDnaStore, graph: Graph) {
         status: phenotype.status,
         currentAcceptedVersionId: phenotype.currentAcceptedVersion,
         usageGuideCoverage: usageGuide ? "active" : "missing",
-        readiness: readinessSummary(latestPhenotypeReadiness(store, phenotype)),
         usageGuide: usageGuide ? createUsageGuideSummary(usageGuide) : undefined,
         versions: store.phenotypeVersions.listByPhenotype(phenotype.phenotypeId).map((version) => ({
           phenotypeVersionId: version.phenotypeVersionId,
@@ -906,7 +841,6 @@ function createGraphWorkbenchDetail(store: SqliteDnaStore, graph: Graph) {
           objectId: artifact.target.objectId,
           validity: artifact.validity,
           dependencyCount: artifact.dependencyVector.length,
-          readiness: readinessSummary(artifact.frames.find((frame) => frame.level === artifact.targetLevel)?.readiness),
           feedbackCount: artifact.feedback.length,
           openQuestionCount: artifact.frames.reduce((count, frame) => count + frame.openQuestions.length, 0)
         })),
@@ -916,7 +850,6 @@ function createGraphWorkbenchDetail(store: SqliteDnaStore, graph: Graph) {
           objectId: artifact.speciesNodeId,
           validity: artifact.validity,
           dependencyCount: artifact.dependencyVector.length,
-          readiness: readinessSummary(artifact.frames.find((frame) => frame.level === "species-node")?.readiness),
           feedbackCount: artifact.feedback.length,
           openQuestionCount: artifact.openQuestions.length
         })),
@@ -927,7 +860,6 @@ function createGraphWorkbenchDetail(store: SqliteDnaStore, graph: Graph) {
           phenotypeType: artifact.phenotypeType,
           validity: artifact.validity,
           dependencyCount: artifact.dependencyVector.length,
-          readiness: readinessSummary(artifact.frames.find((frame) => frame.level === "phenotype")?.readiness),
           feedbackCount: artifact.feedback.length,
           openQuestionCount: artifact.openQuestions.length
         }))
@@ -949,7 +881,6 @@ function createGroupSummary(
     name: group.name,
     groupType: group.groupType,
     status: group.status,
-    readiness: readinessSummary(latestEntityReadiness(store, "species-group", group.groupId)),
     memberNodeIds,
     sharedFacts: group.sharedFacts,
     phenotypeTypeSuggestions: group.phenotypeTypeSuggestions,
@@ -975,7 +906,6 @@ function createNodeSummary(
     status: node.status,
     lineageStatus: node.lineageStatus,
     currentVersion: node.currentVersion,
-    readiness: readinessSummary(latestSpeciesReadiness(store, node.nodeId)),
     groupIds: memberships.filter((membership) => membership.nodeId === node.nodeId).map((membership) => membership.groupId),
     parentNodes: node.parentNodes,
     motifs: node.motifs,

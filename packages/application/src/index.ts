@@ -10,8 +10,6 @@ import {
   createDefaultPhenotypeGenerationTask,
   createDefaultPhenotypeVersion,
   createGenerationJob,
-  detectSelfOptimizationCandidates,
-  evaluateDesignReadinessPolicy,
   summarizePhenotypeUsageGuideForCompile,
   makeId,
   nowIso,
@@ -22,9 +20,6 @@ import {
   StorageTypeSchema,
   PhenotypeGenerationPlanSchema,
   PhenotypeGenerationTaskSchema,
-  type DesignReadinessPolicy,
-  type DesignReadinessPolicyResult,
-  type DesignReadinessResult,
   type EntityCompileArtifact,
   type AssetIndex,
   type ContextAttachment,
@@ -43,7 +38,6 @@ import {
   type PhenotypeVersionFeedbackItem,
   type SpeciesNode,
   type PhenotypeVersion,
-  type SelfOptimizationSuggestionReport,
   type SpeciesCompileArtifact,
   type TraceEntry
 } from "@dna/core";
@@ -108,7 +102,7 @@ export interface SpeciesCompileInputRepositories {
 
 export interface LayeredCompileRepositories extends SpeciesCompileInputRepositories {
   atlases: Pick<AtlasRepository, "get" | "list">;
-  entityCompileArtifacts: Pick<EntityCompileArtifactRepository, "get" | "listByGraph" | "listByTarget">;
+  entityCompileArtifacts: Pick<EntityCompileArtifactRepository, "get" | "listByGraph">;
   facetDefinitions: Pick<FacetDefinitionRepository, "list">;
   facetSchemas: Pick<FacetSchemaRepository, "list">;
   facetAssignments: Pick<FacetAssignmentRepository, "list" | "listByTarget">;
@@ -319,7 +313,6 @@ export interface PreparePhenotypeGenerationOptions {
   generationPlanId?: string;
   versionBinding?: GenerationVersionBinding;
   tool?: string;
-  readinessPolicy?: DesignReadinessPolicy;
   ids?: {
     speciesArtifactId?: string;
     phenotypeArtifactId?: string;
@@ -327,25 +320,6 @@ export interface PreparePhenotypeGenerationOptions {
     phenotypeVersionId?: string;
     generationJobId?: string;
   };
-}
-
-export type DesignReadinessTargetType = "atlas" | "graph" | "species-group" | "species-node" | "phenotype";
-
-export interface AssessDesignReadinessOptions {
-  targetType: DesignReadinessTargetType;
-  targetId: string;
-  graphId?: string;
-  artifactId?: string;
-  policy?: DesignReadinessPolicy;
-}
-
-export type DesignReadinessArtifact = EntityCompileArtifact | SpeciesCompileArtifact | PhenotypeCompileArtifact;
-
-export interface DesignReadinessAssessmentResult {
-  artifact: DesignReadinessArtifact;
-  readiness: DesignReadinessResult;
-  policyResult: DesignReadinessPolicyResult;
-  persisted: boolean;
 }
 
 export interface PrepareEntityCompileArtifactOptions {
@@ -567,155 +541,6 @@ export function preparePhenotypeCompileArtifact(
   });
 }
 
-type DesignReadinessRepositories = LayeredCompileRepositories & {
-  transaction?: <T>(fn: () => T) => T;
-  entityCompileArtifacts: Pick<EntityCompileArtifactRepository, "create" | "get" | "listByGraph" | "listByTarget">;
-  speciesCompileArtifacts: Pick<SpeciesCompileArtifactRepository, "create" | "get" | "listByNode">;
-  phenotypeCompileArtifacts: Pick<PhenotypeCompileArtifactRepository, "create" | "get" | "listByNode">;
-  phenotypes: Pick<PhenotypeRepository, "get">;
-  phenotypeUsageGuides?: Pick<PhenotypeUsageGuideRepository, "getActiveByPhenotype">;
-};
-
-function artifactReadiness(artifact: DesignReadinessArtifact, targetType?: DesignReadinessTargetType): DesignReadinessResult | undefined {
-  const level = targetType === "species-node" ? "species-node" : targetType === "phenotype" ? "phenotype" : targetType;
-  const frame = level ? artifact.frames.find((candidate) => candidate.level === level) : artifact.frames.at(-1);
-  return frame?.readiness ?? artifact.frames.at(-1)?.readiness;
-}
-
-function persistReadinessArtifact(store: DesignReadinessRepositories, artifact: DesignReadinessArtifact) {
-  const create = () => {
-    if (artifact.compileTarget === "entity-layer") store.entityCompileArtifacts.create(artifact);
-    else if (artifact.compileTarget === "species-snapshot") store.speciesCompileArtifacts.create(artifact);
-    else store.phenotypeCompileArtifacts.create(artifact);
-  };
-  return store.transaction ? store.transaction(create) : create();
-}
-
-function latest<T>(values: T[]): T | undefined {
-  return values.at(-1);
-}
-
-function prepareReadinessArtifact(store: DesignReadinessRepositories, options: AssessDesignReadinessOptions): DesignReadinessArtifact {
-  if (options.targetType === "atlas") {
-    return prepareEntityCompileArtifact(store, {
-      artifactId: options.artifactId ?? makeId("eca"),
-      targetLevel: "atlas",
-      atlasId: options.targetId
-    });
-  }
-  if (options.targetType === "graph") {
-    return prepareEntityCompileArtifact(store, {
-      artifactId: options.artifactId ?? makeId("eca"),
-      targetLevel: "graph",
-      graphId: options.targetId
-    });
-  }
-  if (options.targetType === "species-group") {
-    return prepareEntityCompileArtifact(store, {
-      artifactId: options.artifactId ?? makeId("eca"),
-      targetLevel: "species-group",
-      graphId: options.graphId,
-      groupId: options.targetId
-    });
-  }
-  if (options.targetType === "species-node") {
-    const node = store.nodes.get(options.targetId);
-    if (!node) throw new Error(`species node not found: ${options.targetId}`);
-    return prepareSpeciesCompileArtifact(store, {
-      artifactId: options.artifactId ?? makeId("sca"),
-      graphId: node.graphId,
-      nodeId: node.nodeId
-    });
-  }
-  const phenotype = store.phenotypes.get(options.targetId);
-  if (!phenotype) throw new Error(`phenotype not found: ${options.targetId}`);
-  const guide = store.phenotypeUsageGuides?.getActiveByPhenotype(phenotype.phenotypeId);
-  return preparePhenotypeCompileArtifact(store, {
-    artifactId: options.artifactId ?? makeId("pca"),
-    graphId: phenotype.graphId,
-    nodeId: phenotype.nodeId,
-    phenotypeType: phenotype.phenotypeType,
-    taskBrief: phenotype.objectBrief,
-    usageGuideSnapshot: guide ? summarizePhenotypeUsageGuideForCompile(guide) : undefined,
-    usageGuideWarning: guide ? undefined : `phenotype ${phenotype.phenotypeId} is missing an active usage guide`
-  });
-}
-
-export function assessDesignReadiness(
-  store: DesignReadinessRepositories,
-  options: AssessDesignReadinessOptions,
-  writeOptions: { apply?: boolean } = {}
-): DesignReadinessAssessmentResult {
-  const artifact = prepareReadinessArtifact(store, options);
-  const readiness = artifactReadiness(artifact, options.targetType);
-  if (!readiness) throw new Error(`readiness not found for ${options.targetType}:${options.targetId}`);
-  const policyResult = evaluateDesignReadinessPolicy(readiness, options.policy ?? "warn");
-  if (!policyResult.allowed) {
-    throw new Error(`design readiness blocked for ${options.targetType}:${options.targetId}: ${policyResult.blockingIssues.join("; ")}`);
-  }
-  if (writeOptions.apply) persistReadinessArtifact(store, artifact);
-  return { artifact, readiness, policyResult, persisted: Boolean(writeOptions.apply) };
-}
-
-export function showDesignReadiness(
-  store: DesignReadinessRepositories,
-  options: Pick<AssessDesignReadinessOptions, "targetType" | "targetId">
-): (DesignReadinessAssessmentResult & { artifactId: string }) | undefined {
-  let artifact: DesignReadinessArtifact | undefined;
-  if (options.targetType === "atlas" || options.targetType === "graph" || options.targetType === "species-group") {
-    artifact = latest(store.entityCompileArtifacts.listByTarget(options.targetType, options.targetId));
-  } else if (options.targetType === "species-node") {
-    artifact = latest(store.speciesCompileArtifacts.listByNode(options.targetId));
-  } else {
-    const phenotype = store.phenotypes.get(options.targetId);
-    artifact = phenotype
-      ? latest(
-          store.phenotypeCompileArtifacts
-            .listByNode(phenotype.nodeId)
-            .filter((candidate) => candidate.phenotypeType === phenotype.phenotypeType)
-        )
-      : undefined;
-  }
-  const readiness = artifact ? artifactReadiness(artifact, options.targetType) : undefined;
-  if (!artifact || !readiness) return undefined;
-  return {
-    artifactId: artifact.artifactId,
-    artifact,
-    readiness,
-    policyResult: evaluateDesignReadinessPolicy(readiness, "warn"),
-    persisted: true
-  };
-}
-
-export function explainDesignReadiness(store: DesignReadinessRepositories, artifactId: string) {
-  const artifact =
-    store.entityCompileArtifacts.get(artifactId) ??
-    store.speciesCompileArtifacts.get(artifactId) ??
-    store.phenotypeCompileArtifacts.get(artifactId);
-  if (!artifact) throw new Error(`compile artifact not found: ${artifactId}`);
-  return {
-    artifactId: artifact.artifactId,
-    compileTarget: artifact.compileTarget,
-    targetLevel: artifact.compileTarget === "entity-layer" ? artifact.targetLevel : artifact.compileTarget === "species-snapshot" ? "species-node" : "phenotype",
-    readiness: artifact.frames.map((frame) => frame.readiness).filter(Boolean),
-    frames: artifact.frames.map((frame) => ({
-      frameId: frame.frameId,
-      level: frame.level,
-      target: frame.target,
-      readiness: frame.readiness
-    }))
-  };
-}
-
-export function suggestSelfOptimization(input: {
-  sourceId?: string;
-  sourceText: string;
-  targetScope?: string;
-  proposalId?: string;
-}): SelfOptimizationSuggestionReport {
-  return detectSelfOptimizationCandidates(input);
-}
-
 export function preparePhenotypeGeneration(
   store: PhenotypeGenerationRepositories,
   options: PreparePhenotypeGenerationOptions
@@ -802,22 +627,6 @@ export function preparePhenotypeGeneration(
   const compileValidity = options.replayHistorical
     ? { state: "historical" as const, reasons: ["historical replay explicitly requested"] }
     : { state: "current" as const, reasons: [] };
-  const readinessPolicy = options.readinessPolicy ?? "warn";
-  const designReadiness =
-    readinessPolicy === "off"
-      ? undefined
-      : {
-          species: artifactReadiness(speciesArtifact, "species-node"),
-          phenotype: artifactReadiness(phenotypeArtifact, "phenotype")
-        };
-  const readinessPolicyResults =
-    readinessPolicy === "off"
-      ? []
-      : [designReadiness?.species, designReadiness?.phenotype].map((readiness) => evaluateDesignReadinessPolicy(readiness, readinessPolicy));
-  const readinessBlockers = readinessPolicyResults.filter((result) => !result.allowed).flatMap((result) => result.blockingIssues);
-  if (readinessBlockers.length) {
-    throw new Error(`design readiness blocked for phenotype generation: ${readinessBlockers.join("; ")}`);
-  }
   const phenotypeVersion = createDefaultPhenotypeVersion({
     graphId: options.graphId,
     nodeId: options.nodeId,
@@ -838,9 +647,7 @@ export function preparePhenotypeGeneration(
       usageGuideId: usageGuideSnapshot?.usageGuideId,
       usageGuideRevision: usageGuideSnapshot?.usageGuideRevision,
       usageGuideSnapshot,
-      usageGuideWarning,
-      readinessPolicy,
-      designReadiness
+      usageGuideWarning
     },
     generationBrief: options.taskBrief,
     promptSnapshot: phenotypeArtifact.prompt,
@@ -873,8 +680,6 @@ export function preparePhenotypeGeneration(
       usageGuideRevision: usageGuideSnapshot?.usageGuideRevision,
       usageGuideSummary: usageGuideSnapshot,
       usageGuideWarning,
-      readinessPolicy,
-      designReadiness,
       generationTaskId: options.generationTaskId,
       generationPlanId: options.generationPlanId,
       versionBinding: options.versionBinding
@@ -1478,7 +1283,7 @@ export function expandGenerationPlan(
 
 export function preparePhenotypeGenerationForTask(
   store: GenerationPlanningRepositories,
-  input: { taskId: string; tool?: string; name?: string; readinessPolicy?: DesignReadinessPolicy }
+  input: { taskId: string; tool?: string; name?: string }
 ): PreparedPhenotypeGeneration {
   const task = store.generationTasks.get(input.taskId);
   if (!task) throw new Error(`generation task not found: ${input.taskId}`);
@@ -1502,7 +1307,6 @@ export function preparePhenotypeGenerationForTask(
     generationTaskId: task.taskId,
     generationPlanId: planId,
     versionBinding: task.versionBinding,
-    readinessPolicy: input.readinessPolicy,
     tool: input.tool ?? task.toolPreference ?? "manual"
   });
 }
@@ -2781,7 +2585,6 @@ function createCompileArtifactSnapshot(
       compileMode: speciesArtifact.compileMode,
       compilePolicy: speciesArtifact.compilePolicy,
       frameCount: speciesArtifact.frames.length,
-      readiness: artifactReadiness(speciesArtifact, "species-node"),
       conflictCount: speciesArtifact.conflictReport.length,
       feedbackCount: speciesArtifact.feedback.length,
       sourceTraceCount: countTraceEntries(speciesArtifact.sourceTrace),
@@ -2798,7 +2601,6 @@ function createCompileArtifactSnapshot(
       taskBrief: phenotypeArtifact.taskBrief,
       compileMode: phenotypeArtifact.compileMode,
       frameCount: phenotypeArtifact.frames.length,
-      readiness: artifactReadiness(phenotypeArtifact, "phenotype"),
       promptDigest: phenotypeArtifact.prompt,
       negativePrompt: phenotypeArtifact.negativePrompt,
       artBrief: phenotypeArtifact.artBrief,

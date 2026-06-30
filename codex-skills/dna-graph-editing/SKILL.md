@@ -57,7 +57,6 @@ Use these invariants to protect existing graph meaning. This skill applies the m
 - storage decoupling: Storage/routing edits must not alter graph identity. LibraryRoutingPolicy, StorageMount, ExternalLibraryMapping, OutputReference, and AssetIndex changes can affect where results live, but they do not rename or redefine SpeciesNode identity.
 - impact analysis: Existing EntityCompileArtifact, SpeciesCompileArtifact, PhenotypeCompileArtifact, PhenotypeVersion, ReviewRecord, ImpactRecord, OutputReference, and routing records must be marked current, stale, historical, unaffected, or requiring review explicitly. Upstream edits should expose dependency-vector staleness and compile feedback; they must not auto-recompile or mutate downstream graph facts.
 - history preservation: Split, merge, rename, archive, and refactor edits must preserve stable identity and version history rather than silently overwriting what accepted outputs mean.
-- local readiness refresh: After editing core entities, DesignRelationship, context, facets, or PhenotypeUsageGuide data, recommend refreshing only the affected compile/readiness artifact and report any readiness score change as review evidence, not as a graph fact rewrite.
 
 ## Decision Gates
 
@@ -65,9 +64,8 @@ Use these invariants to protect existing graph meaning. This skill applies the m
 2. reasonableness gate: reject or redirect edits that would make a file, prompt, tag, or one-off output into a species.
 3. history gate: preserve understandable history; prefer archive, supersede, alias, or add over destructive rewrite when versions exist.
 4. impact gate: identify downstream nodes, DesignRelationship records, PhenotypeVersion outdated risk, review records, compile artifact staleness, and storage-routing effects.
-5. readiness gate: identify whether the edit changes local Design Readiness dimensions and whether the expected readiness score change should be warning-only or blocking before future generation.
-6. risk gate: assign low, medium, high, or structural risk using the scope levels above.
-7. execution gate: choose no-write diagnosis, preview-confirm, change-set review, local proposal package, draft-write, or direct audit write for generated trace/output/audit records.
+5. risk gate: assign low, medium, high, or structural risk using the scope levels above.
+6. execution gate: choose no-write diagnosis, preview-confirm, change-set review, local proposal package, draft-write, or direct audit write for generated trace/output/audit records.
 
 ## Impact Rules
 
@@ -108,7 +106,6 @@ Return an edit proposal with these fields:
 - riskLevel: low, medium, high, or structural with concrete reason.
 - alternatives: safer or more expressive options when risk is not low.
 - compilePlan: whether EntityCompileArtifact, SpeciesCompileArtifact, or PhenotypeCompileArtifact should be refreshed, fixed, reviewed, replayed historically, or left unchanged, and which compile feedback/open questions should become review or proposal inputs.
-- readinessRefresh: affected local readiness refresh target, expected readiness score change, missing dimensions, and whether downstream generation should warn or block until refreshed.
 - writeStrategy: no-write diagnosis, preview-confirm, change-set review, local proposal package, draft-write, or direct audit write.
 - reviewChecklist: what the user should confirm before apply.
 - assumptions: assumptions used.
@@ -122,7 +119,6 @@ Return an edit proposal with these fields:
 - The 合理性 check explains pass, concern, or rejection.
 - The editInvariantCheck shows how phenotype readiness, abstraction downgrade, inheritance safety, storage decoupling, and impact analysis were applied.
 - 影响分析 names downstream graph, context, compile artifact, result, review, and storage-routing consequences.
-- readiness score change is called out when the edit affects Design Readiness, and local readiness refresh is scoped to the smallest impacted compile artifact.
 - 风险等级 is tied to scope and downstream impact, not a generic label.
 - 替代方案 is provided for medium, high, or structural changes.
 - The write strategy stays reviewable through preview-confirm, change-set review, local proposal package, draft-write, or uses direct audit write only for generated trace/output/audit records.

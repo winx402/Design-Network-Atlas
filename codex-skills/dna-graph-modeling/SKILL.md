@@ -59,8 +59,6 @@ Run these gates in order. If a gate cannot be answered, mark it as a blocking or
 8. compile gate: decide whether atlas, graph, group, species, and phenotype layers should compile through system rules, fixed snapshots, manual/Agent decision patches, or a hybrid policy. Compile feedback can seed review questions or proposals, but it must not rewrite upstream graph/context/facet/template facts.
 9. clarity gate: separate assumptions, blockingQuestions, nonBlockingQuestions, draftFields, and confidence.
 10. execution gate: choose preview-confirm, change-set review, local proposal package, draft-write, or direct audit write for generated trace/output/audit records.
-11. Design Readiness gate: after proposing atlas, graph, group, species, or phenotype objects, recommend a local readiness assessment when the model depends on generation quality; missing design language becomes supplement guidance, not invented facts.
-12. self-optimization candidate gate: when user feedback reveals a reusable rule, classify it as a maintenance candidate only if evidence, scope, conflict risk, and write location are clear enough for review.
 
 ## Macro Workflow
 
@@ -178,8 +176,6 @@ Return a structured modeling proposal with these fields:
 - facetTemplatePlan: required, recommended, and optional facets with value strategy.
 - phenotypePlan: planned phenotype containers with phenotypeId, graphId, nodeId, phenotypeType, name, objectBrief, expectedAssetTypes, review needs, and output/library routing; generated versions/jobs remain out of the modeling batch.
 - compilePlan: suggested CompilePolicy, compileMode, conflict strategy, expected SpeciesCompileArtifact and PhenotypeCompileArtifact contents.
-- readinessPlan: where local Design Readiness should be assessed, expected missing dimensions, and whether policy should remain warn or be raised to block before formal generation.
-- selfOptimizationPlan: feedback-derived self-optimization candidate entries with suggested write location, evidence summary, confidence, generality, conflict risk, and proposal/change-set preview strategy.
 - firstSliceStrategy: included first-slice objects, excluded but expandable objects, and exclusion reasons such as source missing, low priority, not stable object, not first-release phenotype, or abstract rule.
 - writeStrategy: preview-confirm, change-set review, local proposal package, draft-write, or direct audit write with reason.
 - modelingBatchPlan: when a local proposal package is appropriate, state whether to produce `dna.modeling-batch.v1`, list included object sections including facets and phenotypePlans when relevant, note references that must resolve before import, and identify quality-check risks such as broad nodes, fake output species, weak relationships, or missing facet/context coverage.
@@ -201,8 +197,6 @@ Return a structured modeling proposal with these fields:
 - Phenotype and phenotype library decisions stay decoupled from graph identity.
 - Planned phenotype containers are allowed in modeling batches; concrete PhenotypeVersion, GenerationJob, AssetIndex, and OutputReference records stay in their own generation/output boundaries.
 - The write strategy explains why it is preview-confirm, change-set review, local proposal package, draft-write, or direct audit write.
-- Design Readiness is treated as compile artifact evaluation, not graph fact storage; low readiness leads to supplement suggestions or a reviewed proposal.
-- A self-optimization candidate from feedback is never applied silently; it stays as feedback/open question or becomes a reviewable proposal/change-set preview.
 - `待确认问题` contains only questions that materially change the graph model or write safety.
 
 ## Guardrails

@@ -39,12 +39,11 @@ Use `docs/design/write-boundary-matrix.md` for write strategy vocabulary: compil
 5. conflict gate: if compile conflicts or blocking open questions change the visual result, ask a blocking question before using a model or external tool.
 6. context gate: include ContextReference and ContextReviewRubric only as traceable guidance; do not invent references.
 7. usage guide gate: check whether the Phenotype has an active PhenotypeUsageGuide before formal generation. Missing guide is a warning, not a blocker, but do not invent a guide. When a guide exists, include its id, revision, summary, scenarios, must-preserve and must-avoid rules, variant plan, production hints, and review checklist in guideReadiness and usageGuideSnapshot.
-8. readinessPolicy gate: read available Design Readiness from graph/group/species/phenotype compile artifacts and apply readinessPolicy. Default warn/block behavior is warn unless the user or project requests block; warn surfaces missing or low readiness, while block stops generation on blocking readiness issues.
-9. prompt gate: produce prompt, negative prompt, art brief, and review checklist from existing graph facts, compile artifacts, readiness warnings, and any active usage guide.
-10. tool gate: select manual, mock, or external tool execution. Do not default to calling an external tool when conflicts are blocking.
-11. lifecycle gate: decide whether the result should stay candidate, be accepted, rejected, replaced, rolled back, deprecated, archived, or deleted. Feedback belongs on `PhenotypeVersion.feedback`, not in ReviewRecord unless a separate review workflow is explicitly needed.
-12. reference-generation gate: if the user wants graph-wide or group-wide reference material, use scoped reference generation rather than phenotype generation. Store only reference GenerationJob ids, reference AssetIndex ids, or ContextReference ids for later tasks; do not copy private URLs into plan/task records. For reference asset migration, keep asset ids stable as evidence records: do not rewrite a local pointer into an Eagle pointer in place, and do not include archived/deleted pointers as current completion evidence.
-13. storage gate: route output references through PhenotypeLibrary and StorageMount when available, or record direct OutputReference when the user does not use a DNA result library.
+8. prompt gate: produce prompt, negative prompt, art brief, and review checklist from existing graph facts, compile artifacts, and any active usage guide.
+9. tool gate: select manual, mock, or external tool execution. Do not default to calling an external tool when conflicts are blocking.
+10. lifecycle gate: decide whether the result should stay candidate, be accepted, rejected, replaced, rolled back, deprecated, archived, or deleted. Feedback belongs on `PhenotypeVersion.feedback`, not in ReviewRecord unless a separate review workflow is explicitly needed.
+11. reference-generation gate: if the user wants graph-wide or group-wide reference material, use scoped reference generation rather than phenotype generation. Store only reference GenerationJob ids, reference AssetIndex ids, or ContextReference ids for later tasks; do not copy private URLs into plan/task records. For reference asset migration, keep asset ids stable as evidence records: do not rewrite a local pointer into an Eagle pointer in place, and do not include archived/deleted pointers as current completion evidence.
+12. storage gate: route output references through PhenotypeLibrary and StorageMount when available, or record direct OutputReference when the user does not use a DNA result library.
 
 ## Workflow
 
@@ -64,7 +63,6 @@ Use `docs/design/write-boundary-matrix.md` for write strategy vocabulary: compil
    - Use or create a layered SpeciesCompileArtifact for resolved genes, frame trace, dependency vector, feedback, and open questions.
    - Use or create a layered PhenotypeCompileArtifact for prompt, negative prompt, art brief, generation constraints, review checklist, dependency vector, and phenotype frame.
    - Attach a usageGuideSnapshot when an active PhenotypeUsageGuide exists. Record a non-blocking warning when no active usage guide exists, and keep the guide stable unless the user explicitly creates or updates it.
-   - Read Design Readiness from the relevant compile artifacts. Keep readinessPolicy explicit in the generation plan: off ignores readiness, warn records warnings without blocking, and block prevents formal generation when readiness is stale, missing critical dimensions, or blocked.
    - Registration must carry speciesCompileArtifactId, phenotypeCompileArtifactId, and compileArtifactSnapshot into PhenotypeVersion, and artifact IDs plus current/historical compile mode into GenerationJob.inputSnapshot.
    - Record compileMode, compiledBy, assistantContributionSummary, inputSummary, frame counts, conflict counts, decision counts, feedback counts, dependency-vector validity, and trace priority/overridability where relevant.
    - LLM/Agent-assisted compile is allowed only as bounded decision requests and replayable decision patches; do not call providers or store credentials during compile.
@@ -104,7 +102,6 @@ Return a generationPlan with these fields:
 - selectedTarget: graph id, species node id, node version id, phenotype type, and task brief.
 - versionBinding: latest-at-execution or pinned, including stale/historical replay decision.
 - artifactReadiness: existing or required layered SpeciesCompileArtifact and PhenotypeCompileArtifact, with current/stale/historical/invalid status, frame coverage, dependency-vector status, conflicts, feedback, and blocking open questions.
-- designReadiness: readinessPolicy, warn/block decision, graph/group/species/phenotype readiness level, missing dimensions, blocking issues, and suggestions used before generation.
 - guideReadiness: active, missing, archived, or stale-enough-to-review PhenotypeUsageGuide state, including guide id and revision when present, and a warning when missing.
 - usageGuidePlan: whether to create, update, archive, or leave the stable usage guide unchanged; include only confirmed usage scenarios, must-preserve rules, must-avoid rules, variant plan, production hints, and review checklist.
 - usageGuideSnapshot: bounded guide id, revision, summary, selected scenarios, must-preserve and must-avoid rules, variant plan, production hints, and review checklist that generation will use.

@@ -89,7 +89,6 @@ export interface WorkbenchGenerationTask {
   blockingReason?: string;
   versionBinding?: unknown;
   toolPreference?: string;
-  targetReadiness?: WorkbenchReadinessSummary;
   links: {
     planId?: string;
     speciesCompileArtifactId?: string;
@@ -125,20 +124,6 @@ export interface WorkbenchUsageGuideSummary {
   updatedAt?: string;
 }
 
-export interface WorkbenchReadinessSummary {
-  score: number;
-  level: "ready" | "warning" | "blocked" | string;
-  targetLevel: string;
-  targetId: string;
-  boundVersionRef?: string;
-  missing?: string[];
-  warnings?: string[];
-  blockingIssues?: string[];
-  suggestions?: string[];
-  dimensions?: Array<{ key: string; label: string; score: number }>;
-  evaluatedAt?: string;
-}
-
 export type WorkbenchRelationshipEndpoint =
   | { type: "graph"; graphId: string }
   | { type: "species-group"; graphId: string; groupId: string }
@@ -150,14 +135,12 @@ export interface WorkbenchGraphDetail {
   purpose?: string;
   status: string;
   currentVersion?: string;
-  readiness?: WorkbenchReadinessSummary;
   counts: Record<string, number>;
   groups: Array<{
     groupId: string;
     name: string;
     groupType?: string;
     status: string;
-    readiness?: WorkbenchReadinessSummary;
     memberNodeIds: string[];
     sharedFacts?: string[];
     phenotypeTypeSuggestions?: string[];
@@ -172,7 +155,6 @@ export interface WorkbenchGraphDetail {
     status: string;
     lineageStatus?: string;
     currentVersion?: string;
-    readiness?: WorkbenchReadinessSummary;
     groupIds: string[];
     parentNodes?: string[];
     motifs?: string[];
@@ -205,7 +187,6 @@ export interface WorkbenchGraphDetail {
     phenotypeType: string;
     status: string;
     currentAcceptedVersionId?: string;
-    readiness?: WorkbenchReadinessSummary;
     usageGuideCoverage?: "active" | "missing";
     usageGuide?: WorkbenchUsageGuideSummary;
     versions: Array<{

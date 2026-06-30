@@ -10,7 +10,6 @@ import {
   WorkbenchGraphDetail,
   WorkbenchLibrarySummary,
   WorkbenchPreview,
-  WorkbenchReadinessSummary,
   WorkbenchResultPreview,
   WorkbenchSnapshot
 } from "./workbench-data";
@@ -369,7 +368,6 @@ function AtlasMapView(props: {
               <span>{graph.purpose || "No purpose recorded"}</span>
               <div className="node-meta">
                 <StatusChip status={graph.status} />
-                <ReadinessBadge readiness={graph.readiness} compact />
                 <span>{graph.currentVersion ? `v${graph.currentVersion}` : "version n/a"}</span>
               </div>
               <div className="node-counts">
@@ -410,7 +408,6 @@ function GraphExplorerView(props: {
         </div>
         <div className="intro-tags" aria-label="Graph summary tags">
           <StatusChip status={graph.status} />
-          <ReadinessBadge readiness={graph.readiness} />
           <span>{graph.currentVersion ? `version ${graph.currentVersion}` : "version n/a"}</span>
           <span>{graph.counts.relationships ?? 0} relationships</span>
           <span>{graph.counts.acceptedVersions ?? 0} accepted</span>
@@ -431,7 +428,6 @@ function GraphExplorerView(props: {
             <button className="lane-head" onClick={() => props.onSelect(inspectGroup(group, graph))} type="button">
               <span className="node-type">SpeciesGroup</span>
               <strong>{group.name}</strong>
-              <ReadinessBadge readiness={group.readiness} compact />
               <span>{group.memberNodeIds.length} members · {(group.phenotypeIds ?? []).length} phenotypes</span>
             </button>
             <div className="lane-semantics">
@@ -525,7 +521,6 @@ function GraphExplorerView(props: {
             title: phenotype.name,
             detail: [
               `${phenotype.phenotypeType} · ${phenotypeOverlaySummary(phenotype)}`,
-              phenotype.readiness ? `readiness ${phenotype.readiness.level} ${phenotype.readiness.score}` : "readiness n/a",
               `Guide coverage: ${phenotype.usageGuideCoverage ?? "missing"}`,
               phenotype.usageGuide?.title,
               phenotype.usageGuide?.mustPreserve[0]
@@ -544,11 +539,7 @@ function GraphExplorerView(props: {
           items={(graph.compileTrace?.artifacts ?? []).map((artifact) => ({
             id: String(artifact.artifactId ?? "artifact"),
             title: String(artifact.targetLevel ?? "compile artifact"),
-            detail: `${artifact.dependencyCount ?? 0} dependencies · ${artifact.feedbackCount ?? 0} feedback · ${
-              typeof artifact.readiness === "object" && artifact.readiness !== null
-                ? `readiness ${(artifact.readiness as { level?: string; score?: number }).level ?? "n/a"} ${(artifact.readiness as { score?: number }).score ?? ""}`.trim()
-                : "readiness n/a"
-            }`,
+            detail: `${artifact.dependencyCount ?? 0} dependencies · ${artifact.feedbackCount ?? 0} feedback`,
             status: String(artifact.validity ?? "current"),
             raw: artifact
           }))}
@@ -575,7 +566,6 @@ function SpeciesCard(props: {
       <strong>{props.node.name}</strong>
       <span>{props.node.category ?? props.node.level ?? "type n/a"}</span>
       <div className="semantic-meter">
-        <ReadinessBadge readiness={props.node.readiness} compact />
         <span>{props.node.motifs?.length ?? 0} motifs</span>
         <span>{props.node.relationshipIds?.length ?? 0} relations</span>
         <span>{props.node.latestCompileArtifactId ? "compiled" : "compile missing"}</span>
@@ -710,7 +700,6 @@ function TaskCard(props: { task: WorkbenchGenerationTask; onSelect: (detail: Ins
       <strong>{props.task.taskBrief || props.task.taskId}</strong>
       <span>{props.task.phenotypeType} · {props.task.planId ? `from ${props.task.planId}` : "standalone task"}</span>
       <StatusChip status={props.task.status} />
-      <ReadinessBadge readiness={props.task.targetReadiness} compact />
       <small>{taskTraceLabels(props.task).join(" -> ")}</small>
     </button>
   );
@@ -945,26 +934,6 @@ function StatusChip(props: { status: string }) {
   return <span className={`status-chip status-${props.status}`}>{props.status}</span>;
 }
 
-function ReadinessBadge(props: { readiness?: WorkbenchReadinessSummary; compact?: boolean }) {
-  if (!props.readiness) return <span className="readiness-badge readiness-missing">readiness n/a</span>;
-  return (
-    <span className={`readiness-badge readiness-${props.readiness.level}`}>
-      {props.compact ? "" : "readiness "}
-      {props.readiness.level} {props.readiness.score}
-    </span>
-  );
-}
-
-function readinessLines(readiness: WorkbenchReadinessSummary | undefined): string[] {
-  if (!readiness) return ["Design readiness: not assessed"];
-  return [
-    `Design readiness: ${readiness.level} ${readiness.score}`,
-    ...(readiness.blockingIssues ?? []).map((issue) => `blocking: ${issue}`),
-    ...(readiness.missing ?? []).slice(0, 4).map((item) => `missing: ${item}`),
-    ...(readiness.suggestions ?? []).slice(0, 4).map((item) => `suggestion: ${item}`)
-  ];
-}
-
 interface InspectorDetail {
   type: string;
   id: string;
@@ -1009,7 +978,7 @@ function inspectGraph(graph: WorkbenchGraphDetail, snapshot: WorkbenchSnapshot):
     id: graph.graphId,
     status: graph.status,
     summary: [graph.name, graph.purpose || "No graph purpose recorded."],
-    boundSemantics: [...readinessLines(graph.readiness), ...semanticItems(graph).map((item) => `${item.title}: ${item.detail}`)],
+    boundSemantics: semanticItems(graph).map((item) => `${item.title}: ${item.detail}`),
     relationships: [
       `${graph.relationships.length} internal or adjacent design relationships`,
       ...graphRelationships.map((relationship) => `${relationship.source?.graphId ?? "source"} -> ${relationship.target?.graphId ?? "target"} (${relationship.relationshipType})`)
@@ -1036,8 +1005,8 @@ function inspectGroup(group: WorkbenchGraphDetail["groups"][number], graph: Work
     type: "SpeciesGroup",
     id: group.groupId,
     status: group.status,
-    summary: [group.name, `${group.memberNodeIds.length} member species`, ...readinessLines(group.readiness).slice(0, 1)],
-    boundSemantics: [...readinessLines(group.readiness), ...(group.sharedFacts ?? []), ...(group.phenotypeTypeSuggestions ?? []).map((value) => `phenotype suggestion: ${value}`)],
+    summary: [group.name, `${group.memberNodeIds.length} member species`],
+    boundSemantics: [...(group.sharedFacts ?? []), ...(group.phenotypeTypeSuggestions ?? []).map((value) => `phenotype suggestion: ${value}`)],
     relationships: (group.relationshipIds ?? []).map((id) => `relationship ${id}`),
     phenotypeAssets: (group.phenotypeIds ?? []).map((id) => `phenotype ${id}`),
     raw: { graphId: graph.graphId, ...group }
@@ -1050,8 +1019,8 @@ function inspectSpecies(node: WorkbenchGraphDetail["nodes"][number], graph: Work
     type: "SpeciesNode",
     id: node.nodeId,
     status: node.status,
-    summary: [node.name, node.category ?? node.level ?? "No category recorded.", ...readinessLines(node.readiness).slice(0, 1)],
-    boundSemantics: [...readinessLines(node.readiness), ...(node.motifs ?? []).map((motif) => `motif: ${motif}`), `constraints: ${JSON.stringify(node.constraintSummary ?? {})}`],
+    summary: [node.name, node.category ?? node.level ?? "No category recorded."],
+    boundSemantics: [...(node.motifs ?? []).map((motif) => `motif: ${motif}`), `constraints: ${JSON.stringify(node.constraintSummary ?? {})}`],
     relationships: (node.relationshipIds ?? []).map((id) => `relationship ${id}`),
     generationLinks: [node.latestCompileArtifactId ? `species compile artifact ${node.latestCompileArtifactId}` : "species compile artifact missing"],
     phenotypeAssets: phenotypes.map((phenotype) => `${phenotype.name}: ${phenotypeOverlaySummary(phenotype)}`),
@@ -1087,17 +1056,14 @@ function inspectPhenotypeOverlay(phenotype: WorkbenchGraphDetail["phenotypeOverl
     id: phenotype.phenotypeId,
     status: phenotype.currentAcceptedVersionId ? "accepted" : phenotype.status,
     summary: [phenotype.name, phenotype.phenotypeType, guide ? guide.title : "Usage Guide: missing"],
-    boundSemantics: [
-      ...readinessLines(phenotype.readiness),
-      ...(guide
+    boundSemantics: guide
       ? [
           `Guide coverage: active revision ${guide.revision}`,
           `primary use: ${guide.primaryUsageScenario ?? "None"}`,
           ...guide.mustPreserve.map((value) => `must preserve: ${value}`),
           ...guide.mustAvoid.map((value) => `must avoid: ${value}`)
         ]
-      : ["Guide coverage: missing"])
-    ],
+      : ["Guide coverage: missing"],
     generationLinks: [
       ...phenotype.versions.flatMap((version) =>
         [
@@ -1111,9 +1077,7 @@ function inspectPhenotypeOverlay(phenotype: WorkbenchGraphDetail["phenotypeOverl
       ...phenotype.versions.map((version) => `${version.phenotypeVersionId}: ${version.status}`),
       ...snapshot.resultPreviews.filter((preview) => preview.phenotypeId === phenotype.phenotypeId).map((preview) => `${preview.objectType}: ${preview.objectId}`)
     ],
-    governance: guide
-      ? [`usage guide ${guide.status}`, `${guide.reviewChecklistCount} guide review checks`, `${guide.variantCount} planned variants`]
-      : ["usage guide missing"],
+    governance: guide ? [`usage guide ${guide.status}`, `${guide.reviewChecklistCount} guide review checks`, `${guide.variantCount} planned variants`] : ["usage guide missing"],
     raw: phenotype
   };
 }
@@ -1137,7 +1101,7 @@ function inspectTask(task: WorkbenchGenerationTask): InspectorDetail {
     status: task.status,
     summary: [task.taskBrief || "No task brief.", task.planId ? `from plan ${task.planId}` : "Standalone Task"],
     generationLinks: taskTraceLabels(task),
-    governance: [...readinessLines(task.targetReadiness), task.blockingReason ? `blocked: ${task.blockingReason}` : "not blocked", `priority ${task.priority}`],
+    governance: [task.blockingReason ? `blocked: ${task.blockingReason}` : "not blocked", `priority ${task.priority}`],
     raw: task
   };
 }
