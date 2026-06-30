@@ -15,6 +15,7 @@ import {
   nowIso,
   type OutputReference,
   sanitizePhenotypeVersionFeedback,
+  sanitizeProductionIntent,
   sanitizePlanningJson,
   sanitizePlanningText,
   StorageTypeSchema,
@@ -22,6 +23,7 @@ import {
   PhenotypeGenerationTaskSchema,
   type EntityCompileArtifact,
   type AssetIndex,
+  type AssetType,
   type ContextAttachment,
   type DesignRelationship,
   type DesignContext,
@@ -30,6 +32,7 @@ import {
   type GenerationVersionBinding,
   type Graph,
   type Phenotype,
+  type ProductionIntent,
   type PhenotypeUsageGuideCompileSnapshot,
   type PhenotypeGenerationPlan,
   type PhenotypeGenerationTask,
@@ -185,6 +188,7 @@ export type GenerationTaskUpdatePatch = {
   llmInstructions?: string;
   operatorNotes?: string;
   versionBinding?: GenerationVersionBinding;
+  productionIntent?: ProductionIntent;
   blockingReason?: string;
   clearBlockingReason?: boolean;
   requirements?: PlanningJsonPatch;
@@ -211,6 +215,15 @@ export interface PreparedReferenceGeneration {
   createdEntityArtifact: boolean;
   persisted: boolean;
 }
+
+type GenerationPlanTarget = {
+  graphId: string;
+  nodeId: string;
+  phenotypeId?: string;
+  phenotype?: Phenotype;
+  phenotypeType: string;
+  taskBrief: string;
+};
 
 export interface ImpactRepositories {
   nodes: Pick<LineageRepository, "get" | "listByGraph">;
@@ -312,6 +325,7 @@ export interface PreparePhenotypeGenerationOptions {
   generationTaskId?: string;
   generationPlanId?: string;
   versionBinding?: GenerationVersionBinding;
+  productionIntent?: ProductionIntent;
   tool?: string;
   ids?: {
     speciesArtifactId?: string;
@@ -350,6 +364,7 @@ export interface PreparePhenotypeCompileArtifactOptions {
   speciesArtifactId?: string;
   usageGuideSnapshot?: PhenotypeUsageGuideCompileSnapshot;
   usageGuideWarning?: string;
+  productionIntent?: ProductionIntent;
 }
 
 export interface PreparedPhenotypeGeneration {
@@ -536,6 +551,7 @@ export function preparePhenotypeCompileArtifact(
     speciesArtifact,
     usageGuideSnapshot: options.usageGuideSnapshot,
     usageGuideWarning: options.usageGuideWarning,
+    productionIntent: options.productionIntent,
     contextReferences: compileInput.contextReferences,
     contextReviewRubrics: compileInput.contextReviewRubrics
   });
@@ -599,7 +615,8 @@ export function preparePhenotypeGeneration(
       taskBrief: options.taskBrief,
       speciesArtifact,
       usageGuideSnapshot,
-      usageGuideWarning
+      usageGuideWarning,
+      productionIntent: options.productionIntent
     });
     createdPhenotypeArtifact = true;
   }
@@ -644,6 +661,7 @@ export function preparePhenotypeGeneration(
       generationTaskId: options.generationTaskId,
       generationPlanId: options.generationPlanId,
       versionBinding: options.versionBinding,
+      productionIntent: options.productionIntent,
       usageGuideId: usageGuideSnapshot?.usageGuideId,
       usageGuideRevision: usageGuideSnapshot?.usageGuideRevision,
       usageGuideSnapshot,
@@ -682,7 +700,8 @@ export function preparePhenotypeGeneration(
       usageGuideWarning,
       generationTaskId: options.generationTaskId,
       generationPlanId: options.generationPlanId,
-      versionBinding: options.versionBinding
+      versionBinding: options.versionBinding,
+      productionIntent: options.productionIntent
     },
     outputSnapshot: {
       prompt: phenotypeArtifact.prompt,
@@ -1237,7 +1256,9 @@ export function expandGenerationPlan(
   const skippedExistingTaskIds: string[] = [];
 
   for (const target of targets) {
-    const taskBrief = input.taskOverrides?.taskBrief ?? target.taskBrief;
+    const productionIntent =
+      sanitizeProductionIntent(input.taskOverrides?.productionIntent) ?? synthesizeProductionIntent(store, plan, target);
+    const taskBrief = input.taskOverrides?.taskBrief ?? synthesizeGenerationTaskBrief(plan, target, productionIntent);
     const duplicate = existing.find((task) => task.phenotypeId === target.phenotypeId && task.taskBrief === taskBrief);
     if (duplicate) {
       skippedExistingTaskIds.push(duplicate.taskId);
@@ -1253,6 +1274,7 @@ export function expandGenerationPlan(
         phenotypeType: input.taskOverrides?.phenotypeType ?? target.phenotypeType,
         taskBrief,
         priority: input.taskOverrides?.priority ?? plan.priority,
+        productionIntent,
         versionBinding: input.taskOverrides?.versionBinding ?? plan.versionBinding,
         modelPreference: input.taskOverrides?.modelPreference ?? plan.modelPreference,
         providerPreference: input.taskOverrides?.providerPreference ?? plan.providerPreference,
@@ -1307,6 +1329,7 @@ export function preparePhenotypeGenerationForTask(
     generationTaskId: task.taskId,
     generationPlanId: planId,
     versionBinding: task.versionBinding,
+    productionIntent: task.productionIntent,
     tool: input.tool ?? task.toolPreference ?? "manual"
   });
 }
@@ -2011,6 +2034,7 @@ function normalizeGenerationTaskPatch(patch: GenerationTaskUpdatePatch): Generat
     llmInstructions: sanitizePlanningText(patch.llmInstructions),
     operatorNotes: sanitizePlanningText(patch.operatorNotes),
     blockingReason: sanitizePlanningText(patch.blockingReason),
+    productionIntent: sanitizeProductionIntent(patch.productionIntent),
     requirements: normalizePlanningJsonPatch(patch.requirements),
     metadata: normalizePlanningJsonPatch(patch.metadata),
     extensions: normalizePlanningJsonPatch(patch.extensions),
@@ -2110,6 +2134,7 @@ function updateGenerationTaskRecord(task: PhenotypeGenerationTask, patch: Genera
     status,
     priority: patch.priority ?? task.priority,
     versionBinding: patch.versionBinding ?? task.versionBinding,
+    productionIntent: patch.productionIntent ?? task.productionIntent,
     blockingReason,
     requirements: applyPlanningJsonPatch(task.requirements, patch.requirements),
     metadata: applyPlanningJsonPatch(task.metadata, patch.metadata),
@@ -2254,12 +2279,13 @@ function normalizeGenerationTaskInput(
     nodeId,
     phenotypeType: input.phenotypeType ?? phenotype?.phenotypeType ?? "image-prompt",
     taskBrief: input.taskBrief ?? phenotype?.objectBrief ?? "",
+    productionIntent: sanitizeProductionIntent(input.productionIntent),
     generationJobIds: input.generationJobIds ?? [],
     phenotypeVersionIds: input.phenotypeVersionIds ?? []
   });
 }
 
-function generationPlanTargets(store: GenerationPlanningRepositories, plan: PhenotypeGenerationPlan) {
+function generationPlanTargets(store: GenerationPlanningRepositories, plan: PhenotypeGenerationPlan): GenerationPlanTarget[] {
   const plannedByGraph = (graphId: string) =>
     store.phenotypes
       .listByGraph(graphId)
@@ -2286,17 +2312,18 @@ function generationPlanTargets(store: GenerationPlanningRepositories, plan: Phen
   return phenotype ? [phenotypeTarget(phenotype)] : explicitPlanTarget(store, plan);
 }
 
-function phenotypeTarget(phenotype: Phenotype) {
+function phenotypeTarget(phenotype: Phenotype): GenerationPlanTarget {
   return {
     graphId: phenotype.graphId,
     nodeId: phenotype.nodeId,
     phenotypeId: phenotype.phenotypeId,
+    phenotype,
     phenotypeType: phenotype.phenotypeType,
     taskBrief: phenotype.objectBrief || phenotype.name
   };
 }
 
-function explicitPlanTarget(store: GenerationPlanningRepositories, plan: PhenotypeGenerationPlan) {
+function explicitPlanTarget(store: GenerationPlanningRepositories, plan: PhenotypeGenerationPlan): GenerationPlanTarget[] {
   if (!plan.phenotypeType || !plan.taskBrief) return [];
   if (plan.scopeType !== "species-node") return [];
   const graphId = plan.graphId ?? resolvePlanGraphId(store, plan);
@@ -2306,9 +2333,87 @@ function explicitPlanTarget(store: GenerationPlanningRepositories, plan: Phenoty
       nodeId: plan.scopeId,
       phenotypeId: undefined,
       phenotypeType: plan.phenotypeType,
-      taskBrief: plan.taskBrief
+      taskBrief: plan.taskBrief,
+      phenotype: undefined
     }
   ];
+}
+
+function synthesizeProductionIntent(
+  store: GenerationPlanningRepositories,
+  plan: PhenotypeGenerationPlan,
+  target: GenerationPlanTarget
+): ProductionIntent | undefined {
+  const phenotype = target.phenotype;
+  const node = target.nodeId ? store.nodes.get(target.nodeId) : undefined;
+  const guide = target.phenotypeId ? store.phenotypeUsageGuides?.getActiveByPhenotype(target.phenotypeId) : undefined;
+  const expectedAssetTypes = unique<AssetType>([
+    ...(phenotype?.outputPlan.expectedAssetTypes ?? []),
+    ...(guide?.productionHints.suggestedAssetTypes ?? [])
+  ]);
+  const formatNotes = [
+    phenotype?.outputPlan.notes,
+    guide?.productionHints.deliveryNotes,
+    typeof plan.requirements.formatNotes === "string" ? plan.requirements.formatNotes : undefined
+  ].filter((value): value is string => Boolean(value));
+  const runtimeConstraints = [
+    guide?.usageInstructions.stateBehavior,
+    typeof plan.requirements.runtimeConstraints === "string" ? plan.requirements.runtimeConstraints : undefined
+  ].filter((value): value is string => Boolean(value));
+  const unknowns: string[] = [];
+  if (phenotype && !guide) unknowns.push("active phenotype usage guide missing");
+  const intent: ProductionIntent = {
+    sourceObject: {
+      graphId: target.graphId,
+      nodeId: target.nodeId,
+      nodeName: node?.name,
+      phenotypeId: target.phenotypeId,
+      phenotypeName: phenotype?.name,
+      phenotypeType: target.phenotypeType,
+      name: phenotype?.name ?? node?.name ?? target.phenotypeType
+    },
+    productionSliceRole: phenotype?.productionSliceRole,
+    intendedUse: guide?.usageInstructions.primaryUse ?? guide?.summary ?? phenotype?.objectBrief ?? plan.description,
+    outputShape: {
+      expectedAssetTypes,
+      phenotypeType: target.phenotypeType,
+      framing: stringFromUnknown(phenotype?.facets.framing),
+      sliceMode: phenotype?.productionSliceRole ? "production-slice" : undefined,
+      transparency: guide?.productionHints.suggestedTransparency,
+      runtimeConstraints,
+      formatNotes
+    },
+    visualAnchors: unique([
+      node?.name,
+      phenotype?.name,
+      ...(guide?.usageScenarios.map((scenario) => scenario.name) ?? []),
+      ...(phenotype?.tags ?? [])
+    ].filter((value): value is string => Boolean(value))),
+    mustPreserve: unique([...(guide?.designSemantics.mustPreserve ?? [])]),
+    mustAvoid: unique([...(guide?.usageInstructions.doNotUseFor ?? []), ...(guide?.designSemantics.mustAvoid ?? [])]),
+    unknowns
+  };
+  return sanitizeProductionIntent(intent);
+}
+
+function synthesizeGenerationTaskBrief(
+  plan: PhenotypeGenerationPlan,
+  target: GenerationPlanTarget,
+  intent: ProductionIntent | undefined
+) {
+  const parts = [
+    target.phenotype?.name ?? target.taskBrief,
+    `type ${target.phenotypeType}`,
+    intent?.productionSliceRole ? `slice ${intent.productionSliceRole}` : undefined,
+    intent?.outputShape.expectedAssetTypes.length ? `assets ${intent.outputShape.expectedAssetTypes.join(",")}` : undefined,
+    intent?.intendedUse,
+    plan.llmInstructions
+  ].filter((value): value is string => Boolean(value));
+  return parts.join("; ");
+}
+
+function stringFromUnknown(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
 }
 
 function makeGenerationTaskId(planId: string, targetId: string) {
@@ -2701,6 +2806,6 @@ function collectContextChildren<T extends keyof Pick<DesignContext, "factIds" | 
     .filter((value): value is NonNullable<typeof value> => Boolean(value));
 }
 
-function unique(values: string[]) {
+function unique<T extends string>(values: T[]): T[] {
   return [...new Set(values)];
 }

@@ -272,6 +272,7 @@ export function buildGraphPhenotypeOverlay(input: { graph: Graph; nodes: Species
       (left, right) =>
         left.nodeId.localeCompare(right.nodeId) ||
         left.phenotypeType.localeCompare(right.phenotypeType) ||
+        (left.productionSliceRole ?? "").localeCompare(right.productionSliceRole ?? "") ||
         left.phenotypeId.localeCompare(right.phenotypeId)
     );
   const byNodeId: Record<string, Phenotype[]> = {};
@@ -302,7 +303,8 @@ export function formatGraphTreeWithPhenotypesText(tree: GraphTree, overlay: Grap
       const phenotypes = overlay.byNodeId[nodeId] ?? [];
       for (const phenotype of phenotypes) {
         const assetTypes = phenotype.outputPlan.expectedAssetTypes.length ? ` assets=${phenotype.outputPlan.expectedAssetTypes.join(",")}` : "";
-        lines.push(`  - ${phenotype.name} (${phenotype.phenotypeId}) [${phenotype.phenotypeType}, ${phenotype.status}]${assetTypes}`);
+        const slice = phenotype.productionSliceRole ? `, slice=${phenotype.productionSliceRole}` : "";
+        lines.push(`  - ${phenotype.name} (${phenotype.phenotypeId}) [${phenotype.phenotypeType}${slice}, ${phenotype.status}]${assetTypes}`);
       }
     }
   }

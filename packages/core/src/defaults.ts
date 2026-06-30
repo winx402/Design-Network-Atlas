@@ -25,6 +25,9 @@ import {
   Phenotype,
   PhenotypeGenerationPlan,
   PhenotypeGenerationTask,
+  ProductionIntent,
+  ProductionIntentSchema,
+  ProductionSliceRoleSchema,
   PhenotypeUsageGuide,
   PhenotypeUsageGuideCompileSnapshot,
   PhenotypeVersionFeedback,
@@ -65,6 +68,17 @@ export function sanitizePlanningText(value: string | undefined): string | undefi
 
 export function sanitizePlanningJson(value: Record<string, unknown> | undefined): Record<string, unknown> {
   return sanitizePlanningRecord(value ?? {});
+}
+
+export function normalizeProductionSliceRole(value: string | undefined): string | undefined {
+  return value === undefined ? undefined : ProductionSliceRoleSchema.parse(value);
+}
+
+export function sanitizeProductionIntent(value: ProductionIntent | undefined): ProductionIntent | undefined {
+  if (!value) return undefined;
+  const sanitized = sanitizePlanningJson(value as Record<string, unknown>);
+  if (Object.keys(sanitized).length === 0) return undefined;
+  return ProductionIntentSchema.parse(sanitized);
 }
 
 function normalizeVersionBinding(value: Partial<GenerationVersionBinding> | undefined): GenerationVersionBinding {
@@ -739,6 +753,7 @@ export function createDefaultPhenotype(
     graphId: input.graphId,
     nodeId: input.nodeId,
     phenotypeType: input.phenotypeType ?? "image-prompt",
+    productionSliceRole: normalizeProductionSliceRole(input.productionSliceRole),
     phenotypeTypeSource: input.phenotypeTypeSource ?? "built-in",
     name: input.name,
     objectBrief: input.objectBrief ?? "",
@@ -838,6 +853,7 @@ export function createDefaultPhenotypeGenerationTask(
     providerPreference: sanitizePlanningText(input.providerPreference),
     toolPreference: sanitizePlanningText(input.toolPreference),
     requirements: sanitizePlanningJson(input.requirements),
+    productionIntent: sanitizeProductionIntent(input.productionIntent),
     llmInstructions: sanitizePlanningText(input.llmInstructions),
     operatorNotes: sanitizePlanningText(input.operatorNotes),
     blockingReason: sanitizePlanningText(input.blockingReason),

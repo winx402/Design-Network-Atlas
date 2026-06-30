@@ -323,6 +323,7 @@ export interface CreatePlannedPhenotypeInput {
   graphId: string;
   nodeId: string;
   phenotypeType: string;
+  productionSliceRole?: string;
   name: string;
   objectBrief?: string;
   phenotypeTypeSource?: Phenotype["phenotypeTypeSource"];
@@ -911,6 +912,7 @@ export function createDnaServices(store: DnaServiceStore) {
             graphId: input.graphId,
             nodeId: input.nodeId,
             phenotypeType: input.phenotypeType,
+            productionSliceRole: input.productionSliceRole,
             phenotypeTypeSource: input.phenotypeTypeSource ?? "custom",
             name: sanitizePlanningText(input.name) ?? input.name,
             objectBrief: sanitizePlanningText(input.objectBrief) ?? "",
@@ -926,12 +928,13 @@ export function createDnaServices(store: DnaServiceStore) {
           mode: options.mode,
           objectType: "phenotype",
           operation: "create",
-          summary: `create planned phenotype ${phenotype.phenotypeId}`,
+          summary: `create planned phenotype ${phenotype.phenotypeId}${phenotype.productionSliceRole ? ` slice ${phenotype.productionSliceRole}` : ""}`,
           diff: {
             phenotypeId: phenotype.phenotypeId,
             graphId: phenotype.graphId,
             nodeId: phenotype.nodeId,
             phenotypeType: phenotype.phenotypeType,
+            productionSliceRole: phenotype.productionSliceRole,
             status: phenotype.status
           },
           payload: { phenotype }
@@ -1316,12 +1319,13 @@ function createModelingBatchChangeSets(
         mode: options.mode,
         objectType: "phenotype",
         operation: "create",
-        summary: `import planned phenotype ${phenotype.phenotypeId}`,
+        summary: `import planned phenotype ${phenotype.phenotypeId}${phenotype.productionSliceRole ? ` slice ${phenotype.productionSliceRole}` : ""}`,
         diff: {
           phenotypeId: phenotype.phenotypeId,
           graphId: phenotype.graphId,
           nodeId: phenotype.nodeId,
           phenotypeType: phenotype.phenotypeType,
+          productionSliceRole: phenotype.productionSliceRole,
           status: phenotype.status
         },
         payload: { phenotype }
@@ -1380,6 +1384,7 @@ function createPhenotypeFromPlan(input: ModelingBatch["phenotypePlans"][number])
     graphId: input.graphId,
     nodeId: input.nodeId,
     phenotypeType: input.phenotypeType,
+    productionSliceRole: input.productionSliceRole,
     phenotypeTypeSource: input.phenotypeTypeSource ?? "custom",
     name: input.name,
     objectBrief: input.objectBrief ?? "",
@@ -1535,7 +1540,7 @@ function validateBatchPhenotypePlans(
   const targetKeys = new Map<string, string>();
   for (const graph of ids.store.graphs.list()) {
     for (const phenotype of ids.store.phenotypes.listByGraph(graph.graphId)) {
-      targetKeys.set(`${phenotype.graphId}:${phenotype.nodeId}:${phenotype.phenotypeType}`, phenotype.phenotypeId);
+      targetKeys.set(phenotypePlanTargetKey(phenotype), phenotype.phenotypeId);
     }
   }
   batch.phenotypePlans.forEach((plan, index) => {
@@ -1560,14 +1565,28 @@ function validateBatchPhenotypePlans(
     for (const rubricId of plan.reviewRubricIds ?? []) {
       requireKnown(errors, `phenotypePlans[${index}].reviewRubricIds`, ids.reviewRubricIds, rubricId, "context review rubric");
     }
-    const targetKey = `${plan.graphId}:${plan.nodeId}:${plan.phenotypeType}`;
+    const targetKey = phenotypePlanTargetKey(plan);
     const existingPlan = targetKeys.get(targetKey);
     if (existingPlan) {
-      errors.push(`phenotypePlans[${index}]: duplicate phenotype plan target ${plan.graphId}/${plan.nodeId}/${plan.phenotypeType} with ${existingPlan}`);
+      errors.push(
+        `phenotypePlans[${index}]: duplicate phenotype plan target ${formatPhenotypePlanTarget(plan)} with ${existingPlan}`
+      );
     } else {
       targetKeys.set(targetKey, plan.phenotypeId);
     }
   });
+}
+
+function phenotypeSliceKey(value: { productionSliceRole?: string }) {
+  return value.productionSliceRole ?? "default";
+}
+
+function phenotypePlanTargetKey(value: { graphId: string; nodeId: string; phenotypeType: string; productionSliceRole?: string }) {
+  return `${value.graphId}:${value.nodeId}:${value.phenotypeType}:${phenotypeSliceKey(value)}`;
+}
+
+function formatPhenotypePlanTarget(value: { graphId: string; nodeId: string; phenotypeType: string; productionSliceRole?: string }) {
+  return `${value.graphId}/${value.nodeId}/${value.phenotypeType} slice ${phenotypeSliceKey(value)}`;
 }
 
 function addDuplicateErrors(errors: string[], section: string, ids: string[]) {
@@ -1988,8 +2007,8 @@ function validatePlannedPhenotype(store: DnaServiceStore, phenotype: Phenotype):
   if (node && node.graphId !== phenotype.graphId) errors.push(`node ${phenotype.nodeId} belongs to graph ${node.graphId}, not ${phenotype.graphId}`);
   if (store.phenotypes.get(phenotype.phenotypeId)) errors.push(`phenotype already exists: ${phenotype.phenotypeId}`);
   for (const existing of store.phenotypes.listByGraph(phenotype.graphId)) {
-    if (existing.nodeId === phenotype.nodeId && existing.phenotypeType === phenotype.phenotypeType) {
-      errors.push(`duplicate phenotype plan target ${phenotype.graphId}/${phenotype.nodeId}/${phenotype.phenotypeType} with ${existing.phenotypeId}`);
+    if (phenotypePlanTargetKey(existing) === phenotypePlanTargetKey(phenotype)) {
+      errors.push(`duplicate phenotype plan target ${formatPhenotypePlanTarget(phenotype)} with ${existing.phenotypeId}`);
     }
   }
   if (phenotype.status !== "planned") errors.push("planned phenotype must use status planned");

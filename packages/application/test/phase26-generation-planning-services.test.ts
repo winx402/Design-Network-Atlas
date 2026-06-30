@@ -2,6 +2,7 @@ import {
   createDefaultGraph,
   createDefaultNodeVersion,
   createDefaultPhenotype,
+  createDefaultPhenotypeUsageGuide,
   createDefaultSpeciesGroup,
   createDefaultSpeciesGroupMembership,
   createDefaultSpeciesNode
@@ -200,5 +201,118 @@ describe("Phase 26 PRD-17 generation planning services", () => {
       generationPlanId: undefined,
       versionBinding: { mode: "latest-at-execution" }
     });
+  });
+
+  test("synthesizes production intent and compact task briefs from planned phenotype context", () => {
+    const { store, graph, root } = seedPlanningStore();
+    const rootPhenotype = store.phenotypes.get("ph-root")!;
+    store.phenotypes.update({
+      ...rootPhenotype,
+      name: "Warning Toolbar Icon",
+      objectBrief: "warning icon for toolbar alerts",
+      productionSliceRole: "toolbar-warning-icon",
+      outputPlan: {
+        expectedAssetTypes: ["image"],
+        reviewRubricIds: [],
+        notes: "transparent icon, readable at small size"
+      },
+      facets: { framing: "tight-symbol" },
+      tags: ["toolbar", "warning"]
+    });
+    store.phenotypeUsageGuides.create(
+      createDefaultPhenotypeUsageGuide({
+        usageGuideId: "guide-warning-toolbar",
+        phenotypeId: "ph-root",
+        graphId: graph.graphId,
+        nodeId: root.nodeId,
+        phenotypeType: "image-prompt",
+        status: "active",
+        title: "Warning toolbar usage",
+        summary: "Used anywhere the toolbar needs a compact warning signal.",
+        usageScenarios: [
+          {
+            scenarioId: "scenario-toolbar-alert",
+            name: "Toolbar alert",
+            designIntent: "Signal risk without overpowering the surrounding controls.",
+            implementationRole: "status signal",
+            priority: "primary"
+          }
+        ],
+        usageInstructions: {
+          primaryUse: "Small toolbar alert indicator",
+          placement: "inside action bars",
+          composition: "simple silhouette",
+          stateBehavior: "must remain legible in disabled and hover states",
+          doNotUseFor: ["large modal illustrations"]
+        },
+        designSemantics: {
+          mustPreserve: ["sharp warning silhouette"],
+          mustAvoid: ["decorative noise"]
+        },
+        productionHints: {
+          suggestedAssetTypes: ["image"],
+          suggestedTransparency: "required",
+          deliveryNotes: "keep transparent background"
+        },
+        reviewChecklist: [
+          {
+            checklistId: "check-small-size",
+            question: "Is the warning shape readable at toolbar size?",
+            severity: "warning"
+          }
+        ]
+      })
+    );
+    const plan = createGenerationPlan(
+      store,
+      {
+        planId: "plan-intent",
+        scopeType: "phenotype",
+        scopeId: "ph-root",
+        graphId: graph.graphId,
+        priority: 1,
+        description: "Generate warning toolbar icon",
+        requirements: { colorDiscipline: "high contrast" },
+        llmInstructions: "Respect semantic warning language.",
+        operatorNotes: "Review against toolbar context.",
+        toolPreference: "mock"
+      },
+      { apply: true }
+    ).plan;
+
+    const expansion = expandGenerationPlan(store, { planId: plan.planId }, { apply: true });
+    expect(expansion.createdTasks).toHaveLength(1);
+    const task = expansion.createdTasks[0];
+    expect(task).toMatchObject({
+      phenotypeId: "ph-root",
+      productionIntent: {
+        productionSliceRole: "toolbar-warning-icon",
+        intendedUse: expect.stringContaining("Small toolbar alert indicator"),
+        outputShape: {
+          expectedAssetTypes: ["image"],
+          transparency: "required"
+        },
+        visualAnchors: expect.arrayContaining(["Root Icon", "Warning Toolbar Icon"]),
+        mustPreserve: expect.arrayContaining(["sharp warning silhouette"]),
+        mustAvoid: expect.arrayContaining(["large modal illustrations", "decorative noise"]),
+        unknowns: []
+      }
+    });
+    expect(task.taskBrief).toContain("Warning Toolbar Icon");
+    expect(task.taskBrief).toContain("slice toolbar-warning-icon");
+    expect(task.taskBrief).toContain("image");
+
+    const prepared = preparePhenotypeGenerationForTask(store, { taskId: task.taskId, tool: "mock" });
+    expect(prepared.job.inputSnapshot).toMatchObject({
+      generationTaskId: task.taskId,
+      productionIntent: task.productionIntent
+    });
+    expect(prepared.phenotypeVersion.generationRecipe).toMatchObject({
+      productionIntent: task.productionIntent
+    });
+    expect(prepared.phenotypeArtifact.inputSummary).toMatchObject({
+      productionIntent: task.productionIntent
+    });
+    expect(prepared.phenotypeArtifact.prompt).toContain("Production intent:");
   });
 });

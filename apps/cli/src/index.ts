@@ -71,10 +71,12 @@ import {
   OutputReferenceRoleSchema,
   OutputReferenceTypeSchema,
   PROJECT_VERSION,
+  ProductionIntentSchema,
   renderPhenotypeUsageGuideMarkdown,
   type GenerationVersionBinding,
   type PhenotypeGenerationPlan,
   type PhenotypeGenerationTask,
+  type ProductionIntent,
   type PhenotypeUsageGuide,
   type PhenotypeVersion,
   type PhenotypeVersionFeedbackItem,
@@ -155,6 +157,12 @@ function preview(command: Command, summary: string, payload: unknown) {
   console.log("ChangeSet preview");
   console.log(JSON.stringify({ mode: options.mode ?? "preview-confirm", summary, payload }, null, 2));
   console.log("Re-run with --yes to apply, or use --mode draft-write / --mode changeset-apply.");
+}
+
+function printOutputReferenceAddPreview(payload: unknown) {
+  console.log("PREVIEW ONLY - No output reference was persisted.");
+  console.log(JSON.stringify({ mode: "preview-confirm", operation: "output-ref.add", persisted: false, payload }, null, 2));
+  console.log("Re-run with --apply or --yes to persist the output reference.");
 }
 
 function printChangeSet(changeSet: unknown) {
@@ -361,6 +369,12 @@ function readGuideInput(path: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+function parseProductionIntent(value: string | undefined): ProductionIntent | undefined {
+  if (!value) return undefined;
+  const parsed = JSON.parse(value) as unknown;
+  return ProductionIntentSchema.parse(parsed);
+}
+
 function buildCreatePhenotypeUsageGuideInput(input: Record<string, unknown>, phenotypeId: string): CreatePhenotypeUsageGuideInput {
   if (typeof input.title !== "string" || !input.title.trim()) throw new Error("usage guide input must include title");
   if (typeof input.summary !== "string" || !input.summary.trim()) throw new Error("usage guide input must include summary");
@@ -490,12 +504,18 @@ function formatGenerationTask(task: PhenotypeGenerationTask) {
     `Type: ${task.phenotypeType}`,
     `Priority: ${task.priority}`,
     `Version binding: ${task.versionBinding.mode}`,
+    `Production slice: ${task.productionIntent?.productionSliceRole ?? "default"}`,
     `Brief: ${task.taskBrief}`,
     `Species artifact: ${task.speciesCompileArtifactId ?? "none"}`,
     `Phenotype artifact: ${task.phenotypeCompileArtifactId ?? "none"}`,
     `Generation jobs: ${task.generationJobIds.length ? task.generationJobIds.join(", ") : "none"}`,
     `Phenotype versions: ${task.phenotypeVersionIds.length ? task.phenotypeVersionIds.join(", ") : "none"}`
   ];
+  if (task.productionIntent?.intendedUse) lines.push(`Intended use: ${task.productionIntent.intendedUse}`);
+  if (task.productionIntent?.outputShape.expectedAssetTypes.length) {
+    lines.push(`Expected assets: ${task.productionIntent.outputShape.expectedAssetTypes.join(", ")}`);
+  }
+  if (task.productionIntent?.unknowns.length) lines.push(`Unknowns: ${task.productionIntent.unknowns.join(", ")}`);
   if (task.blockingReason) lines.push(`Blocked: ${task.blockingReason}`);
   return `${lines.join("\n")}\n`;
 }
@@ -2201,6 +2221,7 @@ generationTask
   .option("--tool <text>", "tool preference")
   .option("--llm-instructions <text>", "LLM-readable non-sensitive instructions")
   .option("--operator-notes <text>", "operator notes")
+  .option("--production-intent <json>", "structured non-sensitive production intent JSON")
   .option("--requirement <key=value>", "requirement metadata", collect, [])
   .option("--metadata <key=value>", "metadata", collect, [])
   .option("--extension <key=value>", "extension metadata", collect, [])
@@ -2228,6 +2249,7 @@ generationTask
         modelPreference: options.model,
         providerPreference: options.provider,
         toolPreference: options.tool,
+        productionIntent: parseProductionIntent(options.productionIntent),
         llmInstructions: options.llmInstructions,
         operatorNotes: options.operatorNotes,
         requirements: parseKeyValue(options.requirement),
@@ -2263,6 +2285,7 @@ generationTask
   .option("--tool <text>", "tool preference")
   .option("--llm-instructions <text>", "LLM-readable non-sensitive instructions")
   .option("--operator-notes <text>", "operator notes")
+  .option("--production-intent <json>", "structured non-sensitive production intent JSON")
   .option("--blocking-reason <text>", "blocking reason; requires status blocked")
   .option("--clear-blocking-reason", "clear blocking reason")
   .option("--set-requirement <key=value>", "set requirement metadata", collect, [])
@@ -2307,6 +2330,7 @@ generationTask
           modelPreference: options.model,
           providerPreference: options.provider,
           toolPreference: options.tool,
+          productionIntent: parseProductionIntent(options.productionIntent),
           llmInstructions: options.llmInstructions,
           operatorNotes: options.operatorNotes,
           blockingReason: options.blockingReason,
@@ -2603,6 +2627,7 @@ phenotype
   .requiredOption("--type <phenotypeType>", "phenotype type")
   .requiredOption("--name <name>", "phenotype name")
   .option("--id <phenotypeId>", "phenotype id")
+  .option("--production-slice-role <role>", "semantic production slice role; lowercase letters, numbers, and hyphens")
   .option("--brief <text>", "object brief for the planned phenotype")
   .option("--type-source <source>", "phenotype type source: built-in, template, or custom", "custom")
   .option("--tag <tag>", "phenotype tag", collect, [])
@@ -2621,6 +2646,7 @@ phenotype
         graphId: options.graph,
         nodeId: options.node,
         phenotypeType: options.type,
+        productionSliceRole: options.productionSliceRole,
         phenotypeTypeSource: options.typeSource,
         name: options.name,
         objectBrief: options.brief,
@@ -3226,6 +3252,7 @@ outputRef
   .option("--tag <tag>", "raw or source tag", collect, [])
   .option("--normalized-tag <tag>", "normalized search tag", collect, [])
   .option("--metadata <key=value>", "metadata field", collect, [])
+  .option("--apply", "persist output reference; previews by default; global --yes also persists")
   .action((options, command) => {
     const role = parseOutputReferenceRole(options.role);
     const referenceType = parseOutputReferenceType(options.type);
@@ -3260,9 +3287,9 @@ outputRef
       normalizedTags: options.normalizedTag,
       metadata
     });
-    if (!shouldApply(command)) {
+    if (!(options.apply || shouldApply(command))) {
       store.close();
-      return preview(command, `add output reference ${reference.outputReferenceId}`, reference);
+      return printOutputReferenceAddPreview(reference);
     }
     store.outputReferences.create(reference);
     console.log(`added output reference ${reference.outputReferenceId}`);

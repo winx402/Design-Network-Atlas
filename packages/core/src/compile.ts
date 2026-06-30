@@ -26,6 +26,7 @@ import {
   FacetSchema,
   EntityCompileArtifact,
   PhenotypeCompileArtifact,
+  ProductionIntent,
   PhenotypeUsageGuideCompileSnapshot,
   SpeciesGroup,
   SpeciesCompileArtifact,
@@ -129,6 +130,7 @@ export interface CompilePhenotypeGenerationInput {
   contextReviewRubrics?: ContextReviewRubric[];
   usageGuideSnapshot?: PhenotypeUsageGuideCompileSnapshot;
   usageGuideWarning?: string;
+  productionIntent?: ProductionIntent;
   generationConstraints?: Record<string, unknown>;
   decisionPatches?: CompileDecisionPatch[];
 }
@@ -1245,6 +1247,21 @@ function phenotypeTypeGuidance(phenotypeType: string): string {
   return `Adapt output for phenotype type ${phenotypeType}.`;
 }
 
+function summarizeProductionIntent(intent: ProductionIntent | undefined): string {
+  if (!intent) return "";
+  const parts = [
+    intent.productionSliceRole ? `slice ${intent.productionSliceRole}` : "",
+    intent.intendedUse ? `use ${intent.intendedUse}` : "",
+    intent.outputShape.expectedAssetTypes.length ? `assets ${intent.outputShape.expectedAssetTypes.join(", ")}` : "",
+    intent.outputShape.transparency ? `transparency ${intent.outputShape.transparency}` : "",
+    intent.outputShape.runtimeConstraints.length ? `runtime ${intent.outputShape.runtimeConstraints.join(", ")}` : "",
+    intent.mustPreserve.length ? `preserve ${intent.mustPreserve.join(", ")}` : "",
+    intent.mustAvoid.length ? `avoid ${intent.mustAvoid.join(", ")}` : "",
+    intent.unknowns.length ? `unknowns ${intent.unknowns.join(", ")}` : ""
+  ].filter(Boolean);
+  return parts.join("; ");
+}
+
 export function compilePhenotypeGeneration(input: CompilePhenotypeGenerationInput): PhenotypeCompileArtifact {
   const compileScope = defaultCompileScope(input.compileScope);
   const resolvedGeneSnapshot = input.speciesArtifact?.resolvedGeneSnapshot ?? input.resolvedGeneSnapshot ?? {};
@@ -1314,6 +1331,7 @@ export function compilePhenotypeGeneration(input: CompilePhenotypeGenerationInpu
     : input.usageGuideWarning
       ? [`Usage guide warning: ${input.usageGuideWarning}.`]
       : [];
+  const productionIntentSummary = summarizeProductionIntent(input.productionIntent);
   const prompt = [
     "Design Network Atlas phenotype generation.",
     `Phenotype type: ${input.phenotypeType}.`,
@@ -1321,6 +1339,7 @@ export function compilePhenotypeGeneration(input: CompilePhenotypeGenerationInpu
     `Task: ${input.taskBrief}.`,
     typeGuidance,
     ...usageGuidePromptParts,
+    productionIntentSummary ? `Production intent: ${productionIntentSummary}.` : "",
     geneSummary ? `Resolved genes: ${geneSummary}.` : "Resolved genes: none.",
     contextTrace.length ? `Context trace: ${contextTrace.map((entry) => `${entry.objectType}:${entry.objectId}`).join(", ")}.` : ""
   ]
@@ -1376,7 +1395,7 @@ export function compilePhenotypeGeneration(input: CompilePhenotypeGenerationInpu
         objectId: input.artifactId,
         fieldPath: "taskBrief",
         summary: input.taskBrief,
-        value: { phenotypeType: input.phenotypeType, taskBrief: input.taskBrief }
+        value: { phenotypeType: input.phenotypeType, taskBrief: input.taskBrief, productionIntent: input.productionIntent }
       })
     ],
     contextSnapshot: [],
@@ -1408,6 +1427,7 @@ export function compilePhenotypeGeneration(input: CompilePhenotypeGenerationInpu
       nodeVersionId: input.nodeVersionId,
       phenotypeType: input.phenotypeType,
       taskBrief: input.taskBrief,
+      productionIntent: input.productionIntent,
       speciesCompileArtifactId: input.speciesArtifact?.artifactId
     },
     compilePolicy: input.node.compilePolicy ?? input.graph.compilePolicy,
@@ -1430,7 +1450,7 @@ export function compilePhenotypeGeneration(input: CompilePhenotypeGenerationInpu
     negativePrompt: [...new Set(negativeParts)].join(", "),
     artBrief: `Produce ${input.phenotypeType} for ${input.node.name}. ${typeGuidance} ${input.taskBrief}`.trim(),
     reviewChecklist,
-    generationConstraints: input.generationConstraints ?? {},
+    generationConstraints: input.productionIntent ? { ...(input.generationConstraints ?? {}), productionIntent: input.productionIntent } : input.generationConstraints ?? {},
     openQuestions: [...(input.speciesArtifact?.openQuestions ?? []), ...decisionRequests.map((request) => request.reason)],
     createdAt: new Date().toISOString()
   };

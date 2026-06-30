@@ -98,7 +98,7 @@ Use these nine modules before listing SpeciesNode candidates. Each module contri
 - Decision boundary: SpeciesNode is a hard gate. Before creating a species candidate, answer: Can an artist or generator start drawing this object immediately? What planned phenotype surfaces should exist first? What is the expected first phenotype type? What source document, object ID, or asset ID confirms identity? Would this remain the same species if storage path, file format, prompt, provider, crop, size, seed, or output file changed? What negative boundary prevents over-broad interpretation?
 - Positive pattern: "primary attack button icon, first phenotype type icon-prompt, source UI spec ID, negative boundary excludes page layout" can be a species candidate.
 - Counterexample: visual language, UI system, ecosystem, production workflow, review standard, material library, storage directory, page framework, or counter relationship fails phenotype readiness and must use abstract system downgrade.
-- Output contribution: strengthened speciesPlan with source evidence, object ID or asset ID, expected first phenotype type, planned phenotype surfaces, drawable visual signal, negative boundary, group membership, confidence, and draft fields; phenotypePlan entries for planned `Phenotype(status: planned)` containers.
+- Output contribution: strengthened speciesPlan with source evidence, object ID or asset ID, expected first phenotype type, planned phenotype surfaces, drawable visual signal, negative boundary, group membership, confidence, and draft fields; phenotypePlan entries for planned `Phenotype(status: planned)` containers, including `productionSliceRole` when the same graph/node/type needs separate production slices.
 
 ## Relationship Semantics
 
@@ -174,7 +174,7 @@ Return a structured modeling proposal with these fields:
 - speciesPlan: SpeciesNode candidates with parent candidates, role, level, category, status, source evidence, object ID or asset ID when available, expected first phenotype type, drawable visual signal, negative boundary, group membership, confidence, draft fields, and rationale.
 - contextPlan: DesignContext, ContextFact, ContextMotif, DesignPrinciple, ContextReference, and ContextReviewRubric candidates.
 - facetTemplatePlan: required, recommended, and optional facets with value strategy.
-- phenotypePlan: planned phenotype containers with phenotypeId, graphId, nodeId, phenotypeType, name, objectBrief, expectedAssetTypes, review needs, and output/library routing; generated versions/jobs remain out of the modeling batch.
+- phenotypePlan: planned phenotype containers with phenotypeId, graphId, nodeId, phenotypeType, optional productionSliceRole, name, objectBrief, expectedAssetTypes, review needs, and output/library routing; generated versions/jobs remain out of the modeling batch.
 - compilePlan: suggested CompilePolicy, compileMode, conflict strategy, expected SpeciesCompileArtifact and PhenotypeCompileArtifact contents.
 - firstSliceStrategy: included first-slice objects, excluded but expandable objects, and exclusion reasons such as source missing, low priority, not stable object, not first-release phenotype, or abstract rule.
 - writeStrategy: preview-confirm, change-set review, local proposal package, draft-write, or direct audit write with reason.
@@ -195,7 +195,7 @@ Return a structured modeling proposal with these fields:
 - Facets are reusable dimensions with a value strategy.
 - Context facts and motifs stay separate from reusable facets.
 - Phenotype and phenotype library decisions stay decoupled from graph identity.
-- Planned phenotype containers are allowed in modeling batches; concrete PhenotypeVersion, GenerationJob, AssetIndex, and OutputReference records stay in their own generation/output boundaries.
+- Planned phenotype containers are allowed in modeling batches, and `productionSliceRole` is the way to represent distinct planned production slices for the same graph/node/type. Concrete PhenotypeVersion, GenerationJob, AssetIndex, and OutputReference records stay in their own generation/output boundaries.
 - The write strategy explains why it is preview-confirm, change-set review, local proposal package, draft-write, or direct audit write.
 - `待确认问题` contains only questions that materially change the graph model or write safety.
 

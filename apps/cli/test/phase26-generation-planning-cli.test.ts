@@ -37,6 +37,7 @@ function seedPlannedPhenotype(db: string, dir: string) {
             graphId: "graph-generation",
             nodeId: "species-warning",
             phenotypeType: "icon",
+            productionSliceRole: "toolbar-warning-icon",
             name: "Warning Icon",
             objectBrief: "small warning icon",
             expectedAssetTypes: ["image"]
@@ -135,7 +136,11 @@ describe("Phase 26 PRD-17 generation planning CLI", () => {
     expect(expansion.createdTasks[0]).toMatchObject({
       planId: "plan-generation",
       phenotypeId: "phenotype-warning-icon",
-      toolPreference: "mock"
+      toolPreference: "mock",
+      productionIntent: {
+        productionSliceRole: "toolbar-warning-icon",
+        outputShape: { expectedAssetTypes: ["image"] }
+      }
     });
 
     const secondExpansion = JSON.parse(
@@ -148,8 +153,12 @@ describe("Phase 26 PRD-17 generation planning CLI", () => {
     expect(shownTask).toMatchObject({
       taskId,
       status: "planned",
-      versionBinding: { mode: "latest-at-execution" }
+      versionBinding: { mode: "latest-at-execution" },
+      productionIntent: {
+        productionSliceRole: "toolbar-warning-icon"
+      }
     });
+    expect(runDna(["--db", db, "generation-task", "show", "--id", taskId])).toContain("Production slice: toolbar-warning-icon");
 
     const generated = JSON.parse(runDna(["--db", db, "phenotype", "generate", "--task", taskId, "--apply"]));
     expect(generated.job.inputSnapshot).toMatchObject({
@@ -192,6 +201,17 @@ describe("Phase 26 PRD-17 generation planning CLI", () => {
         "icon",
         "--brief",
         "small warning icon",
+        "--production-intent",
+        JSON.stringify({
+          sourceObject: { graphId: "graph-generation", nodeId: "species-warning", phenotypeId: "phenotype-warning-icon", phenotypeType: "icon" },
+          productionSliceRole: "toolbar-warning-icon",
+          intendedUse: "Standalone toolbar warning task",
+          outputShape: { expectedAssetTypes: ["image"], transparency: "required" },
+          visualAnchors: ["warning silhouette"],
+          mustPreserve: ["small-size readability"],
+          mustAvoid: ["busy background"],
+          unknowns: []
+        }),
         "--priority",
         "2",
         "--apply",
@@ -201,7 +221,11 @@ describe("Phase 26 PRD-17 generation planning CLI", () => {
     );
     expect(task.task).toMatchObject({
       taskId: "task-standalone",
-      versionBinding: { mode: "latest-at-execution" }
+      versionBinding: { mode: "latest-at-execution" },
+      productionIntent: {
+        productionSliceRole: "toolbar-warning-icon",
+        intendedUse: "Standalone toolbar warning task"
+      }
     });
     expect(task.task.planId).toBeUndefined();
     expect(runDna(["generation-plan", "--help"])).toContain("create");

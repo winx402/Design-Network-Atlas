@@ -49,7 +49,7 @@
 | Phase 15 | HTTP API + sync + provider baseline | API 可读本地数据，网页默认关闭，routing fallback/metadata 生效，generation jobs 可导入导出 |
 | Phase 16 | change-set/proposal review CLI E2E | preview change-set 可 list/show/review/apply/discard；proposal 可批量导入建模草案；export profile 可区分 full、review-current 和 proposal-review |
 | Phase 24 | modeling intake quality + facet closure + planned phenotype CLI E2E | `context create --version` 不被 root version 截获；facet definition/schema/assignment 有 service/change-set 写入路径；`dna.modeling-batch.v1` 支持 facets 与 `phenotypePlans`；import report 紧凑且显式 review stage；`modeling check` 对 batch/graph/proposal 输出稳定 findings |
-| Phase 26 | generation planning orchestration | `PhenotypeGenerationPlan`/`PhenotypeGenerationTask` schema、service expansion、CLI preview/apply、task-linked generation、export/import、read-only API/workbench 和 secret redaction |
+| Phase 26 | generation planning orchestration | `PhenotypeGenerationPlan`/`PhenotypeGenerationTask` schema、planned phenotype `productionSliceRole`、task `productionIntent` synthesis、service expansion、CLI preview/apply、task-linked generation、export/import、read-only API/workbench 和 secret redaction |
 | Phase 27 | phenotype version lifecycle | `PhenotypeVersion` candidate/accepted/replaced/rolled-back lifecycle、feedback metadata、single accepted invariant、task/job provenance projection、export/import 和 secret redaction |
 | Phase 28 | Web read-only information architecture | `/api/workbench/snapshot` server-side view model；Atlas Map、Graph Explorer、Generation Board、Phenotype Library、Inspector；安全图库预览；empty/error/missing 状态；移动端无宽表和文本溢出 |
 | Phase 29 | generation update + scoped reference generation | `generation-plan update` / `generation-task update` 默认 preview、apply 后只改 mutable orchestration metadata；批量 task selector 防止 update-all 并跳过已有执行链接；graph/group scoped `reference-generation` 不创建 synthetic phenotype records；external reference completion 需要 active linked asset evidence 并支持 atomic `link-asset --mark-generated`；`replace-asset` 覆盖 local -> Eagle pointer migration、旧 pointer 归档、新 pointer current evidence、URI storageType 推断和冲突拒绝；reference jobs/assets export/import round-trip 且脱敏私密链接和 provider credentials |
@@ -88,7 +88,7 @@
 - `DesignRelationshipSchema` 接受 graph/group/node 三种同层级 endpoint。
 - `DesignRelationshipSchema` 保存 relationship type、direction、designContract、auxiliaryRefs、review/provenance metadata。
 - `PhenotypeSchema` 支持 built-in、template、custom 三种表型类型来源。
-- `PhenotypeSchema` 支持 `planned` 状态和 bounded `outputPlan`，用于 batch/planned phenotype coverage。
+- `PhenotypeSchema` 支持 `planned` 状态、bounded `outputPlan` 和可选 `productionSliceRole`，用于 batch/planned phenotype coverage 与同一 graph/node/type 下的多生产切片。
 - `PhenotypeVersionSchema` 默认状态为 `candidate`，并支持多个 asset ids 和轻量 `feedback` lifecycle metadata。
 - `AssetIndexSchema` 支持多种 storage type、asset type、role、variant role。
 - `GenerationJobSchema` 保存输入快照、输出快照和非敏感工具参数。
@@ -248,7 +248,7 @@
 - `dna export --profile proposal-review --proposal <id>` 只导出目标 proposal 与 linked change-sets，遇到缺失 change-set 必须失败。
 - `dna proposal import-batch --in <file>` 接受 `format: "dna.modeling-batch.v1"`，默认生成 proposal + 有序 preview change-sets，不写正式 graph/node/group/library objects。
 - `dna proposal import-batch --in <file>` 的默认报告必须是紧凑 review-oriented report；完整 change-set ids 只能通过显式 JSON/id 输出取得。
-- `dna.modeling-batch.v1` 支持 `facetDefinitions`、`facetSchemas`、`facetAssignments` 和 `phenotypePlans`，并对 duplicate id、引用、allowed values、planned phenotype target、expected asset type 做 all-or-nothing validation。
+- `dna.modeling-batch.v1` 支持 `facetDefinitions`、`facetSchemas`、`facetAssignments` 和带 `productionSliceRole` 的 `phenotypePlans`，并对 duplicate id、引用、allowed values、planned phenotype graph/node/type/slice target、expected asset type 做 all-or-nothing validation。
 - `dna modeling check` 可检查 batch、persisted graph 和 proposal package，输出 stable JSON + text，并覆盖 species phenotype readiness、graph split quality、group quality、relationship contract quality、context/facet coverage 和 review readiness。
 - invalid modeling batch 必须 all-or-nothing 失败，不留下 proposal、change-set 或正式对象。
 - `dna graph tree --include-groups` 在默认 tree 之外展示 `Groups:`、`Ungrouped nodes:` 和 `Group relations:`；默认 text/json 输出保持兼容。

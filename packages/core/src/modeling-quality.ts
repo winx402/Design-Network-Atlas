@@ -32,7 +32,9 @@ export interface ModelingQualityInput {
   facetDefinitions?: FacetDefinition[];
   facetSchemas?: FacetSchema[];
   facetAssignments?: FacetAssignment[];
-  phenotypes?: Array<Pick<Phenotype, "phenotypeId" | "graphId" | "nodeId" | "phenotypeType" | "name" | "objectBrief" | "outputPlan">>;
+  phenotypes?: Array<
+    Pick<Phenotype, "phenotypeId" | "graphId" | "nodeId" | "phenotypeType" | "productionSliceRole" | "name" | "objectBrief" | "outputPlan">
+  >;
 }
 
 export interface ModelingQualityReport {
@@ -64,6 +66,7 @@ export function checkModelingBatchQuality(batchInput: unknown): ModelingQualityR
       graphId: plan.graphId,
       nodeId: plan.nodeId,
       phenotypeType: plan.phenotypeType,
+      productionSliceRole: plan.productionSliceRole,
       name: plan.name,
       objectBrief: plan.objectBrief ?? "",
       outputPlan: {
@@ -151,16 +154,18 @@ export function checkModelingQuality(input: ModelingQualityInput): ModelingQuali
         suggestedAction: "Add routingPolicyId when the output should flow to a known local library or storage mount."
       });
     }
-    const key = `${phenotype.graphId}:${phenotype.nodeId}:${phenotype.phenotypeType}`;
+    const slice = phenotype.productionSliceRole ?? "default";
+    const key = `${phenotype.graphId}:${phenotype.nodeId}:${phenotype.phenotypeType}:${slice}`;
     const existing = phenotypeTargetKeys.get(key);
     if (existing) {
       issues.push({
         objectType: "phenotype",
         objectId: phenotype.phenotypeId,
-        path: "phenotypeType",
+        path: "productionSliceRole",
         severity: "blocking",
-        reason: `Duplicate planned phenotype target for node/type already declared by ${existing}.`,
-        suggestedAction: "Use one phenotype container per graph/node/type; represent crops, sizes, seeds, providers, and file variants as versions/assets/output references later."
+        reason: `Duplicate planned phenotype target for node/type/slice ${slice} already declared by ${existing}.`,
+        suggestedAction:
+          "Use one phenotype container per graph/node/type/productionSliceRole; use distinct productionSliceRole values for separate production slices and keep file variants as versions/assets/output references later."
       });
     } else {
       phenotypeTargetKeys.set(key, phenotype.phenotypeId);

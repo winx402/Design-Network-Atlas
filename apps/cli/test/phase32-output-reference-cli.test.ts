@@ -114,6 +114,63 @@ function searchById(db: string, id: string) {
 }
 
 describe("Phase 32 output reference CLI", () => {
+  test("keeps output-ref add preview-first while exposing command-local apply", () => {
+    const dir = tempDir("phase32-output-ref-add-apply");
+    const db = join(dir, "dna.sqlite");
+
+    const help = runDna(["output-ref", "add", "--help"]);
+    expect(help).toContain("--apply");
+    expect(help).toContain("previews by default");
+    expect(help).toContain("--yes");
+
+    const preview = runDna([
+      "--db",
+      db,
+      "output-ref",
+      "add",
+      "--id",
+      "out-preview-local",
+      "--graph",
+      "graph-output-cli",
+      "--phenotype-version",
+      "pv-output-cli",
+      "--uri",
+      "eagle://item/preview-local",
+      "--type",
+      "eagle",
+      "--role",
+      "candidate",
+      "--storage-mount",
+      "mount-eagle"
+    ]);
+    expect(preview).toContain("PREVIEW ONLY");
+    expect(preview).toContain("No output reference was persisted.");
+    expect(runDna(["--db", db, "output-ref", "search"])).not.toContain("out-preview-local");
+
+    runDna([
+      "--db",
+      db,
+      "output-ref",
+      "add",
+      "--id",
+      "out-apply-local",
+      "--graph",
+      "graph-output-cli",
+      "--phenotype-version",
+      "pv-output-cli",
+      "--uri",
+      "eagle://item/apply-local",
+      "--type",
+      "eagle",
+      "--role",
+      "candidate",
+      "--storage-mount",
+      "mount-eagle",
+      "--apply"
+    ]);
+    expect(searchById(db, "out-apply-local")).toMatchObject({ role: "candidate", referenceType: "eagle", status: "pending" });
+  }, CLI_TIMEOUT);
+
   test("validates canonical role and type before add on routed and explicit mount paths", () => {
     const dir = tempDir("phase32-output-ref-validation");
     const db = join(dir, "dna.sqlite");
@@ -204,7 +261,8 @@ describe("Phase 32 output reference CLI", () => {
       "--storage-mount",
       "mount-eagle"
     ]);
-    expect(preview).toContain("ChangeSet preview");
+    expect(preview).toContain("PREVIEW ONLY");
+    expect(preview).toContain("No output reference was persisted.");
     expect(runDna(["--db", db, "output-ref", "search"])).not.toContain("out-valid-preview");
 
     runDna([

@@ -65,6 +65,7 @@ describe("Phase 24 phenotype plans in modeling batch", () => {
               graphId: "graph-character",
               nodeId: "species-forest-warden",
               phenotypeType: "portrait",
+              productionSliceRole: "review-portrait",
               name: "Forest Warden Portrait",
               objectBrief: "Front-facing portrait for character review.",
               expectedAssetTypes: ["image"],
@@ -98,15 +99,17 @@ describe("Phase 24 phenotype plans in modeling batch", () => {
     expect(review).toContain("phenotype");
     expect(review).toContain("species-forest-warden");
     expect(review).toContain("portrait");
+    expect(review).toContain("review-portrait");
 
     runDna(["--db", db, "--yes", "proposal", "apply", "proposal-phenotype-plans"]);
     const treeText = runDna(["--db", db, "graph", "tree", "--id", "graph-character", "--include-phenotypes"]);
     expect(treeText).toContain("Planned phenotypes:");
-    expect(treeText).toContain("- Forest Warden Portrait (phenotype-warden-portrait) [portrait, planned]");
+    expect(treeText).toContain("- Forest Warden Portrait (phenotype-warden-portrait) [portrait, slice=review-portrait, planned]");
     const treeJson = JSON.parse(runDna(["--db", db, "graph", "tree", "--id", "graph-character", "--include-phenotypes", "--format", "json"]));
     expect(treeJson.phenotypeOverlay.byNodeId["species-forest-warden"][0]).toMatchObject({
       phenotypeId: "phenotype-warden-portrait",
       phenotypeType: "portrait",
+      productionSliceRole: "review-portrait",
       status: "planned",
       outputPlan: { expectedAssetTypes: ["image"] }
     });
@@ -116,6 +119,7 @@ describe("Phase 24 phenotype plans in modeling batch", () => {
     expect(plannedPhenotype).toMatchObject({
       phenotypeId: "phenotype-warden-portrait",
       status: "planned",
+      productionSliceRole: "review-portrait",
       currentAcceptedVersion: null,
       outputPlan: { expectedAssetTypes: ["image"], reviewRubricIds: [] }
     });
@@ -224,7 +228,17 @@ describe("Phase 24 phenotype plans in modeling batch", () => {
               graphId: "graph-draft-plan",
               nodeId: "species-draft",
               phenotypeType: "icon",
+              productionSliceRole: "toolbar-icon",
               name: "Draft Icon",
+              expectedAssetTypes: ["image"]
+            },
+            {
+              phenotypeId: "phenotype-draft-icon-badge",
+              graphId: "graph-draft-plan",
+              nodeId: "species-draft",
+              phenotypeType: "icon",
+              productionSliceRole: "badge-icon",
+              name: "Draft Badge Icon",
               expectedAssetTypes: ["image"]
             }
           ]
@@ -248,9 +262,139 @@ describe("Phase 24 phenotype plans in modeling batch", () => {
       "draft-write"
     ]);
     expect(draftOutput).toContain("Mode: draft-write");
-    expect(draftOutput).toContain("phenotypePlans: 1");
-    expect(draftOutput).toContain("Applied: 3");
+    expect(draftOutput).toContain("phenotypePlans: 2");
+    expect(draftOutput).toContain("Applied: 4");
     const treeText = runDna(["--db", db, "graph", "tree", "--id", "graph-draft-plan", "--include-phenotypes"]);
-    expect(treeText).toContain("Draft Icon (phenotype-draft-icon) [icon, planned]");
+    expect(treeText).toContain("Draft Icon (phenotype-draft-icon) [icon, slice=toolbar-icon, planned]");
+    expect(treeText).toContain("Draft Badge Icon (phenotype-draft-icon-badge) [icon, slice=badge-icon, planned]");
+  }, CLI_TIMEOUT);
+
+  test("treats productionSliceRole as part of planned phenotype identity", () => {
+    const dir = tempDir("phase24-phenotype-slices");
+    const db = join(dir, "dna.sqlite");
+
+    runDna(["--db", db, "graph", "create", "--id", "graph-slices", "--name", "Slice Graph", "--purpose", "slice identity", "--yes"]);
+    runDna(["--db", db, "node", "create", "--graph", "graph-slices", "--id", "species-frame", "--name", "Frame Species", "--yes"]);
+
+    runDna([
+      "--db",
+      db,
+      "phenotype",
+      "create",
+      "--graph",
+      "graph-slices",
+      "--node",
+      "species-frame",
+      "--type",
+      "sprite",
+      "--production-slice-role",
+      "outer-frame",
+      "--id",
+      "phenotype-outer-frame",
+      "--name",
+      "Outer Frame",
+      "--apply"
+    ]);
+    runDna([
+      "--db",
+      db,
+      "phenotype",
+      "create",
+      "--graph",
+      "graph-slices",
+      "--node",
+      "species-frame",
+      "--type",
+      "sprite",
+      "--production-slice-role",
+      "lock-overlay",
+      "--id",
+      "phenotype-lock-overlay",
+      "--name",
+      "Lock Overlay",
+      "--apply"
+    ]);
+    const duplicateExplicit = runDnaFailure([
+      "--db",
+      db,
+      "phenotype",
+      "create",
+      "--graph",
+      "graph-slices",
+      "--node",
+      "species-frame",
+      "--type",
+      "sprite",
+      "--production-slice-role",
+      "outer-frame",
+      "--id",
+      "phenotype-outer-frame-copy",
+      "--name",
+      "Outer Frame Copy",
+      "--apply"
+    ]);
+    expect(duplicateExplicit).toContain("duplicate phenotype plan target graph-slices/species-frame/sprite slice outer-frame");
+
+    runDna([
+      "--db",
+      db,
+      "phenotype",
+      "create",
+      "--graph",
+      "graph-slices",
+      "--node",
+      "species-frame",
+      "--type",
+      "sprite",
+      "--id",
+      "phenotype-default-sprite",
+      "--name",
+      "Default Sprite",
+      "--apply"
+    ]);
+    const duplicateDefault = runDnaFailure([
+      "--db",
+      db,
+      "phenotype",
+      "create",
+      "--graph",
+      "graph-slices",
+      "--node",
+      "species-frame",
+      "--type",
+      "sprite",
+      "--id",
+      "phenotype-default-sprite-copy",
+      "--name",
+      "Default Sprite Copy",
+      "--apply"
+    ]);
+    expect(duplicateDefault).toContain("duplicate phenotype plan target graph-slices/species-frame/sprite slice default");
+
+    const invalidRole = runDnaFailure([
+      "--db",
+      db,
+      "phenotype",
+      "create",
+      "--graph",
+      "graph-slices",
+      "--node",
+      "species-frame",
+      "--type",
+      "sprite",
+      "--production-slice-role",
+      "Outer Frame",
+      "--id",
+      "phenotype-invalid-slice",
+      "--name",
+      "Invalid Slice",
+      "--apply"
+    ]);
+    expect(invalidRole).toContain("productionSliceRole must use lowercase letters, numbers, and hyphens");
+
+    const tree = runDna(["--db", db, "graph", "tree", "--id", "graph-slices", "--include-phenotypes"]);
+    expect(tree).toContain("Outer Frame (phenotype-outer-frame) [sprite, slice=outer-frame, planned]");
+    expect(tree).toContain("Lock Overlay (phenotype-lock-overlay) [sprite, slice=lock-overlay, planned]");
+    expect(tree).toContain("Default Sprite (phenotype-default-sprite) [sprite, planned]");
   }, CLI_TIMEOUT);
 });

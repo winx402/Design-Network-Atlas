@@ -16,7 +16,7 @@ Use `docs/design/write-boundary-matrix.md` for write strategy vocabulary: compil
 
 - SpeciesNode and NodeVersion define the stable design target.
 - PhenotypeGenerationPlan is a production orchestration record for graph, species-group, species-node, or phenotype scope. It captures priority, model/provider/tool preference, requirements, LLM-readable llmInstructions, operatorNotes, metadata, extensions, and versionBinding without storing credentials.
-- PhenotypeGenerationTask is the concrete work item that may come from a plan or stand alone. It records graph, node or phenotype target, phenotype type, task brief, status, priority, versionBinding, blockingReason, linked compile artifacts, GenerationJob ids, and PhenotypeVersion ids.
+- PhenotypeGenerationTask is the concrete work item that may come from a plan or stand alone. It records graph, node or phenotype target, phenotype type, task brief, status, priority, versionBinding, blockingReason, structured productionIntent, linked compile artifacts, GenerationJob ids, and PhenotypeVersion ids.
 - PhenotypeUsageGuide is the stable usage contract bound to a Phenotype. It captures usage scenarios, usage instructions, design-language sources, must-preserve and must-avoid rules, variant planning, production hints, and review checklist. New PhenotypeVersion, GenerationJob, or OutputReference records may reference the guide revision they used, but they do not become the usage guide source of truth.
 - Scoped reference generation is a separate graph/species-group workflow for reference prompts or reference assets. It uses EntityCompileArtifact plus a reference GenerationJob and may link safe AssetIndex pointers, but it must not create synthetic SpeciesNode, Phenotype, or PhenotypeVersion records. If an accepted reference moves from a temporary local pointer into Eagle, NAS, Git, URL, or object storage, treat that as pointer migration: create a new active AssetIndex pointer, archive the old pointer as history, and make current reference evidence point to the new id.
 - SpeciesCompileArtifact provides atlas/graph/group/species-node compile frames, resolved genes, dependency vector, traces, conflicts, feedback, and open questions.
@@ -39,17 +39,18 @@ Use `docs/design/write-boundary-matrix.md` for write strategy vocabulary: compil
 5. conflict gate: if compile conflicts or blocking open questions change the visual result, ask a blocking question before using a model or external tool.
 6. context gate: include ContextReference and ContextReviewRubric only as traceable guidance; do not invent references.
 7. usage guide gate: check whether the Phenotype has an active PhenotypeUsageGuide before formal generation. Missing guide is a warning, not a blocker, but do not invent a guide. When a guide exists, include its id, revision, summary, scenarios, must-preserve and must-avoid rules, variant plan, production hints, and review checklist in guideReadiness and usageGuideSnapshot.
-8. prompt gate: produce prompt, negative prompt, art brief, and review checklist from existing graph facts, compile artifacts, and any active usage guide.
-9. tool gate: select manual, mock, or external tool execution. Do not default to calling an external tool when conflicts are blocking.
-10. lifecycle gate: decide whether the result should stay candidate, be accepted, rejected, replaced, rolled back, deprecated, archived, or deleted. Feedback belongs on `PhenotypeVersion.feedback`, not in ReviewRecord unless a separate review workflow is explicitly needed.
-11. reference-generation gate: if the user wants graph-wide or group-wide reference material, use scoped reference generation rather than phenotype generation. Store only reference GenerationJob ids, reference AssetIndex ids, or ContextReference ids for later tasks; do not copy private URLs into plan/task records. For reference asset migration, keep asset ids stable as evidence records: do not rewrite a local pointer into an Eagle pointer in place, and do not include archived/deleted pointers as current completion evidence.
-12. storage gate: route output references through PhenotypeLibrary and StorageMount when available, or record direct OutputReference when the user does not use a DNA result library.
+8. production intent gate: check task productionIntent before prompt work. It should be structured and domain-neutral, derived from active usage guide, planned phenotype, species node, and explicit plan/task overrides. It may include productionSliceRole, intended use, expected asset types, output shape hints, must-preserve, must-avoid, and unknowns, but not provider credentials, raw payloads, complete private links, or project-private directory policy.
+9. prompt gate: produce prompt, negative prompt, art brief, and review checklist from existing graph facts, compile artifacts, any active usage guide, and productionIntent.
+10. tool gate: select manual, mock, or external tool execution. Do not default to calling an external tool when conflicts are blocking.
+11. lifecycle gate: decide whether the result should stay candidate, be accepted, rejected, replaced, rolled back, deprecated, archived, or deleted. Feedback belongs on `PhenotypeVersion.feedback`, not in ReviewRecord unless a separate review workflow is explicitly needed.
+12. reference-generation gate: if the user wants graph-wide or group-wide reference material, use scoped reference generation rather than phenotype generation. Store only reference GenerationJob ids, reference AssetIndex ids, or ContextReference ids for later tasks; do not copy private URLs into plan/task records. For reference asset migration, keep asset ids stable as evidence records: do not rewrite a local pointer into an Eagle pointer in place, and do not include archived/deleted pointers as current completion evidence.
+13. storage gate: route output references through PhenotypeLibrary and StorageMount when available, or record direct OutputReference when the user does not use a DNA result library.
 
 ## Workflow
 
 1. Choose generation planning mode.
    - Use a PhenotypeGenerationPlan when the request covers a graph, species-group, species-node, or multiple planned Phenotypes and needs priority, model/tool preference, LLM-readable instructions, or review queue visibility.
-   - Use a standalone PhenotypeGenerationTask when the user has one clear target and wants status, blockingReason, versionBinding, and generated result links without creating a plan.
+   - Use a standalone PhenotypeGenerationTask when the user has one clear target and wants status, blockingReason, versionBinding, productionIntent, and generated result links without creating a plan.
    - Use direct manual generation when the user needs an immediate one-off preview or artifact-backed result and accepts that no plan/task queue record will be created.
    - Use scoped reference generation when the user needs graph/group reference prompts or reference assets that later phenotype tasks can cite by id. Do not force these references into phenotype tasks by inventing nodes or versions.
    - For reference assets that move from temporary local output to Eagle or another catalog, use a replacement plan: infer or name the storage type from the safe URI, create a new active AssetIndex pointer, archive the old local pointer with bounded migration metadata, and set GenerationJob current evidence to the new asset id.
@@ -63,10 +64,11 @@ Use `docs/design/write-boundary-matrix.md` for write strategy vocabulary: compil
    - Use or create a layered SpeciesCompileArtifact for resolved genes, frame trace, dependency vector, feedback, and open questions.
    - Use or create a layered PhenotypeCompileArtifact for prompt, negative prompt, art brief, generation constraints, review checklist, dependency vector, and phenotype frame.
    - Attach a usageGuideSnapshot when an active PhenotypeUsageGuide exists. Record a non-blocking warning when no active usage guide exists, and keep the guide stable unless the user explicitly creates or updates it.
+   - Attach productionIntent when a task provides or synthesizes it. It should carry production slice, intended use, expected asset types, output shape hints, preservation rules, avoid rules, and unknowns into the phenotype frame without becoming graph truth.
    - Registration must carry speciesCompileArtifactId, phenotypeCompileArtifactId, and compileArtifactSnapshot into PhenotypeVersion, and artifact IDs plus current/historical compile mode into GenerationJob.inputSnapshot.
    - Record compileMode, compiledBy, assistantContributionSummary, inputSummary, frame counts, conflict counts, decision counts, feedback counts, dependency-vector validity, and trace priority/overridability where relevant.
    - LLM/Agent-assisted compile is allowed only as bounded decision requests and replayable decision patches; do not call providers or store credentials during compile.
-   - If execution is task-based, GenerationJob.inputSnapshot should include generationTaskId, generationPlanId when present, versionBinding, speciesCompileArtifactId, and phenotypeCompileArtifactId.
+   - If execution is task-based, GenerationJob.inputSnapshot should include generationTaskId, generationPlanId when present, versionBinding, productionIntent, speciesCompileArtifactId, and phenotypeCompileArtifactId.
 
 4. Decide generation execution.
    - manual: user or artist creates the result from brief/checklist.
@@ -100,6 +102,7 @@ Return a generationPlan with these fields:
 - planOrTaskProposal: PhenotypeGenerationPlan or PhenotypeGenerationTask fields when orchestration should be created, including priority, scope, requirements, llmInstructions, operatorNotes, metadata, extensions, and non-sensitive model/provider/tool preference.
 - planOrTaskUpdate: mutable plan/task metadata changes when the user is maintaining orchestration records, including selector, preview/apply intent, immutable fields intentionally left unchanged, and secret/private-link handling.
 - selectedTarget: graph id, species node id, node version id, phenotype type, and task brief.
+- productionIntent: structured task intent when available or recommended, including productionSliceRole, intended use, expected asset types, output shape hints, must-preserve, must-avoid, unknowns, evidence source, and what remains unstated.
 - versionBinding: latest-at-execution or pinned, including stale/historical replay decision.
 - artifactReadiness: existing or required layered SpeciesCompileArtifact and PhenotypeCompileArtifact, with current/stale/historical/invalid status, frame coverage, dependency-vector status, conflicts, feedback, and blocking open questions.
 - guideReadiness: active, missing, archived, or stale-enough-to-review PhenotypeUsageGuide state, including guide id and revision when present, and a warning when missing.
@@ -126,4 +129,5 @@ Return a generationPlan with these fields:
 - Do not recommend registering a generated PhenotypeVersion without a PhenotypeCompileArtifact-backed provenance path.
 - Do not store provider credentials, complete private links, raw Agent host responses, or sensitive provider parameters.
 - Do not store API keys, provider credentials, complete private links, raw provider payloads, or signed URLs in PhenotypeGenerationPlan, PhenotypeGenerationTask, llmInstructions, operatorNotes, toolPreference, metadata, or extensions.
+- Do not use productionIntent as a hidden place for credentials, raw provider payloads, complete private links, signed URLs, binary assets, or private project directory rules.
 - Do not copy old local URI values into new reference asset migration metadata; asset ids are enough for traceability.

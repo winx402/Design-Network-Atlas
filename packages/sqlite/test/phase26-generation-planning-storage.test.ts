@@ -50,6 +50,7 @@ describe("Phase 26 PRD-17 SQLite generation planning storage", () => {
       nodeId: node.nodeId,
       name: "Planning Phenotype",
       phenotypeType: "portrait",
+      productionSliceRole: "review-portrait",
       objectBrief: "planned portrait",
       status: "planned"
     });
@@ -72,6 +73,22 @@ describe("Phase 26 PRD-17 SQLite generation planning storage", () => {
       phenotypeType: phenotype.phenotypeType,
       taskBrief: phenotype.objectBrief,
       priority: 1,
+      productionIntent: {
+        sourceObject: {
+          graphId: graph.graphId,
+          nodeId: node.nodeId,
+          phenotypeId: phenotype.phenotypeId,
+          phenotypeType: phenotype.phenotypeType,
+          name: phenotype.name
+        },
+        productionSliceRole: "review-portrait",
+        intendedUse: "Review current portrait direction.",
+        outputShape: { expectedAssetTypes: ["image"], runtimeConstraints: [], formatNotes: [] },
+        visualAnchors: ["front-facing portrait"],
+        mustPreserve: ["character identity"],
+        mustAvoid: ["unreviewed costume changes"],
+        unknowns: []
+      },
       llmInstructions: "Keep review surfaces consistent.",
       toolPreference: "mock"
     });
@@ -101,8 +118,16 @@ describe("Phase 26 PRD-17 SQLite generation planning storage", () => {
       taskId: task.taskId,
       planId: plan.planId,
       phenotypeId: phenotype.phenotypeId,
+      productionIntent: {
+        productionSliceRole: "review-portrait",
+        outputShape: { expectedAssetTypes: ["image"] }
+      },
       generationJobIds: [],
       phenotypeVersionIds: []
+    });
+    expect(target.phenotypes.get(phenotype.phenotypeId)).toMatchObject({
+      phenotypeId: phenotype.phenotypeId,
+      productionSliceRole: "review-portrait"
     });
 
     source.close();

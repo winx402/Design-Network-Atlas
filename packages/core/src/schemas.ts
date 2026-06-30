@@ -18,6 +18,9 @@ export const ParentRoleSchema = z.enum([
 ]);
 export const PhenotypeTypeSourceSchema = z.enum(["built-in", "template", "custom"]);
 export const PhenotypeStatusSchema = z.enum(["planned", "active", "archived", "deleted"]);
+export const ProductionSliceRoleSchema = z
+  .string()
+  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "productionSliceRole must use lowercase letters, numbers, and hyphens");
 export const PhenotypeUsageGuideStatusSchema = z.enum(["draft", "active", "archived", "deleted"]);
 export const PhenotypeUsageGuideScenarioPrioritySchema = z.enum(["primary", "secondary", "optional"]);
 export const PhenotypeUsageGuideChecklistSeveritySchema = z.enum(["info", "warning", "blocking"]);
@@ -677,11 +680,42 @@ export const PhenotypeOutputPlanSchema = z.object({
   notes: z.string().optional()
 });
 
+export const ProductionIntentSchema = z.object({
+  sourceObject: z.object({
+    graphId: z.string().min(1),
+    nodeId: z.string().min(1).optional(),
+    nodeName: z.string().optional(),
+    phenotypeId: z.string().min(1).optional(),
+    phenotypeName: z.string().optional(),
+    phenotypeType: z.string().min(1).optional(),
+    name: z.string().optional()
+  }),
+  productionSliceRole: ProductionSliceRoleSchema.optional(),
+  intendedUse: z.string().optional(),
+  outputShape: z
+    .object({
+      expectedAssetTypes: z.array(AssetTypeSchema).default([]),
+      phenotypeType: z.string().optional(),
+      framing: z.string().optional(),
+      sliceMode: z.string().optional(),
+      transparency: z.string().optional(),
+      textPolicy: z.string().optional(),
+      runtimeConstraints: z.array(z.string()).default([]),
+      formatNotes: z.array(z.string()).default([])
+    })
+    .default({}),
+  visualAnchors: z.array(z.string()).default([]),
+  mustPreserve: z.array(z.string()).default([]),
+  mustAvoid: z.array(z.string()).default([]),
+  unknowns: z.array(z.string()).default([])
+});
+
 export const PhenotypeSchema = z.object({
   phenotypeId: z.string().min(1),
   graphId: z.string().min(1),
   nodeId: z.string().min(1),
   phenotypeType: z.string().min(1),
+  productionSliceRole: ProductionSliceRoleSchema.optional(),
   phenotypeTypeSource: PhenotypeTypeSourceSchema,
   name: z.string().min(1),
   objectBrief: z.string().default(""),
@@ -892,6 +926,7 @@ export const PhenotypeGenerationTaskSchema = z.object({
   providerPreference: z.string().optional(),
   toolPreference: z.string().optional(),
   requirements: JsonRecordSchema,
+  productionIntent: ProductionIntentSchema.optional(),
   llmInstructions: z.string().optional(),
   operatorNotes: z.string().optional(),
   blockingReason: z.string().optional(),
@@ -1406,6 +1441,7 @@ export type SpeciesNode = z.infer<typeof SpeciesNodeSchema>;
 export type NodeVersion = z.infer<typeof NodeVersionSchema>;
 export type AssetType = z.infer<typeof AssetTypeSchema>;
 export type PhenotypeOutputPlan = z.infer<typeof PhenotypeOutputPlanSchema>;
+export type ProductionIntent = z.infer<typeof ProductionIntentSchema>;
 export type Phenotype = z.infer<typeof PhenotypeSchema>;
 export type PhenotypeUsageScenario = z.infer<typeof PhenotypeUsageScenarioSchema>;
 export type PhenotypeUsageGuide = z.infer<typeof PhenotypeUsageGuideSchema>;

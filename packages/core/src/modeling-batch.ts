@@ -9,6 +9,7 @@ import {
   Graph,
   LibraryRoutingPolicy,
   Phenotype,
+  ProductionSliceRoleSchema,
   PhenotypeLibrary,
   PhenotypeLibraryGraphBinding,
   SpeciesGroup,
@@ -149,6 +150,7 @@ const PhenotypePlanInputSchema = z
     graphId: z.string().min(1),
     nodeId: z.string().min(1),
     phenotypeType: z.string().min(1),
+    productionSliceRole: ProductionSliceRoleSchema.optional(),
     name: z.string().min(1),
     phenotypeTypeSource: z.string().optional(),
     objectBrief: z.string().optional(),
@@ -246,6 +248,7 @@ export interface ModelingBatch {
   phenotypePlans: Array<
     Partial<Phenotype> &
       Pick<Phenotype, "phenotypeId" | "graphId" | "nodeId" | "phenotypeType" | "name"> & {
+        productionSliceRole?: string;
         expectedAssetTypes?: string[];
         routingPolicyId?: string;
         reviewRubricIds?: string[];

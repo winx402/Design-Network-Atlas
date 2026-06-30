@@ -37,7 +37,7 @@ describe("Phase 24 modeling quality checks", () => {
     expect(report.issues.map((issue) => issue.reason).join("\n")).toContain("fake species");
   });
 
-  test("uses planned phenotypes as coverage and blocks duplicate node/type plans", () => {
+  test("uses planned phenotypes as coverage and blocks duplicate node/type/slice plans", () => {
     const batch = ModelingBatchSchema.parse({
       format: "dna.modeling-batch.v1",
       graphs: [{ graphId: "graph-character", name: "Character Graph", purpose: "character outputs" }],
@@ -48,6 +48,7 @@ describe("Phase 24 modeling quality checks", () => {
           graphId: "graph-character",
           nodeId: "species-warden",
           phenotypeType: "portrait",
+          productionSliceRole: "review-portrait",
           name: "Forest Warden Portrait A",
           expectedAssetTypes: ["image"]
         },
@@ -56,8 +57,19 @@ describe("Phase 24 modeling quality checks", () => {
           graphId: "graph-character",
           nodeId: "species-warden",
           phenotypeType: "portrait",
+          productionSliceRole: "review-portrait",
           name: "Forest Warden Portrait B",
           objectBrief: "Second duplicate portrait.",
+          expectedAssetTypes: ["image"]
+        },
+        {
+          phenotypeId: "phenotype-warden-portrait-c",
+          graphId: "graph-character",
+          nodeId: "species-warden",
+          phenotypeType: "portrait",
+          productionSliceRole: "dialog-portrait",
+          name: "Forest Warden Dialog Portrait",
+          objectBrief: "Distinct dialog portrait slice.",
           expectedAssetTypes: ["image"]
         }
       ]
@@ -67,8 +79,11 @@ describe("Phase 24 modeling quality checks", () => {
     expect(report.issues).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ objectType: "phenotype", objectId: "phenotype-warden-portrait-a", path: "objectBrief", severity: "warning" }),
-        expect.objectContaining({ objectType: "phenotype", objectId: "phenotype-warden-portrait-b", path: "phenotypeType", severity: "blocking" })
+        expect.objectContaining({ objectType: "phenotype", objectId: "phenotype-warden-portrait-b", path: "productionSliceRole", severity: "blocking" })
       ])
+    );
+    expect(report.issues).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ objectType: "phenotype", objectId: "phenotype-warden-portrait-c", path: "productionSliceRole" })])
     );
     expect(report.issues).not.toEqual(
       expect.arrayContaining([expect.objectContaining({ objectType: "species-node", objectId: "species-warden", path: "phenotypeReadiness" })])
