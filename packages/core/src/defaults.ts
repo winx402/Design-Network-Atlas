@@ -31,6 +31,9 @@ import {
   PhenotypeUsageGuide,
   PhenotypeUsageGuideCompileSnapshot,
   PhenotypeVersionFeedback,
+  GenerationOutputEvidence,
+  GenerationRequestEvidence,
+  GenerationVerificationSummary,
   PhenotypeLibrary,
   PhenotypeLibraryGraphBinding,
   PhenotypeVersion,
@@ -51,6 +54,7 @@ export function makeId(prefix: string) {
 }
 
 const SENSITIVE_KEY_PATTERN = /api[_-]?key|authorization|bearer|credential|password|private[_-]?(?:key|link|url)|secret|token|signed[_-]?url/i;
+const RAW_PROVIDER_PAYLOAD_KEY_PATTERN = /raw[_-]?provider[_-]?payload|provider[_-]?payload/i;
 const SENSITIVE_STRING_PATTERNS = [
   /OPENAI_API_KEY\s*=\s*\S+/gi,
   /Bearer\s+[A-Za-z0-9._~+/=-]+/gi,
@@ -58,7 +62,8 @@ const SENSITIVE_STRING_PATTERNS = [
   /password\s*=\s*\S+/gi,
   /private[_-]?key\s*=\s*\S+/gi,
   /https?:\/\/[^\s"'<>]*(?:[?&](?:token|signature|sig|X-Amz-Signature|se|sp|sv)=)[^\s"'<>]*/gi,
-  /https?:\/\/private\.[^\s"'<>]+/gi
+  /https?:\/\/private\.[^\s"'<>]+/gi,
+  /(?:file:\/\/)?\/Users\/[^\s"'<>]+/gi
 ];
 
 export function sanitizePlanningText(value: string | undefined): string | undefined {
@@ -106,6 +111,79 @@ function sanitizePlanningValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map((entry) => sanitizePlanningValue(entry)).filter((entry) => entry !== undefined);
   if (value && typeof value === "object") return sanitizePlanningRecord(value as Record<string, unknown>);
   return value;
+}
+
+function sanitizeEvidenceRecord(value: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (RAW_PROVIDER_PAYLOAD_KEY_PATTERN.test(key)) continue;
+    if (SENSITIVE_KEY_PATTERN.test(key)) {
+      result[key] = "[redacted]";
+      continue;
+    }
+    const sanitized = sanitizeEvidenceValue(entry);
+    if (sanitized !== undefined) result[key] = sanitized;
+  }
+  return result;
+}
+
+function sanitizeEvidenceValue(value: unknown): unknown {
+  if (typeof value === "string") return sanitizePlanningText(value);
+  if (Array.isArray(value)) return value.map((entry) => sanitizeEvidenceValue(entry)).filter((entry) => entry !== undefined);
+  if (value && typeof value === "object") return sanitizeEvidenceRecord(value as Record<string, unknown>);
+  return value;
+}
+
+export function sanitizeGenerationRequestEvidence(evidence: GenerationRequestEvidence | undefined): GenerationRequestEvidence | undefined {
+  if (!evidence) return undefined;
+  return {
+    compiledPromptHash: sanitizePlanningText(evidence.compiledPromptHash),
+    actualPromptHash: sanitizePlanningText(evidence.actualPromptHash),
+    actualPromptSnapshot: sanitizePlanningText(evidence.actualPromptSnapshot),
+    runnerId: sanitizePlanningText(evidence.runnerId),
+    provider: sanitizePlanningText(evidence.provider),
+    runnerInvocationId: sanitizePlanningText(evidence.runnerInvocationId),
+    providerRequestId: sanitizePlanningText(evidence.providerRequestId),
+    submittedAt: evidence.submittedAt,
+    completedAt: evidence.completedAt,
+    parameters: sanitizeEvidenceRecord(evidence.parameters ?? {})
+  };
+}
+
+export function sanitizeGenerationOutputEvidence(evidence: GenerationOutputEvidence | undefined): GenerationOutputEvidence | undefined {
+  if (!evidence) return undefined;
+  return {
+    assetIds: evidence.assetIds ?? [],
+    outputReferenceIds: evidence.outputReferenceIds ?? [],
+    outputHashes: (evidence.outputHashes ?? []).map((hash) => ({
+      assetId: sanitizePlanningText(hash.assetId),
+      outputReferenceId: sanitizePlanningText(hash.outputReferenceId),
+      hash: sanitizePlanningText(hash.hash) ?? "",
+      uri: sanitizePlanningText(hash.uri)
+    })),
+    mimeType: sanitizePlanningText(evidence.mimeType),
+    byteSize: evidence.byteSize,
+    width: evidence.width,
+    height: evidence.height,
+    storageType: evidence.storageType,
+    hashAlgorithm: sanitizePlanningText(evidence.hashAlgorithm) ?? "sha256",
+    createdAt: evidence.createdAt
+  };
+}
+
+export function sanitizeGenerationVerificationSummary(summary: GenerationVerificationSummary | undefined): GenerationVerificationSummary {
+  return {
+    status: summary?.status ?? "not-run",
+    checks: (summary?.checks ?? []).map((check) => ({
+      ...check,
+      reason: sanitizePlanningText(check.reason) ?? "",
+      suggestedAction: sanitizePlanningText(check.suggestedAction)
+    })),
+    blockingReasons: sanitizeStringArray(summary?.blockingReasons),
+    warningReasons: sanitizeStringArray(summary?.warningReasons),
+    checkedBy: sanitizePlanningText(summary?.checkedBy),
+    checkedAt: summary?.checkedAt
+  };
 }
 
 export function sanitizePhenotypeVersionFeedback(feedback: PhenotypeVersionFeedback | undefined): PhenotypeVersionFeedback {
@@ -1050,6 +1128,11 @@ export function createGenerationJob(input: Partial<GenerationJob> & Pick<Generat
     tool: input.tool ?? "manual",
     toolParameters: input.toolParameters ?? {},
     status: input.status ?? "created",
+    executionMode: input.executionMode ?? "compiled-only",
+    provenanceLevel: input.provenanceLevel ?? "compiled-only",
+    requestEvidence: sanitizeGenerationRequestEvidence(input.requestEvidence),
+    outputEvidence: sanitizeGenerationOutputEvidence(input.outputEvidence),
+    verificationSummary: sanitizeGenerationVerificationSummary(input.verificationSummary),
     errorMessage: input.errorMessage,
     facets: input.facets ?? {},
     createdAt: input.createdAt ?? timestamp,

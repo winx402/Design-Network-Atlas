@@ -216,6 +216,30 @@ export interface WorkbenchGenerationJob {
   phenotypeType: string;
   taskBrief?: string;
   status: string;
+  executionMode?: string;
+  provenanceLevel?: string;
+  verification?: {
+    status: string;
+    blockingReasons?: string[];
+    warningReasons?: string[];
+    checkedBy?: string;
+    checkedAt?: string;
+  };
+  evidence?: {
+    request?: {
+      runnerId?: string;
+      runnerInvocationId?: string;
+      compiledPromptHash?: string;
+      actualPromptHash?: string;
+    };
+    output?: {
+      assetIds?: string[];
+      outputReferenceIds?: string[];
+      hashCount?: number;
+      mimeType?: string;
+      storageType?: string;
+    };
+  };
   tool?: string;
   errorSummary?: string;
   usageGuide?: {

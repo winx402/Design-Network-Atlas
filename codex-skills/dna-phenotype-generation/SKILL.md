@@ -23,7 +23,7 @@ Use `docs/design/write-boundary-matrix.md` for write strategy vocabulary: compil
 - Phenotype type defines the output shape: image, UI icon, concept brief, model brief, animation brief, runtime export, document, dataset, or custom type.
 - ContextReference and ContextReviewRubric provide examples, badcases, review questions, and acceptance criteria.
 - PhenotypeCompileArtifact provides inherited species frames plus a phenotype frame, bounded prompt, negative prompt, art brief, generation constraints, dependency vector, feedback, and review checklist.
-- GenerationJob records the selected model/tool workflow without storing credentials or complete private links.
+- GenerationJob records the selected model/tool or managed-runner workflow without storing credentials, raw provider payloads, signed URLs, or complete private links. Use its executionMode, provenanceLevel, bounded requestEvidence, outputEvidence, and verificationSummary to distinguish compiled-only, external-linked, runner-recorded, and runner-verified evidence.
 - PhenotypeVersion records the generated result snapshot. New formal generation produces a `candidate`; later lifecycle actions can make it accepted, rejected, replaced, rolled-back, deprecated, archived, or deleted without changing generated content.
 - OutputReference, AssetIndex, PhenotypeLibrary, StorageMount, and LibraryRoutingPolicy record where result files or external objects live.
 
@@ -42,9 +42,10 @@ Use `docs/design/write-boundary-matrix.md` for write strategy vocabulary: compil
 8. production intent gate: check task productionIntent before prompt work. It should be structured and domain-neutral, derived from active usage guide, planned phenotype, species node, and explicit plan/task overrides. It may include productionSliceRole, intended use, expected asset types, output shape hints, must-preserve, must-avoid, and unknowns, but not provider credentials, raw payloads, complete private links, or project-private directory policy.
 9. prompt gate: produce prompt, negative prompt, art brief, and review checklist from existing graph facts, compile artifacts, any active usage guide, and productionIntent.
 10. tool gate: select manual, mock, or external tool execution. Do not default to calling an external tool when conflicts are blocking.
-11. lifecycle gate: decide whether the result should stay candidate, be accepted, rejected, replaced, rolled back, deprecated, archived, or deleted. Feedback belongs on `PhenotypeVersion.feedback`, not in ReviewRecord unless a separate review workflow is explicitly needed.
-12. reference-generation gate: if the user wants graph-wide or group-wide reference material, use scoped reference generation rather than phenotype generation. Store only reference GenerationJob ids, reference AssetIndex ids, or ContextReference ids for later tasks; do not copy private URLs into plan/task records. For reference asset migration, keep asset ids stable as evidence records: do not rewrite a local pointer into an Eagle pointer in place, and do not include archived/deleted pointers as current completion evidence.
-13. storage gate: route output references through PhenotypeLibrary and StorageMount when available, or record direct OutputReference when the user does not use a DNA result library.
+11. runner evidence gate: if managed execution is requested, require a bounded runner plan. External/manual linked assets are at most external-linked; only managed runner output that has a passing verificationSummary may be treated as runner-verified. Do not call real providers or store raw provider payloads in this skill.
+12. lifecycle gate: decide whether the result should stay candidate, be accepted, rejected, replaced, rolled back, deprecated, archived, or deleted. Feedback belongs on `PhenotypeVersion.feedback`, not in ReviewRecord unless a separate review workflow is explicitly needed. If the user requests strict acceptance, require runner-verified linked GenerationJob evidence; otherwise report the provenance gap as a warning.
+13. reference-generation gate: if the user wants graph-wide or group-wide reference material, use scoped reference generation rather than phenotype generation. Store only reference GenerationJob ids, reference AssetIndex ids, or ContextReference ids for later tasks; do not copy private URLs into plan/task records. For reference asset migration, keep asset ids stable as evidence records: do not rewrite a local pointer into an Eagle pointer in place, and do not include archived/deleted pointers as current completion evidence.
+14. storage gate: route output references through PhenotypeLibrary and StorageMount when available, or record direct OutputReference when the user does not use a DNA result library.
 
 ## Workflow
 
@@ -74,6 +75,7 @@ Use `docs/design/write-boundary-matrix.md` for write strategy vocabulary: compil
    - manual: user or artist creates the result from brief/checklist.
    - mock: test provider or placeholder workflow for validation.
    - external tool: image model, design tool, renderer, script, database, Git repository, or custom provider adapter.
+   - managed runner: bounded runner contract that records requestEvidence, outputEvidence, and verificationSummary on GenerationJob. MVP runner output can be runner-recorded first and runner-verified only after explicit verification.
    - Never store API keys, provider credentials, complete private links, or raw Agent host responses in GenerationJob, compile artifacts, or exports.
 
 5. Review the result.
@@ -112,6 +114,7 @@ Return a generationPlan with these fields:
 - nonBlockingQuestions: questions that can be resolved after a draft output exists.
 - promptPackage: prompt, negative prompt, art brief, generation constraints, and review checklist.
 - toolPlan: manual, mock, or external tool, plus what will and will not be recorded in GenerationJob.
+- managedExecutionPlan: executionMode, provenanceLevel target, runner id when applicable, bounded request/output evidence, verification checks, and whether acceptance should be warn or strict.
 - referenceGenerationPlan: graph/group scope, EntityCompileArtifact id, reference GenerationJob id, safe AssetIndex pointer plan, reference asset migration plan when needed, and how later phenotype tasks will cite reference ids when scoped reference material is requested.
 - reviewPlan: checklist, expected failure cases, and acceptance decision path.
 - registrationPlan: Phenotype identity, candidate PhenotypeVersion, compileArtifactSnapshot, OutputReference or AssetIndex records, and library/mount routing.
@@ -129,5 +132,6 @@ Return a generationPlan with these fields:
 - Do not recommend registering a generated PhenotypeVersion without a PhenotypeCompileArtifact-backed provenance path.
 - Do not store provider credentials, complete private links, raw Agent host responses, or sensitive provider parameters.
 - Do not store API keys, provider credentials, complete private links, raw provider payloads, or signed URLs in PhenotypeGenerationPlan, PhenotypeGenerationTask, llmInstructions, operatorNotes, toolPreference, metadata, or extensions.
+- Do not present external-linked or manually linked assets as runner-verified; runner-verified requires managed runner evidence plus a passing verification summary.
 - Do not use productionIntent as a hidden place for credentials, raw provider payloads, complete private links, signed URLs, binary assets, or private project directory rules.
 - Do not copy old local URI values into new reference asset migration metadata; asset ids are enough for traceability.

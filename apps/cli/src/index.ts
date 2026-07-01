@@ -38,12 +38,14 @@ import {
   rejectPhenotypeVersion,
   replaceReferenceAsset,
   replacePhenotypeVersion,
+  runManagedGenerationJob,
   rollbackPhenotypeVersion,
   submitPhenotypeVersionCandidate,
   syncOutputReferencesForPhenotypeVersion,
   updateGenerationPlan,
   updateGenerationTasks,
   updatePhenotypeVersionFeedbackSummary,
+  verifyGenerationOutput,
   type ApplicationImpactSummary
 } from "@dna/application";
 import {
@@ -74,6 +76,7 @@ import {
   ProductionIntentSchema,
   renderPhenotypeUsageGuideMarkdown,
   type GenerationVersionBinding,
+  type GenerationJob,
   type PhenotypeGenerationPlan,
   type PhenotypeGenerationTask,
   type ProductionIntent,
@@ -668,6 +671,62 @@ function generationResponse(prepared: {
     job: prepared.job,
     prompt: prepared.prompt
   };
+}
+
+function formatGenerationJobText(job: GenerationJob) {
+  const lines = [
+    `Generation job: ${job.generationJobId}`,
+    `Status: ${job.status}`,
+    `Kind: ${job.generationKind}`,
+    `Execution mode: ${job.executionMode}`,
+    `Provenance: ${job.provenanceLevel}`,
+    `Verification: ${job.verificationSummary.status}`,
+    `Graph: ${job.graphId}`,
+    `Target: ${job.target ? `${job.target.type}:${job.target.id}` : job.nodeId ?? "none"}`,
+    `Phenotype: ${job.phenotypeId ?? "none"}`,
+    `Phenotype version: ${job.phenotypeVersionId ?? "none"}`,
+    `Assets: ${job.outputEvidence?.assetIds.length ? job.outputEvidence.assetIds.join(", ") : "none"}`,
+    `Output references: ${job.outputEvidence?.outputReferenceIds.length ? job.outputEvidence.outputReferenceIds.join(", ") : "none"}`
+  ];
+  if (job.requestEvidence?.runnerId) lines.push(`Runner: ${job.requestEvidence.runnerId}`);
+  if (job.verificationSummary.blockingReasons.length) lines.push(`Blocking: ${job.verificationSummary.blockingReasons.join("; ")}`);
+  if (job.verificationSummary.warningReasons.length) lines.push(`Warnings: ${job.verificationSummary.warningReasons.join("; ")}`);
+  return `${lines.join("\n")}\n`;
+}
+
+function formatManagedGenerationRun(result: {
+  persisted: boolean;
+  before: GenerationJob;
+  after: GenerationJob;
+  outputEvidence?: { assetIds?: string[] };
+}) {
+  const lines = [
+    result.persisted ? "Managed generation run" : "Preview managed generation run",
+    `Job: ${result.before.generationJobId}`,
+    `Status: ${result.before.status} -> ${result.after.status}`,
+    `Execution mode: ${result.before.executionMode} -> ${result.after.executionMode}`,
+    `Provenance: ${result.before.provenanceLevel} -> ${result.after.provenanceLevel}`,
+    `Assets: ${result.outputEvidence?.assetIds?.length ? result.outputEvidence.assetIds.join(", ") : "none"}`
+  ];
+  if (!result.persisted) lines.push("Re-run with --apply or --yes to persist runner evidence.");
+  return `${lines.join("\n")}\n`;
+}
+
+function formatManagedGenerationVerification(result: { persisted: boolean; before: GenerationJob; after: GenerationJob }) {
+  const lines = [
+    result.persisted ? "Verified generation job" : "Preview generation job verification",
+    `Job: ${result.before.generationJobId}`,
+    `Verification: ${result.before.verificationSummary.status} -> ${result.after.verificationSummary.status}`,
+    `Provenance: ${result.before.provenanceLevel} -> ${result.after.provenanceLevel}`
+  ];
+  if (result.after.verificationSummary.blockingReasons.length) {
+    lines.push(`Blocking: ${result.after.verificationSummary.blockingReasons.join("; ")}`);
+  }
+  if (result.after.verificationSummary.warningReasons.length) {
+    lines.push(`Warnings: ${result.after.verificationSummary.warningReasons.join("; ")}`);
+  }
+  if (!result.persisted) lines.push("Re-run with --apply or --yes to persist verification.");
+  return `${lines.join("\n")}\n`;
 }
 
 function compileArtifactLabel(artifact: { compileTarget: string; targetLevel?: string }) {
@@ -2027,6 +2086,50 @@ compilePhenotypeCommand
     store.close();
   });
 
+const generationJob = program.command("generation-job").description("Inspect, run, and verify managed generation jobs");
+generationJob
+  .command("show")
+  .requiredOption("--id <generationJobId>", "generation job id")
+  .option("--format <format>", "output format: text|json")
+  .action((options, command) => {
+    const store = openStore(command);
+    const job = store.generationJobs.get(options.id);
+    if (!job) {
+      store.close();
+      throw new Error(`generation job not found: ${options.id}`);
+    }
+    printJsonOrText(parseOutputFormat(options.format), job, formatGenerationJobText(job));
+    store.close();
+  });
+generationJob
+  .command("run")
+  .requiredOption("--id <generationJobId>", "generation job id")
+  .option("--runner <runnerId>", "managed runner id", "mock-runner")
+  .option("--parameter <key=value>", "safe runner parameter", collect, [])
+  .option("--apply", "persist runner evidence and pointer-only output asset")
+  .option("--format <format>", "output format: text|json")
+  .action((options, command) => {
+    const store = openStore(command);
+    const result = runManagedGenerationJob(
+      store,
+      { generationJobId: options.id, runnerId: options.runner, parameters: parseKeyValue(options.parameter) },
+      { apply: Boolean(options.apply || shouldApply(command)) }
+    );
+    printJsonOrText(parseOutputFormat(options.format), result, formatManagedGenerationRun(result));
+    store.close();
+  });
+generationJob
+  .command("verify")
+  .requiredOption("--id <generationJobId>", "generation job id")
+  .option("--apply", "persist verification summary")
+  .option("--format <format>", "output format: text|json")
+  .action((options, command) => {
+    const store = openStore(command);
+    const result = verifyGenerationOutput(store, { generationJobId: options.id }, { apply: Boolean(options.apply || shouldApply(command)) });
+    printJsonOrText(parseOutputFormat(options.format), result, formatManagedGenerationVerification(result));
+    store.close();
+  });
+
 const generationPlan = program.command("generation-plan").description("Plan phenotype generation work across graph, group, node, or phenotype scopes");
 generationPlan
   .command("create")
@@ -2803,6 +2906,7 @@ phenotype
   .option("--phenotype-artifact <artifactId>", "existing phenotype compile artifact id")
   .option("--replay-historical", "allow stale compile artifacts for deterministic historical replay")
   .option("--tool <tool>", "tool", "manual")
+  .option("--runner <runnerId>", "managed runner id; MVP supports mock-runner")
   .option("--apply", "persist generated artifacts, phenotype version, and generation job")
   .option("--format <format>", "output format: json")
   .option("--json", "alias for --format json")
@@ -2822,7 +2926,7 @@ phenotype
           replayHistorical: Boolean(options.replayHistorical),
           tool: options.tool
         });
-    const response = {
+    const response: ReturnType<typeof generationResponse> & { nextAction?: string; managedGeneration?: unknown } = {
       ...generationResponse(prepared),
       nextAction:
         !options.task && prepared.phenotype.status === "planned"
@@ -2855,6 +2959,15 @@ phenotype
       return preview(command, `generate phenotype ${prepared.phenotype.phenotypeId}`, response);
     }
     persistPhenotypeGeneration(store, prepared, { taskId: options.task });
+    if (options.runner) {
+      const managedGeneration = runManagedGenerationJob(
+        store,
+        { generationJobId: prepared.job.generationJobId, runnerId: options.runner },
+        { apply: true }
+      );
+      response.managedGeneration = managedGeneration;
+      response.job = managedGeneration.after;
+    }
     if (format === "json") {
       console.log(
         JSON.stringify(
@@ -2894,7 +3007,12 @@ phenotypeVersion
   });
 
 function addLifecycleApplyAndFormat(command: Command) {
-  return command.option("--feedback <text>", "feedback item message").option("--apply", "persist lifecycle metadata").option("--format <format>", "output format: text|json");
+  return command
+    .option("--feedback <text>", "feedback item message")
+    .option("--provenance <mode>", "acceptance provenance mode: off|warn|strict")
+    .option("--strict-provenance", "require runner-verified generation evidence when accepting")
+    .option("--apply", "persist lifecycle metadata")
+    .option("--format <format>", "output format: text|json");
 }
 
 addLifecycleApplyAndFormat(phenotypeVersion.command("submit-candidate").requiredOption("--id <phenotypeVersionId>", "phenotype version id"))
@@ -2909,7 +3027,8 @@ addLifecycleApplyAndFormat(phenotypeVersion.command("accept").requiredOption("--
   .action((options, command) => {
     const store = openStore(command);
     const apply = Boolean(options.apply || shouldApply(command));
-    const result = acceptPhenotypeVersion(store, { phenotypeVersionId: options.id, feedback: options.feedback, apply });
+    const provenanceMode = options.strictProvenance ? "strict" : parseProvenanceMode(options.provenance);
+    const result = acceptPhenotypeVersion(store, { phenotypeVersionId: options.id, feedback: options.feedback, provenanceMode, apply });
     printJsonOrText(parseOutputFormat(options.format), result, formatLifecycleResult(result));
     store.close();
   });
@@ -4060,6 +4179,12 @@ function parseFeedbackSource(value: string | undefined): PhenotypeVersionFeedbac
   if (value === undefined) return "human";
   if (value === "human" || value === "agent" || value === "system") return value;
   throw new Error(`unknown feedback source: ${value}`);
+}
+
+function parseProvenanceMode(value: string | undefined): "off" | "warn" | "strict" {
+  if (value === undefined) return "warn";
+  if (value === "off" || value === "warn" || value === "strict") return value;
+  throw new Error(`unknown provenance mode: ${value}`);
 }
 
 function uniqueCli(values: string[]) {

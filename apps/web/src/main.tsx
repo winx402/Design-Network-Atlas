@@ -711,6 +711,7 @@ function JobCard(props: { job: WorkbenchGenerationJob; onSelect: (detail: Inspec
       <strong>{props.job.generationJobId}</strong>
       <span>{props.job.tool ?? "manual"} · {props.job.phenotypeType}</span>
       <StatusChip status={props.job.status} />
+      <small>{props.job.provenanceLevel ?? "compiled-only"} · {props.job.verification?.status ?? "not-run"}</small>
       <small>{props.job.phenotypeVersionId ? `version ${props.job.phenotypeVersionId}` : "no linked version"}</small>
     </button>
   );
@@ -1111,9 +1112,18 @@ function inspectJob(job: WorkbenchGenerationJob): InspectorDetail {
     type: "GenerationJob",
     id: job.generationJobId,
     status: job.status,
-    summary: [job.tool ?? "manual", job.taskBrief ?? "No task brief."],
+    summary: [job.tool ?? "manual", job.taskBrief ?? "No task brief.", `Provenance: ${job.provenanceLevel ?? "compiled-only"}`],
     generationLinks: [job.phenotypeVersionId ? `Phenotype Version: ${job.phenotypeVersionId}` : "No linked phenotype version"],
-    governance: [job.errorSummary ? `error: ${job.errorSummary}` : "no error summary"],
+    governance: [
+      `Verification: ${job.verification?.status ?? "not-run"}`,
+      ...(job.verification?.blockingReasons ?? []).map((reason) => `blocking: ${reason}`),
+      ...(job.verification?.warningReasons ?? []).map((reason) => `warning: ${reason}`),
+      job.errorSummary ? `error: ${job.errorSummary}` : "no error summary"
+    ],
+    phenotypeAssets: [
+      `Assets: ${job.evidence?.output?.assetIds?.length ? job.evidence.output.assetIds.join(", ") : "none"}`,
+      `Output references: ${job.evidence?.output?.outputReferenceIds?.length ? job.evidence.output.outputReferenceIds.join(", ") : "none"}`
+    ],
     provenance: [`created ${job.createdAt ?? "unknown"}`, `updated ${job.updatedAt ?? "unknown"}`],
     raw: job
   };

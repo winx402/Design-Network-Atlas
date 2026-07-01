@@ -1304,6 +1304,65 @@ export const GenerationJobTargetSchema = z.object({
   label: z.string().optional()
 });
 
+export const GenerationExecutionModeSchema = z.enum(["compiled-only", "external-linked", "managed-runner"]);
+export const GenerationProvenanceLevelSchema = z.enum(["compiled-only", "external-linked", "runner-recorded", "runner-verified"]);
+export const GenerationVerificationStatusSchema = z.enum(["not-run", "passed", "needs-review", "failed"]);
+export const GenerationVerificationCheckStatusSchema = z.enum(["passed", "needs-review", "failed"]);
+export const GenerationVerificationCheckSeveritySchema = z.enum(["info", "warning", "blocking"]);
+export const GenerationVerificationCheckSourceSchema = z.enum(["runner", "system", "manual", "llm", "vision"]);
+
+export const GenerationRequestEvidenceSchema = z.object({
+  compiledPromptHash: z.string().optional(),
+  actualPromptHash: z.string().optional(),
+  actualPromptSnapshot: z.string().optional(),
+  runnerId: z.string().optional(),
+  provider: z.string().optional(),
+  runnerInvocationId: z.string().optional(),
+  providerRequestId: z.string().optional(),
+  submittedAt: IsoDateSchema.optional(),
+  completedAt: IsoDateSchema.optional(),
+  parameters: JsonRecordSchema
+});
+
+export const GenerationOutputHashSchema = z.object({
+  assetId: z.string().optional(),
+  outputReferenceId: z.string().optional(),
+  hash: z.string().min(1),
+  uri: z.string().optional()
+});
+
+export const GenerationOutputEvidenceSchema = z.object({
+  assetIds: z.array(z.string()).default([]),
+  outputReferenceIds: z.array(z.string()).default([]),
+  outputHashes: z.array(GenerationOutputHashSchema).default([]),
+  mimeType: z.string().optional(),
+  byteSize: z.number().int().nonnegative().optional(),
+  width: z.number().int().positive().optional(),
+  height: z.number().int().positive().optional(),
+  storageType: StorageTypeSchema.optional(),
+  hashAlgorithm: z.string().default("sha256"),
+  createdAt: IsoDateSchema.optional()
+});
+
+export const GenerationVerificationCheckSchema = z.object({
+  checkId: z.string().min(1),
+  source: GenerationVerificationCheckSourceSchema,
+  severity: GenerationVerificationCheckSeveritySchema,
+  status: GenerationVerificationCheckStatusSchema,
+  reason: z.string().default(""),
+  suggestedAction: z.string().optional(),
+  confidence: z.number().min(0).max(1).optional()
+});
+
+export const GenerationVerificationSummarySchema = z.object({
+  status: GenerationVerificationStatusSchema.default("not-run"),
+  checks: z.array(GenerationVerificationCheckSchema).default([]),
+  blockingReasons: z.array(z.string()).default([]),
+  warningReasons: z.array(z.string()).default([]),
+  checkedBy: z.string().optional(),
+  checkedAt: IsoDateSchema.optional()
+});
+
 export const GenerationJobSchema = z
   .object({
     generationJobId: z.string().min(1),
@@ -1321,6 +1380,11 @@ export const GenerationJobSchema = z
     tool: z.string().default("manual"),
     toolParameters: JsonRecordSchema,
     status: z.enum(["created", "generated", "failed"]),
+    executionMode: GenerationExecutionModeSchema.default("compiled-only"),
+    provenanceLevel: GenerationProvenanceLevelSchema.default("compiled-only"),
+    requestEvidence: GenerationRequestEvidenceSchema.optional(),
+    outputEvidence: GenerationOutputEvidenceSchema.optional(),
+    verificationSummary: GenerationVerificationSummarySchema.default({}),
     errorMessage: z.string().optional(),
     facets: FacetsSchema,
     createdAt: IsoDateSchema,
@@ -1478,6 +1542,12 @@ export type ExternalLibraryMapping = z.infer<typeof ExternalLibraryMappingSchema
 export type LibraryRoutingPolicy = z.infer<typeof LibraryRoutingPolicySchema>;
 export type LibraryRoutingPolicyMatch = z.infer<typeof LibraryRoutingPolicyMatchSchema>;
 export type GenerationJobTarget = z.infer<typeof GenerationJobTargetSchema>;
+export type GenerationExecutionMode = z.infer<typeof GenerationExecutionModeSchema>;
+export type GenerationProvenanceLevel = z.infer<typeof GenerationProvenanceLevelSchema>;
+export type GenerationRequestEvidence = z.infer<typeof GenerationRequestEvidenceSchema>;
+export type GenerationOutputEvidence = z.infer<typeof GenerationOutputEvidenceSchema>;
+export type GenerationVerificationCheck = z.infer<typeof GenerationVerificationCheckSchema>;
+export type GenerationVerificationSummary = z.infer<typeof GenerationVerificationSummarySchema>;
 export type GenerationJob = z.infer<typeof GenerationJobSchema>;
 export type ReviewRecord = z.infer<typeof ReviewRecordSchema>;
 export type ImpactRecord = z.infer<typeof ImpactRecordSchema>;

@@ -948,6 +948,30 @@ function createGenerationJobSummary(job: GenerationJob) {
     phenotypeType: job.phenotypeType,
     taskBrief: summarizeText(job.taskBrief, 160),
     status: job.status,
+    executionMode: job.executionMode,
+    provenanceLevel: job.provenanceLevel,
+    verification: {
+      status: job.verificationSummary.status,
+      blockingReasons: job.verificationSummary.blockingReasons,
+      warningReasons: job.verificationSummary.warningReasons,
+      checkedBy: job.verificationSummary.checkedBy,
+      checkedAt: job.verificationSummary.checkedAt
+    },
+    evidence: {
+      request: {
+        runnerId: job.requestEvidence?.runnerId,
+        runnerInvocationId: job.requestEvidence?.runnerInvocationId,
+        compiledPromptHash: job.requestEvidence?.compiledPromptHash,
+        actualPromptHash: job.requestEvidence?.actualPromptHash
+      },
+      output: {
+        assetIds: job.outputEvidence?.assetIds ?? [],
+        outputReferenceIds: job.outputEvidence?.outputReferenceIds ?? [],
+        hashCount: job.outputEvidence?.outputHashes.length ?? 0,
+        mimeType: job.outputEvidence?.mimeType,
+        storageType: job.outputEvidence?.storageType
+      }
+    },
     tool: job.tool,
     errorSummary: job.errorMessage ? sanitizeText(job.errorMessage) : undefined,
     usageGuide:

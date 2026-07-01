@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   collectImpact,
   checkCompileArtifactStaleness,
@@ -15,6 +16,9 @@ import {
   nowIso,
   type OutputReference,
   sanitizePhenotypeVersionFeedback,
+  sanitizeGenerationOutputEvidence,
+  sanitizeGenerationRequestEvidence,
+  sanitizeGenerationVerificationSummary,
   sanitizeProductionIntent,
   sanitizePlanningJson,
   sanitizePlanningText,
@@ -29,6 +33,7 @@ import {
   type DesignContext,
   type GenerationJob,
   type GenerationJobTarget,
+  type GenerationVerificationCheck,
   type GenerationVersionBinding,
   type Graph,
   type Phenotype,
@@ -144,6 +149,12 @@ export interface ReferenceGenerationRepositories extends LayeredCompileRepositor
   entityCompileArtifacts: Pick<EntityCompileArtifactRepository, "get" | "create" | "listByGraph" | "listByTarget">;
   generationJobs: Pick<GenerationJobRepository, "get" | "create" | "update">;
   assets: Pick<AssetRepository, "get" | "create" | "update" | "search">;
+}
+
+export interface ManagedGenerationRepositories {
+  transaction<T>(fn: () => T): T;
+  generationJobs: Pick<GenerationJobRepository, "get" | "update">;
+  assets: Pick<AssetRepository, "get" | "create" | "search">;
 }
 
 export type PlanningJsonPatch = {
@@ -275,6 +286,7 @@ export type PhenotypeVersionLifecycleResult = {
     generationPlanIds: string[];
   };
   warnings: string[];
+  provenanceWarnings: string[];
 };
 
 export type OutputReferenceLifecycleAction =
@@ -972,6 +984,211 @@ export function persistReferenceGeneration(store: ReferenceGenerationRepositorie
   });
 }
 
+export function prepareManagedGeneration(
+  store: Pick<ManagedGenerationRepositories, "generationJobs">,
+  input: { generationJobId: string; runnerId?: string; parameters?: Record<string, unknown> }
+) {
+  const job = requireGenerationJob(store, input.generationJobId);
+  const runnerId = sanitizePlanningText(input.runnerId) ?? "mock-runner";
+  const prompt = promptFromGenerationJob(job);
+  const parameters = sanitizePlanningJson(input.parameters);
+  const runnerInput = {
+    generationJobId: job.generationJobId,
+    runnerId,
+    prompt,
+    brief: job.taskBrief,
+    compiledPromptHash: hashString(prompt),
+    parameters
+  };
+  return {
+    job,
+    runnerInput,
+    persisted: false
+  };
+}
+
+export function runManagedGenerationJob(
+  store: ManagedGenerationRepositories,
+  input: { generationJobId: string; runnerId?: string; parameters?: Record<string, unknown>; assetId?: string },
+  options: { apply?: boolean } = {}
+) {
+  const prepared = prepareManagedGeneration(store, input);
+  if (prepared.runnerInput.runnerId !== "mock-runner") {
+    throw new Error(`managed generation runner is not supported in MVP: ${prepared.runnerInput.runnerId}`);
+  }
+  const before = prepared.job;
+  const timestamp = nowIso();
+  const assetId = input.assetId ?? `asset-${before.generationJobId}`;
+  const outputHash = hashString(`${before.generationJobId}:${prepared.runnerInput.prompt}:${timestamp}`);
+  const asset = createDefaultAsset({
+    assetId,
+    uri: `mock-runner://${before.generationJobId}/${assetId}`,
+    storageType: "other",
+    assetType: "image",
+    role: "output",
+    linkedObjectType: "generation-job",
+    linkedObjectId: before.generationJobId,
+    description: `mock-runner output for ${before.generationJobId}`,
+    createdAt: timestamp,
+    updatedAt: timestamp
+  });
+  const requestEvidence = sanitizeGenerationRequestEvidence({
+    compiledPromptHash: prepared.runnerInput.compiledPromptHash,
+    actualPromptHash: hashString(prepared.runnerInput.prompt),
+    actualPromptSnapshot: prepared.runnerInput.prompt,
+    runnerId: prepared.runnerInput.runnerId,
+    runnerInvocationId: `mock-runner-${before.generationJobId}`,
+    providerRequestId: `mock-runner-${before.generationJobId}`,
+    parameters: prepared.runnerInput.parameters,
+    submittedAt: timestamp,
+    completedAt: timestamp
+  });
+  const outputEvidence = sanitizeGenerationOutputEvidence({
+    assetIds: [asset.assetId],
+    outputReferenceIds: [],
+    outputHashes: [{ assetId: asset.assetId, hash: outputHash }],
+    mimeType: "image/png",
+    byteSize: prepared.runnerInput.prompt.length,
+    width: 512,
+    height: 512,
+    storageType: "other",
+    hashAlgorithm: "sha256",
+    createdAt: timestamp
+  });
+  const after = createGenerationJob({
+    ...before,
+    status: "generated",
+    executionMode: "managed-runner",
+    provenanceLevel: "runner-recorded",
+    requestEvidence,
+    outputEvidence,
+    verificationSummary: before.verificationSummary,
+    outputSnapshot: {
+      ...before.outputSnapshot,
+      runner: {
+        runnerId: prepared.runnerInput.runnerId,
+        outputAssetIds: [asset.assetId],
+        outputHash
+      }
+    },
+    updatedAt: timestamp
+  });
+  if (!options.apply) {
+    return { before, after, asset, outputEvidence: after.outputEvidence, persisted: false };
+  }
+  return store.transaction(() => {
+    if (!store.assets.get(asset.assetId)) store.assets.create(asset);
+    store.generationJobs.update(after);
+    return {
+      before,
+      after: store.generationJobs.get(before.generationJobId) ?? after,
+      asset: store.assets.get(asset.assetId) ?? asset,
+      outputEvidence: after.outputEvidence,
+      persisted: true
+    };
+  });
+}
+
+export function verifyGenerationOutput(
+  store: Pick<ManagedGenerationRepositories, "transaction" | "generationJobs">,
+  input: { generationJobId: string; checks?: GenerationVerificationCheck[]; checkedBy?: string },
+  options: { apply?: boolean } = {}
+) {
+  const before = requireGenerationJob(store, input.generationJobId);
+  const checks = input.checks?.length ? input.checks.map(sanitizeGenerationVerificationCheck) : defaultGenerationVerificationChecks(before);
+  const blockingReasons = checks.filter((check) => check.severity === "blocking" && check.status === "failed").map((check) => check.reason);
+  const warningReasons = checks.filter((check) => check.severity === "warning" || check.status === "needs-review").map((check) => check.reason);
+  const status = blockingReasons.length ? "failed" : warningReasons.length ? "needs-review" : "passed";
+  const summary = sanitizeGenerationVerificationSummary({
+    status,
+    checks,
+    blockingReasons,
+    warningReasons,
+    checkedBy: input.checkedBy ?? "system",
+    checkedAt: nowIso()
+  });
+  const after = createGenerationJob({
+    ...before,
+    verificationSummary: summary,
+    provenanceLevel:
+      status === "passed" && (before.provenanceLevel === "runner-recorded" || before.executionMode === "managed-runner")
+        ? "runner-verified"
+        : before.provenanceLevel,
+    updatedAt: nowIso()
+  });
+  if (!options.apply) return { before, after, persisted: false };
+  return store.transaction(() => {
+    store.generationJobs.update(after);
+    return { before, after: store.generationJobs.get(input.generationJobId) ?? after, persisted: true };
+  });
+}
+
+function requireGenerationJob(store: Pick<ManagedGenerationRepositories, "generationJobs">, generationJobId: string) {
+  const job = store.generationJobs.get(generationJobId);
+  if (!job) throw new Error(`generation job not found: ${generationJobId}`);
+  return job;
+}
+
+function promptFromGenerationJob(job: GenerationJob) {
+  const prompt = job.outputSnapshot.prompt ?? job.inputSnapshot.prompt ?? job.taskBrief;
+  return typeof prompt === "string" ? prompt : JSON.stringify(prompt);
+}
+
+function hashString(value: string) {
+  return `sha256:${createHash("sha256").update(value).digest("hex")}`;
+}
+
+function sanitizeGenerationVerificationCheck(check: GenerationVerificationCheck): GenerationVerificationCheck {
+  return {
+    ...check,
+    reason: sanitizePlanningText(check.reason) ?? "",
+    suggestedAction: sanitizePlanningText(check.suggestedAction)
+  };
+}
+
+function defaultGenerationVerificationChecks(job: GenerationJob): GenerationVerificationCheck[] {
+  const hasOutputEvidence = Boolean(
+    job.outputEvidence &&
+      ((job.outputEvidence.assetIds?.length ?? 0) > 0 ||
+        (job.outputEvidence.outputReferenceIds?.length ?? 0) > 0 ||
+        (job.outputEvidence.outputHashes?.length ?? 0) > 0)
+  );
+  return [
+    {
+      checkId: "output-evidence",
+      source: "system",
+      severity: hasOutputEvidence ? "info" : "blocking",
+      status: hasOutputEvidence ? "passed" : "failed",
+      reason: hasOutputEvidence ? "generation job has bounded output evidence" : "generation job has no bounded output evidence",
+      confidence: 1
+    }
+  ];
+}
+
+function withExternalLinkedEvidence(job: GenerationJob, assetIds: string[], timestamp = nowIso()): GenerationJob {
+  const existingEvidence = job.outputEvidence;
+  const outputEvidence = sanitizeGenerationOutputEvidence({
+    assetIds: unique([...(existingEvidence?.assetIds ?? []), ...assetIds]),
+    outputReferenceIds: existingEvidence?.outputReferenceIds ?? [],
+    outputHashes: existingEvidence?.outputHashes ?? [],
+    mimeType: existingEvidence?.mimeType,
+    byteSize: existingEvidence?.byteSize,
+    width: existingEvidence?.width,
+    height: existingEvidence?.height,
+    storageType: existingEvidence?.storageType,
+    hashAlgorithm: existingEvidence?.hashAlgorithm ?? "sha256",
+    createdAt: existingEvidence?.createdAt ?? timestamp
+  });
+  return createGenerationJob({
+    ...job,
+    executionMode: "external-linked",
+    provenanceLevel: "external-linked",
+    outputEvidence,
+    verificationSummary: job.verificationSummary,
+    updatedAt: timestamp
+  });
+}
+
 type ReferenceCompletionInput = {
   note?: string;
   externalTool?: string;
@@ -1049,7 +1266,7 @@ function prepareReferenceGenerationCompletion(
   const evidence = collectReferenceCompletionEvidence(store, input.generationJobId, input.assetIds, pendingAssets);
   const linkedAssetIds = unique(evidence.map((asset) => asset.assetId));
   const after: GenerationJob = {
-    ...before,
+    ...withExternalLinkedEvidence(before, linkedAssetIds),
     status: "generated",
     outputSnapshot: {
       ...before.outputSnapshot,
@@ -1113,9 +1330,13 @@ export function linkReferenceAsset(
     description: sanitizePlanningText(input.description) ?? ""
   });
   if (!options.markGenerated) {
-    if (!options.apply) return { job, asset, persisted: false, markedGenerated: false };
-    store.transaction(() => store.assets.create(asset));
-    return { job, asset: store.assets.get(asset.assetId) ?? asset, persisted: true, markedGenerated: false };
+    const jobAfter = withExternalLinkedEvidence(job, [asset.assetId]);
+    if (!options.apply) return { job, jobAfter, asset, persisted: false, markedGenerated: false };
+    store.transaction(() => {
+      store.assets.create(asset);
+      store.generationJobs.update(jobAfter);
+    });
+    return { job, jobAfter: store.generationJobs.get(job.generationJobId) ?? jobAfter, asset: store.assets.get(asset.assetId) ?? asset, persisted: true, markedGenerated: false };
   }
 
   const completion = prepareReferenceGenerationCompletion(
@@ -1535,7 +1756,7 @@ export function submitPhenotypeVersionCandidate(
 
 export function acceptPhenotypeVersion(
   store: PhenotypeVersionLifecycleRepositories,
-  options: { phenotypeVersionId: string; feedback?: string; apply?: boolean }
+  options: { phenotypeVersionId: string; feedback?: string; apply?: boolean; provenanceMode?: "off" | "warn" | "strict" }
 ) {
   const version = requirePhenotypeVersion(store, options.phenotypeVersionId);
   const phenotype = requirePhenotype(store, version.phenotypeId);
@@ -1552,6 +1773,10 @@ export function acceptPhenotypeVersion(
     version.status === "accepted"
       ? []
       : [{ phenotypeVersionId: version.phenotypeVersionId, from: version.status, to: "accepted" as const }];
+  const provenanceWarnings = phenotypeVersionProvenanceWarnings(store, version);
+  if ((options.provenanceMode ?? "warn") === "strict" && provenanceWarnings.length) {
+    throw new Error(provenanceWarnings.join("; "));
+  }
   return buildAndMaybeApplyLifecycleResult(store, {
     action: "accept",
     phenotypeId: phenotype.phenotypeId,
@@ -1559,6 +1784,7 @@ export function acceptPhenotypeVersion(
     statusChanges,
     currentAcceptedAfter: version.phenotypeVersionId,
     feedbackInput: options.feedback ? { message: options.feedback, source: "human" } : undefined,
+    provenanceWarnings: (options.provenanceMode ?? "warn") === "off" ? [] : provenanceWarnings,
     apply: options.apply
   });
 }
@@ -1771,6 +1997,7 @@ function buildAndMaybeApplyLifecycleResult(
       suggestedAction?: string;
     };
     summaryInput?: string;
+    provenanceWarnings?: string[];
     apply?: boolean;
   }
 ): PhenotypeVersionLifecycleResult {
@@ -1822,7 +2049,8 @@ function buildAndMaybeApplyLifecycleResult(
     currentAcceptedVersion: { before: currentAccepted, after: input.currentAcceptedAfter },
     feedbackChanges,
     provenance: inferLifecycleProvenance(store, target.graphId, input.phenotypeId, versionIds),
-    warnings: []
+    warnings: input.provenanceWarnings ?? [],
+    provenanceWarnings: input.provenanceWarnings ?? []
   };
 
   if (!input.apply) return { ...result, persisted: false };
@@ -1999,6 +2227,22 @@ function inferLifecycleProvenance(
       ...jobs.map((job) => stringFromRecord(job.inputSnapshot, "generationPlanId")).filter((value): value is string => Boolean(value))
     ])
   };
+}
+
+function phenotypeVersionProvenanceWarnings(
+  store: Pick<PhenotypeVersionLifecycleRepositories, "generationJobs">,
+  version: PhenotypeVersion
+) {
+  const jobs = store.generationJobs
+    .listByGraph(version.graphId)
+    .filter((job) => job.phenotypeVersionId === version.phenotypeVersionId);
+  const verified = jobs.some(
+    (job) => job.provenanceLevel === "runner-verified" && job.verificationSummary.status === "passed"
+  );
+  if (verified) return [];
+  return [
+    `phenotype version ${version.phenotypeVersionId} requires runner-verified generation evidence for strict acceptance`
+  ];
 }
 
 function stringFromRecord(value: Record<string, unknown>, key: string) {
@@ -2216,7 +2460,7 @@ function replaceReferenceCompletionEvidence(
   if (note !== undefined) migration.note = note;
   const priorMigrations = Array.isArray(completion.referenceAssetMigrations) ? completion.referenceAssetMigrations : [];
   return {
-    ...job,
+    ...withExternalLinkedEvidence(job, linkedAssetIds, migratedAt),
     outputSnapshot: {
       ...job.outputSnapshot,
       referenceCompletion: {
